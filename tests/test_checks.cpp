@@ -26,9 +26,11 @@
 
 #include <cmath>
 #include <cstdint>
+#include <iomanip>
 #include <limits>
 #include <optional>
 #include <random>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -259,11 +261,74 @@ int main ()
       throws_naming([&] { in.run(); }, "divergence cell size is", "C2");
     }
 
+    Input mps;
+    mps.config.smoothing.sigma = 0.7;
+    check(mps.search().sigmaLength == 0.7 * kMps, "sigmaLength is sigma times mps in Mps");
+    Input coordinate;
+    coordinate.config.smoothing.sigma = 0.7;
+    coordinate.config.smoothing.unit = LengthUnit::Coordinate;
+    check(coordinate.search().sigmaLength == 0.7, "sigmaLength is sigma in Coordinate");
+
     Input unsmoothed;
     unsmoothed.config.keepUnsmoothedDivergence = true;
     throws_naming([&] { unsmoothed.run(); }, "requires keeping the divergence", "C3");
     unsmoothed.config.keepDivergence = true;
     accepted([&] { unsmoothed.run(); }, "C3 accepts both");
+  }
+
+  group("the smoothing sigma in coordinate units, (2 sigma) sigma positive and finite: both "
+        "overloads, both units, both sides of both limits (C4)");
+  {
+    constexpr double kInf = std::numeric_limits<double>::infinity();
+    const double tiny = std::ldexp(1., -538);
+    double big = std::sqrt(std::numeric_limits<double>::max() / 2);
+    while (std::isfinite(2 * std::nextafter(big, kInf) * std::nextafter(big, kInf)))
+      big = std::nextafter(big, kInf);
+    while (!std::isfinite(2 * big * big)) big = std::nextafter(big, 0.);
+    check(1e-162 < tiny && tiny < 1.2e-162 && 9e153 < big && big < 1e154,
+          "the limits are about 1e-162 and 1e154");
+
+    struct Sigma { double sigma; LengthUnit unit; double mps; const char* fails; };
+    const Sigma cases[] = {
+      {tiny, LengthUnit::Coordinate, kMps, "too small"},
+      {std::nextafter(tiny, 1.), LengthUnit::Coordinate, kMps, nullptr},
+      {1e-200, LengthUnit::Coordinate, kMps, "too small"},
+      {1e-150, LengthUnit::Coordinate, kMps, nullptr},
+      {big, LengthUnit::Coordinate, kMps, nullptr},
+      {std::nextafter(big, kInf), LengthUnit::Coordinate, kMps, "too large"},
+      {std::numeric_limits<double>::max(), LengthUnit::Coordinate, kMps, "too large"},
+      {1e-163, LengthUnit::Mps, 1., "too small"},
+      {tiny, LengthUnit::Mps, 1., "too small"},
+      {std::nextafter(tiny, 1.), LengthUnit::Mps, 1., nullptr},
+      {1e-160, LengthUnit::Mps, 1e-10, "too small"},
+      {big, LengthUnit::Mps, 1., nullptr},
+      {std::nextafter(big, kInf), LengthUnit::Mps, 1., "too large"},
+      {9e152, LengthUnit::Mps, kMps, nullptr},
+      {1e153, LengthUnit::Mps, kMps, "too large"},
+      {1e300, LengthUnit::Mps, kMps, "too large"},
+    };
+    for (const Sigma& c : cases) {
+      Input in;
+      in.mps = c.mps;
+      in.config.smoothing.sigma = c.sigma;
+      in.config.smoothing.unit = c.unit;
+      const otswap::Result rec = in.reconstruction();
+      std::ostringstream label;
+      label << std::setprecision(17) << "C4, sigma " << c.sigma << " ("
+            << (c.unit == LengthUnit::Mps ? "Mps" : "Coordinate") << "), mps " << c.mps;
+      const std::string what = label.str();
+      if (c.fails == nullptr) {
+        accepted([&] { in.run(); }, what + ", arrays: accepted");
+        accepted([&] { findVoidsBox(rec, in.config); }, what + ", reconstruction: accepted");
+        continue;
+      }
+      const std::string text = std::string(c.fails) + " to build the kernel";
+      throws_naming([&] { in.run(); }, "smoothing sigma is", what + ", arrays");
+      throws_naming([&] { in.run(); }, text, what + ", arrays");
+      throws_naming([&] { findVoidsBox(rec, in.config); }, "smoothing sigma is",
+                    what + ", reconstruction");
+      throws_naming([&] { findVoidsBox(rec, in.config); }, text, what + ", reconstruction");
+    }
   }
 
   group("a reused grid: its defining fields, and its combinations with the arguments");
@@ -416,10 +481,19 @@ int main ()
     accepted([&] { findVoidsBox(other, config, {}, &grid); },
              "O5 and X2: with a grid, the grid's mps wins");
 
+    Input seven;
+    seven.mps = 7.;
+    const DivergenceGrid grid7 = internal::box_grid(seven.search(), 1.);
+    Config sigma = config;
+    sigma.smoothing.sigma = 0.7;
+    check(internal::check_box(in.reconstruction(), sigma, {}, &grid7).sigmaLength == 0.7 * 7.,
+          "sigmaLength in Mps uses the reused grid's mps, not the reconstruction's");
+
     const otswap::Result rec = in.reconstruction();
     const internal::BoxSearch a = in.search();
     const internal::BoxSearch b = internal::check_box(rec, config, {}, nullptr);
     check(a.nTracers == b.nTracers && a.nRealizations == b.nRealizations && a.mps == b.mps &&
+          a.sigmaLength == b.sigmaLength &&
           a.maxDisplacement == b.maxDisplacement && a.inBox == b.inBox && a.randoms == b.randoms &&
           a.counts.displacements == b.counts.displacements &&
           a.counts.randoms == b.counts.randoms,

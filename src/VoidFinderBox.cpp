@@ -58,9 +58,11 @@ namespace {
     }
 
     bitvf::internal::box_divergence(search, cells);
+    bitvf::internal::box_smooth(cells, search.sigmaLength,
+                                config.keepUnsmoothedDivergence ? &cells.divergenceUnsmoothed : nullptr);
 
     throw bitvf::Error("findVoidsBox is not implemented yet: the arguments are checked and the "
-                       "divergence is computed, the search is not");
+                       "divergence is computed and smoothed, the search is not");
   }
 
 }

@@ -91,6 +91,10 @@ namespace bitvf {
       /// The mean particle separation of the search, in coordinate units.
       double mps = 0.;
 
+      /// The smoothing sigma in coordinate units: Smoothing::sigma, times
+      /// mps in Mps; 0 for no smoothing.
+      double sigmaLength = 0.;
+
       /// The largest absolute value of a component of the valid
       /// displacements read, in coordinate units; it sets the scale of the
       /// fixed-point accumulation of the divergence.
@@ -111,7 +115,8 @@ namespace bitvf {
      *
      *  The checks run in a fixed order, so that the same defects always
      *  raise the same error: the arrays, mps, the limits, ids, the
-     *  configuration, the reused grid, then the data.
+     *  configuration, the reused grid, the smoothing sigma in coordinate
+     *  units, then the data.
      *
      *  @exception Error on every case listed by findVoidsBox, except those
      *  found by building the grid and by the divergence.
@@ -285,6 +290,28 @@ namespace bitvf {
      *  @exception Error if a pass fills no cell while some are empty
      */
     unsigned box_fill (DivergenceGrid& grid);
+
+    //==========================================================================
+
+    /**
+     *  @brief Smooth the divergence of a box grid in place, as Smoothing
+     *  describes for a box, with weight as the tracer weight.
+     *
+     *  The mean over the cube of cells around a cell is computed as three
+     *  1-D convolutions of weight times divergence and of weight, along k,
+     *  j, then i, each sum taken from 0. in ascending order; the result
+     *  does not depend on the number of threads. The half-width of the cube
+     *  is floor(3.5 sigmaLength / cellSize), capped at nCellsAxis - 1.
+     *
+     *  Reads only divergence, weight and the fields that define the cells.
+     *
+     *  @param sigmaLength the sigma in coordinate units: 0 for no
+     *  smoothing, and when positive with (2 sigmaLength) sigmaLength
+     *  positive and finite (check_box checks it)
+     *  @param unsmoothed when not null, receives the divergence before the
+     *  smoothing
+     */
+    void box_smooth (DivergenceGrid& grid, double sigmaLength, std::vector<double>* unsmoothed);
 
   }
 }

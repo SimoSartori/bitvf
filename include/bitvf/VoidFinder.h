@@ -173,7 +173,9 @@ namespace bitvf {
   struct Smoothing {
 
     /// Width of the Gaussian, in unit; must be finite and non-negative.
-    /// 1 mps is a reasonable starting value.
+    /// 1 mps is a reasonable starting value. A positive sigma must be
+    /// between about 1e-162 and 1e154 in coordinate units; use 0 to
+    /// disable the smoothing.
     double sigma = 1.;
 
     /// Unit of sigma.
@@ -690,7 +692,10 @@ namespace bitvf {
    *    finite, or a lower bound is not below the upper one;
    *  - on config: if smoothing.sigma is not finite and non-negative; if
    *    divergenceCellSize is set and not finite and positive; if
-   *    keepUnsmoothedDivergence is set without keepDivergence;
+   *    keepUnsmoothedDivergence is set without keepDivergence; if
+   *    smoothing.sigma is positive but, in coordinate units (times mps in
+   *    Mps), below about 1e-162 or above about 1e154, too small or too
+   *    large to build the kernel;
    *  - on grid: if it is not a box grid; if a field that defines the cells
    *    is inconsistent: cellSize or mps not finite and positive, a bound of
    *    lower or upper not finite or lower[k] not below upper[k], a count of
@@ -744,7 +749,9 @@ namespace bitvf {
    *  outsideBox or ids of a size that does not match them, valid holding a
    *  value other than 0 and 1, ids holding a value twice; if its mps is
    *  not finite and positive and no grid is given; and as above, but for
-   *  the mps of the grid, which wins over the reconstruction's.
+   *  the mps of the grid, which wins over the reconstruction's. A positive
+   *  smoothing.sigma in Mps is checked against the mps of the search: the
+   *  grid's when given, otherwise the reconstruction's.
    */
   Result findVoidsBox (const otswap::Result& reconstruction,
                        const Config& config,

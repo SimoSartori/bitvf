@@ -144,12 +144,12 @@ namespace {
    *  the arrays, mps, the limits and the IDs are checked and the tracers
    *  outside the limits are known.
    *
-   *  Removes the randoms outside the limits; with a grid, flags the
-   *  tracers and removes the randoms outside it; checks the valid
-   *  displacements of the tracers read; counts.
+   *  Sets and checks sigmaLength; removes the randoms outside the limits;
+   *  with a grid, flags the tracers and removes the randoms outside it;
+   *  checks the valid displacements of the tracers read; counts.
    *
-   *  @param search the search, with every field but outsideGrid, randoms
-   *  and counts other than tracers and tracersOutsideBox set
+   *  @param search the search, with every field but outsideGrid, randoms,
+   *  sigmaLength and counts other than tracers and tracersOutsideBox set
    *  @param randoms the randoms given
    *  @param displacementName the name of the displacements in the messages
    */
@@ -159,6 +159,16 @@ namespace {
   {
     bitvf::internal::check_config(config, grid != nullptr);
     if (grid != nullptr) bitvf::internal::check_box_grid(*grid, search.mps, mpsMustMatch);
+
+    const bitvf::Smoothing& smoothing = config.smoothing;
+    const bool inMps = smoothing.unit == bitvf::LengthUnit::Mps;
+    search.sigmaLength = inMps ? smoothing.sigma * search.mps : smoothing.sigma;
+    const double twoSigmaSq = 2 * search.sigmaLength * search.sigmaLength;
+    if (smoothing.sigma > 0. && (twoSigmaSq == 0. || !std::isfinite(twoSigmaSq)))
+      throw bitvf::Error("the smoothing sigma is " + exact(smoothing.sigma) +
+                         (inMps ? " mps (" : " in coordinate units (") + exact(search.sigmaLength) +
+                         " in coordinate units), too " + (twoSigmaSq == 0. ? "small" : "large") +
+                         " to build the kernel; use 0 to disable the smoothing");
 
     const std::size_t N = search.nTracers;
     const std::size_t nRandoms = randoms.size() / 3;
