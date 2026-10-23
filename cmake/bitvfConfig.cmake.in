@@ -1,0 +1,26 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# otswap: any patch release of the minor version bitvf requires. It finds
+# meshsearch and cfitsio in turn.
+find_dependency(otswap @BITVF_OTSWAP_VERSION@ CONFIG)
+
+# OpenMP, when bitvf was built with it. AppleClang needs to be pointed at a
+# libomp: Homebrew's, unless OpenMP_ROOT is set, as bitvf's own build does.
+if (@BITVF_WITH_OPENMP@)
+  if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang" AND
+      NOT DEFINED OpenMP_ROOT AND NOT DEFINED ENV{OpenMP_ROOT})
+    foreach (candidate /opt/homebrew/opt/libomp /usr/local/opt/libomp)
+      if (EXISTS ${candidate}/include/omp.h)
+        set(OpenMP_ROOT ${candidate})
+        break()
+      endif()
+    endforeach()
+  endif()
+  find_dependency(OpenMP COMPONENTS CXX)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/bitvfTargets.cmake")
+
+check_required_components(bitvf)
