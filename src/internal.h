@@ -88,12 +88,12 @@ namespace bitvf {
       /// take their place.
       bool randomsGiven = false;
 
-      /// The mean particle separation of the search, Mpc/h.
+      /// The mean particle separation of the search, in coordinate units.
       double mps = 0.;
 
       /// The largest absolute value of a component of the valid
-      /// displacements read, Mpc/h; it sets the scale of the fixed-point
-      /// accumulation of the divergence.
+      /// displacements read, in coordinate units; it sets the scale of the
+      /// fixed-point accumulation of the divergence.
       double maxDisplacement = 0.;
 
       /// The box limits, when given.

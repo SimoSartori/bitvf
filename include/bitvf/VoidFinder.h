@@ -105,8 +105,10 @@ namespace bitvf {
    *
    *  The conventions are otswap's (see otswap's coordinate layout). Every
    *  array is flat and row-major. Cartesian arrays hold [object][xyz] in
-   *  Mpc/h; sky arrays hold [object][ra, dec, z], angles in radians;
-   *  displacements are [realization][object][xyz] and their validity
+   *  coordinate units; in a lightcone these are Mpc/h when the distance
+   *  table comes from otswap's cosmology. Sky arrays hold [object][ra,
+   *  dec, z], angles in radians; displacements are
+   *  [realization][object][xyz] and their validity
    *  [realization][object], uint8. The arrays of a result:
    *
    *      [basin][3]   BasinCatalog::centre, centreSky
@@ -142,8 +144,8 @@ namespace bitvf {
     /// lightcone mps(z) at each cell's redshift.
     Mps,
 
-    /// Comoving Mpc/h.
-    MpcOverH
+    /// The same length unit as the tracer coordinates.
+    Coordinate
   };
 
   /**
@@ -244,8 +246,8 @@ namespace bitvf {
 
     std::size_t nBasins = 0;
 
-    /// Cartesian centre, Mpc/h: the seed cell's centre x0, shifted by
-    /// -sum_n div_n (x_n - x0) / sum_n |div_n| over the seed's
+    /// Cartesian centre, in coordinate units: the seed cell's centre x0,
+    /// shifted by -sum_n div_n (x_n - x0) / sum_n |div_n| over the seed's
     /// neighbouring cells n, with div the smoothed divergence, and kept
     /// inside the seed cell. Flat, [basin][xyz].
     std::vector<double> centre;
@@ -254,10 +256,11 @@ namespace bitvf {
     /// radians. Flat, [basin][3] in a lightcone; empty in a box.
     std::vector<double> centreSky;
 
-    /// Radius of the sphere with the volume of the core, Mpc/h.
+    /// Radius of the sphere with the volume of the core, in coordinate units.
     std::vector<double> radius;
 
-    /// Radius of the sphere with the volume of the extended basin, Mpc/h.
+    /// Radius of the sphere with the volume of the extended basin, in
+    /// coordinate units.
     std::vector<double> radiusExt;
 
     /// Mean density contrast of the tracers in the core: the tracers
@@ -342,18 +345,18 @@ namespace bitvf {
     /// Number of cells.
     std::size_t nCells = 0;
 
-    /// Box, defines the cells: cell side, Mpc/h, Config::divergenceCellSize
-    /// times mps. NaN in a lightcone.
+    /// Box, defines the cells: cell side, in coordinate units,
+    /// Config::divergenceCellSize times mps. NaN in a lightcone.
     double cellSize = std::numeric_limits<double>::quiet_NaN();
 
-    /// Box, defines the cells: x, y, z of the lower grid face, Mpc/h.
-    /// NaN in a lightcone.
+    /// Box, defines the cells: x, y, z of the lower grid face, in
+    /// coordinate units. NaN in a lightcone.
     std::array<double, 3> lower = {std::numeric_limits<double>::quiet_NaN(),
                                    std::numeric_limits<double>::quiet_NaN(),
                                    std::numeric_limits<double>::quiet_NaN()};
 
     /// Box, defines the cells: x, y, z of the upper face of the padded box
-    /// as placed, Mpc/h. It lies below the last cell face,
+    /// as placed, in coordinate units. It lies below the last cell face,
     /// lower + nCellsAxis * cellSize; it is stored as built and never
     /// recomputed from the other fields. NaN in a lightcone.
     std::array<double, 3> upper = {std::numeric_limits<double>::quiet_NaN(),
@@ -365,7 +368,8 @@ namespace bitvf {
     std::array<std::size_t, 3> nCellsAxis = {0, 0, 0};
 
     /// Lightcone, defines the cells: comoving distance range of the
-    /// tracers and randoms the grid covers, Mpc/h. NaN in a box.
+    /// tracers and randoms the grid covers, in coordinate units. NaN in a
+    /// box.
     double distanceMin = std::numeric_limits<double>::quiet_NaN();
     double distanceMax = std::numeric_limits<double>::quiet_NaN();
 
@@ -384,9 +388,9 @@ namespace bitvf {
     /// units of mps(z). NaN in a box.
     double cellSizeMps = std::numeric_limits<double>::quiet_NaN();
 
-    /// Box: the mean particle separation the grid was built with, Mpc/h;
-    /// the smoothing in mps and the delta2Mps radius of a search that
-    /// reuses the grid follow it. NaN in a lightcone.
+    /// Box: the mean particle separation the grid was built with, in
+    /// coordinate units; the smoothing in mps and the delta2Mps radius of
+    /// a search that reuses the grid follow it. NaN in a lightcone.
     double mps = std::numeric_limits<double>::quiet_NaN();
 
     /// Lightcone: the mps(z) profile the grid was built with; the shells,
@@ -395,16 +399,16 @@ namespace bitvf {
     otswap::MpsProfile mpsProfile;
 
     /// Lightcone, descriptive: the limits of each cell as built, radians
-    /// and Mpc/h; never read by a reuse. Right-ascension edges are
-    /// continuous across RA = 0 within a ring; a ring of a single sector
-    /// spans 2 pi. The central sphere, when present, has distance limits
-    /// [0, r] and the full sky; a polar cap reaches declination pi/2 (or
-    /// -pi/2) over the full circle. Flat, [cell]; empty in a box.
+    /// and coordinate units; never read by a reuse. Right-ascension edges
+    /// are continuous across RA = 0 within a ring; a ring of a single
+    /// sector spans 2 pi. The central sphere, when present, has distance
+    /// limits [0, r] and the full sky; a polar cap reaches declination
+    /// pi/2 (or -pi/2) over the full circle. Flat, [cell]; empty in a box.
     std::vector<double> cellRaMin, cellRaMax;
     std::vector<double> cellDecMin, cellDecMax;
     std::vector<double> cellDistanceMin, cellDistanceMax;
 
-    /// Cartesian centre of each cell, Mpc/h. Flat, [cell][xyz].
+    /// Cartesian centre of each cell, in coordinate units. Flat, [cell][xyz].
     std::vector<double> centre;
 
     /// Sky coordinates of each cell centre: right ascension, declination,
@@ -418,7 +422,7 @@ namespace bitvf {
     /// Config::keepUnsmoothedDivergence is set; empty otherwise.
     std::vector<double> divergenceUnsmoothed;
 
-    /// Volume of each cell, Mpc^3/h^3: uniform in a box.
+    /// Volume of each cell, in coordinate units cubed: uniform in a box.
     std::vector<double> volume;
 
     /// Tracer weight of each cell, the weight of the smoothing:
@@ -479,8 +483,8 @@ namespace bitvf {
     /// Row of the tracer's overdense basin in Result::overdense; -1 none.
     std::vector<std::int64_t> overdenseIndex;
 
-    /// Distance from the centre of the tracer's void, Mpc/h; NaN without
-    /// one.
+    /// Distance from the centre of the tracer's void, in coordinate units;
+    /// NaN without one.
     std::vector<double> distance;
 
     /// 0 when the tracer falls on an unobserved pixel of the mask; all 1 in
@@ -597,15 +601,17 @@ namespace bitvf {
     /// outsideGrid, checked in that order.
     std::vector<std::uint8_t> outsideCut;
 
-    /// Box: the mean particle separation the search used, Mpc/h: the one
-    /// given, otswap::Result::mps, or a reused grid's. NaN in a lightcone.
+    /// Box: the mean particle separation the search used, in coordinate
+    /// units: the one given, otswap::Result::mps, or a reused grid's. NaN
+    /// in a lightcone.
     double mps = std::numeric_limits<double>::quiet_NaN();
 
     /// Lightcone: the mps(z) profile the search used, a reused grid's when
     /// one was given. Empty in a box.
     otswap::MpsProfile mpsProfile;
 
-    /// Lightcone: the distance table of the search. Null in a box.
+    /// Lightcone: the distance table of the search; coordinates are in
+    /// Mpc/h when it comes from otswap's cosmology. Null in a box.
     std::shared_ptr<const otswap::DistanceTable> distances;
 
     /// What the search counted.
@@ -647,9 +653,9 @@ namespace bitvf {
    *  in the extent of the grid. Empty, the displacement endpoints, tracer
    *  plus displacement for every valid displacement, are used instead.
    *
-   *  @param mps mean particle separation, Mpc/h; must be positive. Use
-   *  otswap::Result::mps of the reconstruction, or the overload below.
-   *  With grid, it must equal grid->mps.
+   *  @param mps mean particle separation, in coordinate units; must be
+   *  positive. Use otswap::Result::mps of the reconstruction, or the
+   *  overload below. With grid, it must equal grid->mps.
    *
    *  @param config the parameters of the search.
    *

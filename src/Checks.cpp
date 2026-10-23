@@ -284,7 +284,7 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const std::vector<double>
   check_coordinates(randoms, "randoms", true);
 
   if (!std::isfinite(mps) || mps <= 0.)
-    throw Error("mps is " + std::to_string(mps) + " Mpc/h; it must be finite and positive");
+    throw Error("mps is " + std::to_string(mps) + " in coordinate units; it must be finite and positive");
 
   if (limits) check_limits(*limits, "the box limits");
 
@@ -380,7 +380,7 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const otswap::Result& rec
   if (grid == nullptr) {
     if (!std::isfinite(rec.mps) || rec.mps <= 0.)
       throw Error("the reconstruction's mps is " + std::to_string(rec.mps) +
-                  " Mpc/h; it must be finite and positive");
+                  " in coordinate units; it must be finite and positive");
     search.mps = rec.mps;
   }
   else search.mps = grid->mps;
@@ -431,7 +431,7 @@ void bitvf::internal::check_box_grid (const DivergenceGrid& grid, const double m
 
   if (!std::isfinite(grid.cellSize) || grid.cellSize <= 0.)
     throw Error(bad + "has a cell size of " + std::to_string(grid.cellSize) +
-                " Mpc/h; it must be finite and positive");
+                " in coordinate units; it must be finite and positive");
 
   for (std::size_t k = 0; k < 3; ++k) {
     if (!std::isfinite(grid.lower[k]) || !std::isfinite(grid.upper[k]))
@@ -457,7 +457,7 @@ void bitvf::internal::check_box_grid (const DivergenceGrid& grid, const double m
 
   if (!std::isfinite(grid.mps) || grid.mps <= 0.)
     throw Error(bad + "has an mps of " + std::to_string(grid.mps) +
-                " Mpc/h; it must be finite and positive");
+                " in coordinate units; it must be finite and positive");
 
   const bool lightconeSet =
     !std::isnan(grid.distanceMin) || !std::isnan(grid.distanceMax) ||
@@ -469,6 +469,6 @@ void bitvf::internal::check_box_grid (const DivergenceGrid& grid, const double m
     throw Error(bad + "is a box grid with a field of a lightcone grid set");
 
   if (mpsMustMatch && mps != grid.mps)
-    throw Error("mps is " + exact(mps) + " Mpc/h, but the grid to reuse was built with " +
+    throw Error("mps is " + exact(mps) + " in coordinate units, but the grid to reuse was built with " +
                 exact(grid.mps) + "; they must be equal");
 }
