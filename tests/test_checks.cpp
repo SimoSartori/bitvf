@@ -342,6 +342,31 @@ int main ()
     throws_naming([&] { huge.run(); }, "an int64 cell index can address", "E3");
   }
 
+  group("the divergence: an endpoint outside every cell, no face crossed, a fill that stalls");
+  {
+    DivergenceGrid cells;
+    cells.geometry = otswap::Geometry::Box;
+    cells.mps = 1.;
+    cells.cellSize = 1.;
+    cells.lower = {0., 0., 0.};
+    cells.upper = {4., 4., 4.};
+    cells.nCellsAxis = {4, 4, 4};
+    cells.nCells = 64;
+    Config config;
+    config.log = nullptr;
+    const std::vector<double> tracers = {0.5, 0.5, 0.5, 1.5, 0.5, 0.5};
+
+    auto run = [&] (const std::vector<double>& displacement) {
+      findVoidsBox(tracers, displacement, {}, {}, 1., config, std::nullopt, {}, &cells);
+    };
+    throws_naming([&] { run({1., 1., 0., 2.5, 0., 0.}); },
+                  "displacement of tracer 1 in realization 0 ends outside every cell", "E6");
+    throws_naming([&] { run({1., 1., 0., 0.1, 0., 0.}); },
+                  "no face of its cell is crossed by the displacement of tracer 0", "E5");
+    throws_naming([&] { run({1., 0., 0., 0.1, 0., 0.}); },
+                  "cannot reach 62 empty cells: the last pass filled none", "E4");
+  }
+
   group("the otswap::Result overload: its own checks, and the same selection");
   {
     const Input in;
@@ -395,7 +420,7 @@ int main ()
     const internal::BoxSearch a = in.search();
     const internal::BoxSearch b = internal::check_box(rec, config, {}, nullptr);
     check(a.nTracers == b.nTracers && a.nRealizations == b.nRealizations && a.mps == b.mps &&
-          a.inBox == b.inBox && a.randoms == b.randoms &&
+          a.maxDisplacement == b.maxDisplacement && a.inBox == b.inBox && a.randoms == b.randoms &&
           a.counts.displacements == b.counts.displacements &&
           a.counts.randoms == b.counts.randoms,
           "both overloads select the same from the same arrays");

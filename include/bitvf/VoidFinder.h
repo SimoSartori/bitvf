@@ -116,7 +116,7 @@ namespace bitvf {
    *      [cell][3]    DivergenceGrid::centre, centreSky
    *      [cell]       DivergenceGrid::divergence, divergenceUnsmoothed,
    *                   volume, weight, cellRaMin .. cellDistanceMax
-   *                   (double); nDisplacements, nTracers (unsigned);
+   *                   (double); nDisplacements, nTracers (uint64);
    *                   voidIndex, overdenseIndex (int64); masked (uint8)
    *      [tracer]     Result::ids (int64); Result::uncorrected,
    *                   outsideGrid, outsideCut (uint8);
@@ -446,10 +446,10 @@ namespace bitvf {
     /// 1 in the cell it ends in; one that ends in its tracer's cell counts 2
     /// there. In a lightcone, displacements rejected by the mask count
     /// nowhere (Counts::displacementsRejected).
-    std::vector<unsigned> nDisplacements;
+    std::vector<std::uint64_t> nDisplacements;
 
     /// Tracers starting in each cell.
-    std::vector<unsigned> nTracers;
+    std::vector<std::uint64_t> nTracers;
 
     /// Row of the void each cell belongs to in Result::voids; -1 none.
     std::vector<std::int64_t> voidIndex;

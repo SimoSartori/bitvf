@@ -40,15 +40,27 @@ namespace {
   bitvf::Result search_box (const bitvf::internal::BoxSearch& search, const bitvf::Config& config,
                             const bitvf::DivergenceGrid* grid)
   {
+    bitvf::DivergenceGrid cells;
     if (grid == nullptr) {
       const double cellSizeMps = config.divergenceCellSize
         ? *config.divergenceCellSize
         : otswap::maths::cbrt(20. / search.nRealizations);
-      bitvf::internal::box_grid(search, cellSizeMps);
+      cells = bitvf::internal::box_grid(search, cellSizeMps);
+    }
+    else {
+      cells.geometry = grid->geometry;
+      cells.mps = grid->mps;
+      cells.cellSize = grid->cellSize;
+      cells.lower = grid->lower;
+      cells.upper = grid->upper;
+      cells.nCellsAxis = grid->nCellsAxis;
+      cells.nCells = grid->nCells;
     }
 
+    bitvf::internal::box_divergence(search, cells);
+
     throw bitvf::Error("findVoidsBox is not implemented yet: the arguments are checked and the "
-                       "grid is built, the search is not");
+                       "divergence is computed, the search is not");
   }
 
 }

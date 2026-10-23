@@ -204,13 +204,15 @@ namespace {
         if (!valid.empty() && !valid[row]) continue;
         ++search.counts.displacements;
         if (!search.inBox[i] || (!search.outsideGrid.empty() && search.outsideGrid[i])) continue;
-        for (std::size_t k = 0; k < 3; ++k)
+        for (std::size_t k = 0; k < 3; ++k) {
           if (!std::isfinite(displacement[3*row+k]))
             throw bitvf::Error(displacementName + " holds a non-finite value at entry " +
                                std::to_string(3*row+k) + " (realization " + std::to_string(r) +
                                ", tracer " + std::to_string(i) + ", component " +
                                std::to_string(k) + "), a valid displacement of a tracer the "
                                "search reads");
+          search.maxDisplacement = std::max(search.maxDisplacement, std::abs(displacement[3*row+k]));
+        }
         ++nRead;
       }
 

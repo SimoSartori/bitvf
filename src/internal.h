@@ -30,6 +30,7 @@
 #ifndef BITVF_INTERNAL_H
 #define BITVF_INTERNAL_H
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -89,6 +90,11 @@ namespace bitvf {
 
       /// The mean particle separation of the search, Mpc/h.
       double mps = 0.;
+
+      /// The largest absolute value of a component of the valid
+      /// displacements read, Mpc/h; it sets the scale of the fixed-point
+      /// accumulation of the divergence.
+      double maxDisplacement = 0.;
 
       /// The box limits, when given.
       std::optional<otswap::BoxLimits> limits;
@@ -191,6 +197,94 @@ namespace bitvf {
 
     /// Fill DivergenceGrid::centre of a box grid from its defining fields.
     void box_centres (DivergenceGrid& grid);
+
+    //==========================================================================
+
+    /// What the divergence of a box search finds besides the grid fields.
+    struct BoxDivergence {
+
+      /// [tracer]: the row of the cell the tracer starts in; -1 for a
+      /// tracer not read.
+      std::vector<std::int64_t> cell;
+
+      /// [tracer]: 1 when a valid displacement of the tracer entered the
+      /// divergence.
+      std::vector<std::uint8_t> used;
+
+      /// The tracers with used 1 (Counts::tracersUsed).
+      std::size_t nUsed = 0;
+
+      /// The exponent q of the fixed-point accumulation: each term of the
+      /// divergence is rounded to a multiple of 2^-q.
+      int scaleExponent = 0;
+
+      /// The passes the fill of the empty cells ran.
+      unsigned fillPasses = 0;
+    };
+
+    /// The face of a cell crossed by a displacement: axis 0, 1 or 2 and
+    /// sign -1 (lower face) or +1 (upper face); axis -1 when none is.
+    struct BoxFace {
+      int axis;
+      int sign;
+    };
+
+    /**
+     *  @brief The face of a box cell through which the segment from x to
+     *  x + d crosses.
+     *
+     *  The lower faces are tried before the upper ones, the axes x, y, z in
+     *  that order within each, an axis only when the component of d along
+     *  it exceeds 1e-9 in absolute value. A face is crossed when the
+     *  segment meets its plane at 0 < t < 1 (x + t d) strictly inside the
+     *  face; the first face crossed is returned.
+     *
+     *  @param cell the cell, (i, j, k)
+     *  @param x the start of the segment, x, y, z
+     *  @param d the displacement, x, y, z
+     */
+    BoxFace box_face (const DivergenceGrid& grid, const std::array<std::size_t, 3>& cell,
+                      const double* x, const double* d);
+
+    /**
+     *  @brief The divergence of the displacement field on a box grid,
+     *  before smoothing.
+     *
+     *  Sets DivergenceGrid::nTracers, nDisplacements, divergence and
+     *  weight from the valid displacements read, then fills the empty
+     *  cells (box_fill). A displacement that leaves its tracer's cell adds
+     *  the outward component, in units of the cell side, through the face
+     *  it crosses in the start cell and in the end cell, and counts 1 in
+     *  each; one that ends in its tracer's cell adds nothing and counts 2
+     *  there. The divergence of a cell is the sum over its count, its
+     *  weight the count over the number of realizations.
+     *
+     *  The sums are accumulated in fixed point, so that the result does not
+     *  depend on the number of threads: each term is rounded to a multiple
+     *  of 2^-q (BoxDivergence::scaleExponent), with q set by
+     *  BoxSearch::maxDisplacement over the cell side and by the largest
+     *  count of a cell, so that no sum overflows.
+     *
+     *  @param search the checked search, from check_box
+     *  @param grid a grid with its defining fields set; its per-cell
+     *  arrays other than these four are left unchanged
+     *  @exception Error if a valid displacement read ends outside every
+     *  cell; then if no face of a cell is found for a displacement leaving
+     *  it; then if the fill cannot reach every empty cell
+     */
+    BoxDivergence box_divergence (const BoxSearch& search, DivergenceGrid& grid);
+
+    /**
+     *  @brief Fill the empty cells (nDisplacements 0) of a box grid's
+     *  divergence and weight, as DivergenceGrid::weight describes.
+     *
+     *  Reads only nDisplacements, divergence, weight and the fields that
+     *  define the cells.
+     *
+     *  @return the number of passes run, 0 with no empty cell
+     *  @exception Error if a pass fills no cell while some are empty
+     */
+    unsigned box_fill (DivergenceGrid& grid);
 
   }
 }
