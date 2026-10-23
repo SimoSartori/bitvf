@@ -32,6 +32,7 @@ else()
 endif()
 
 option(BITVF_BUILD_PYTHON "Build the Python bindings" OFF)
+option(BITVF_BUILD_TESTS "Build the C++ test suite" ${BITVF_IS_TOP_LEVEL})
 option(BITVF_INSTALL "Generate the C++ install rules" ${BITVF_INSTALL_DEFAULT})
 
 include(GNUInstallDirs)
@@ -118,7 +119,10 @@ endif()
 # ---------------------------------------------------------------------------
 
 add_library(bitvf STATIC
-  src/Support.cpp)
+  src/BoxGrid.cpp
+  src/Checks.cpp
+  src/Support.cpp
+  src/VoidFinderBox.cpp)
 add_library(bitvf::bitvf ALIAS bitvf)
 
 set_target_properties(bitvf PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -148,6 +152,31 @@ endif()
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
   target_compile_options(bitvf PRIVATE -Wall -Wextra)
+endif()
+
+# ---------------------------------------------------------------------------
+# Tests
+#
+# One executable per file of tests/, each a CTest test. They include src/
+# to reach the internal functions they check.
+# ---------------------------------------------------------------------------
+
+if (BITVF_BUILD_TESTS)
+  include(CTest)
+  enable_testing()
+
+  foreach (test_name test_checks test_box_grid)
+    add_executable(${test_name} tests/${test_name}.cpp)
+    target_include_directories(${test_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(${test_name} PRIVATE bitvf)
+    if (OpenMP_CXX_FOUND)
+      target_link_libraries(${test_name} PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+      target_compile_options(${test_name} PRIVATE -Wall -Wextra)
+    endif()
+    add_test(NAME ${test_name} COMMAND ${test_name})
+  endforeach()
 endif()
 
 # ---------------------------------------------------------------------------

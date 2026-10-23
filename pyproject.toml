@@ -25,3 +25,4 @@ sdist.exclude = ["examples/", "docs/"]
 
 [tool.scikit-build.cmake.define]
 BITVF_BUILD_PYTHON = "ON"
+BITVF_BUILD_TESTS = "OFF"
