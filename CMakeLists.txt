@@ -31,6 +31,7 @@ else()
   set(BITVF_INSTALL_DEFAULT ON)
 endif()
 
+option(BITVF_BUILD_PYTHON "Build the Python bindings" OFF)
 option(BITVF_INSTALL "Generate the C++ install rules" ${BITVF_INSTALL_DEFAULT})
 
 include(GNUInstallDirs)
@@ -147,6 +148,29 @@ endif()
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
   target_compile_options(bitvf PRIVATE -Wall -Wextra)
+endif()
+
+# ---------------------------------------------------------------------------
+# Python bindings
+#
+# The extension module bitvf._bitvf, installed into the bitvf package of
+# python/bitvf. Built by pip through scikit-build-core (see pyproject.toml).
+# It is built as otswap's own module is, static nanobind and no NB_DOMAIN,
+# so that both share nanobind's type registry and bitvf can take and return
+# otswap's Python types. src/ is on its include path for the version.
+# ---------------------------------------------------------------------------
+
+if (BITVF_BUILD_PYTHON)
+  find_package(Python 3.9 REQUIRED COMPONENTS Interpreter Development.Module)
+  execute_process(COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
+    OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_ROOT)
+  find_package(nanobind CONFIG REQUIRED)
+
+  nanobind_add_module(bitvf_python NB_STATIC python/bitvf_python.cpp)
+  set_target_properties(bitvf_python PROPERTIES OUTPUT_NAME _bitvf)
+  target_include_directories(bitvf_python PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_link_libraries(bitvf_python PRIVATE bitvf)
+  install(TARGETS bitvf_python LIBRARY DESTINATION bitvf)
 endif()
 
 # ---------------------------------------------------------------------------
