@@ -30,7 +30,7 @@
 #ifndef BITVF_INTERNAL_H
 #define BITVF_INTERNAL_H
 
-#include "otswap/OT.h"
+#include "bitvf/VoidFinder.h"
 
 namespace bitvf {
   namespace internal {
