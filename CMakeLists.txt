@@ -38,17 +38,24 @@ option(BITVF_INSTALL "Generate the C++ install rules" ${BITVF_INSTALL_DEFAULT})
 include(GNUInstallDirs)
 
 # ---------------------------------------------------------------------------
-# Floating-point contraction
+# Floating-point flags
 #
 # No a*b+c is fused into one FMA anywhere: compilers differ in what they
 # contract by default, and so do the instruction sets, so contraction would
 # make the results depend on the platform. otswap and meshsearch set it on
-# their own targets; this covers bitvf's and a fetched otswap. It is not
-# exported: all of bitvf's arithmetic is in its own archive.
+# their own targets; this covers bitvf's and a fetched otswap.
+#
+# Maths functions do not set errno, so that the compiler may expand the ones
+# that map to an instruction (llrint, sqrt) inline instead of calling the C
+# library; GCC sets errno by default, clang on macOS does not. The results
+# are the same either way. This covers bitvf's targets and a fetched otswap
+# and meshsearch.
+#
+# Neither is exported: all of bitvf's arithmetic is in its own archive.
 # ---------------------------------------------------------------------------
 
 if (NOT MSVC)
-  add_compile_options(-ffp-contract=off)
+  add_compile_options(-ffp-contract=off -fno-math-errno)
 endif()
 
 # ---------------------------------------------------------------------------
