@@ -261,11 +261,13 @@ unsigned bitvf::internal::box_fill (DivergenceGrid& grid)
 
   std::vector<std::size_t> empty;
   for (std::size_t c = 0; c < grid.nCells; ++c)
-    if (grid.nDisplacements[c] == 0) empty.push_back(c);
+    if (grid.nDisplacements[c] == 0) {
+      empty.push_back(c);
+      grid.divergence[c] = std::numeric_limits<double>::quiet_NaN();
+    }
 
   std::vector<double> value(empty.size());
   std::vector<double> weight(empty.size());
-  std::vector<std::uint8_t> filled(empty.size());
 
   unsigned passes = 0;
   while (!empty.empty()) {
@@ -280,16 +282,15 @@ unsigned bitvf::internal::box_fill (DivergenceGrid& grid)
       const std::int64_t j = (c / n2) % n1;
       const std::int64_t k = c % n2;
 
-      filled[e] = 0;
-      for (std::int64_t h = 1; h <= 2 && !filled[e]; ++h) {
+      value[e] = std::numeric_limits<double>::quiet_NaN();
+      for (std::int64_t h = 1; h <= 2 && std::isnan(value[e]); ++h) {
         double num = 0., den = 0., w = 0.;
         unsigned counterValues = 0;
         for (std::int64_t ii = std::max<std::int64_t>(0, i - h); ii < std::min(n0, i + h + 1); ++ii)
           for (std::int64_t jj = std::max<std::int64_t>(0, j - h); jj < std::min(n1, j + h + 1); ++jj)
             for (std::int64_t kk = std::max<std::int64_t>(0, k - h); kk < std::min(n2, k + h + 1); ++kk) {
               const std::size_t cc = (std::size_t)((ii * n1 + jj) * n2 + kk);
-              if (grid.nDisplacements[cc] == 0 && std::binary_search(empty.begin(), empty.end(), cc))
-                continue;
+              if (std::isnan(grid.divergence[cc])) continue;
               ++counterValues;
               const double inv_d2 =
                 1. / ((double)((i - ii) * (i - ii) + (j - jj) * (j - jj) + (k - kk) * (k - kk)) * s * s);
@@ -300,19 +301,20 @@ unsigned bitvf::internal::box_fill (DivergenceGrid& grid)
         if (!(den == 0 || counterValues < 3)) {
           value[e] = num / den;
           weight[e] = w / den;
-          filled[e] = 1;
           ++nFilled;
         }
       }
     }
 
-    if (nFilled == 0)
+    if (nFilled == 0) {
+      for (const std::size_t c : empty) grid.divergence[c] = 0.;
       throw Error("the fill of the divergence cannot reach " + std::to_string(E) +
                   " empty cells: the last pass filled none");
+    }
 
     std::size_t kept = 0;
     for (std::size_t e = 0; e < E; ++e)
-      if (filled[e]) {
+      if (!std::isnan(value[e])) {
         grid.divergence[empty[e]] = value[e];
         grid.weight[empty[e]] = weight[e];
       }

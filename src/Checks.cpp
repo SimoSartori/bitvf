@@ -31,6 +31,7 @@
 #include <climits>
 #include <cmath>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -197,24 +198,35 @@ namespace {
 
     const std::vector<double>& displacement = *search.displacement;
     const std::vector<std::uint8_t>& valid = *search.valid;
-    std::size_t nRead = 0;
-    for (std::size_t r = 0; r < search.nRealizations; ++r)
-      for (std::size_t i = 0; i < N; ++i) {
-        const std::size_t row = r * N + i;
-        if (!valid.empty() && !valid[row]) continue;
-        ++search.counts.displacements;
-        if (!search.inBox[i] || (!search.outsideGrid.empty() && search.outsideGrid[i])) continue;
-        for (std::size_t k = 0; k < 3; ++k) {
-          if (!std::isfinite(displacement[3*row+k]))
-            throw bitvf::Error(displacementName + " holds a non-finite value at entry " +
-                               std::to_string(3*row+k) + " (realization " + std::to_string(r) +
-                               ", tracer " + std::to_string(i) + ", component " +
-                               std::to_string(k) + "), a valid displacement of a tracer the "
-                               "search reads");
-          search.maxDisplacement = std::max(search.maxDisplacement, std::abs(displacement[3*row+k]));
-        }
-        ++nRead;
+    const std::size_t rows = (std::size_t)search.nRealizations * N;
+    constexpr std::size_t none = std::numeric_limits<std::size_t>::max();
+    std::size_t nValid = 0, nRead = 0, firstNonFinite = none;
+    double maxDisplacement = 0.;
+#pragma omp parallel for schedule(static) reduction(+:nValid, nRead) \
+  reduction(min:firstNonFinite) reduction(max:maxDisplacement)
+    for (std::size_t row = 0; row < rows; ++row) {
+      const std::size_t i = row % N;
+      if (!valid.empty() && !valid[row]) continue;
+      ++nValid;
+      if (!search.inBox[i] || (!search.outsideGrid.empty() && search.outsideGrid[i])) continue;
+      for (std::size_t k = 0; k < 3; ++k) {
+        const double d = displacement[3*row+k];
+        if (!std::isfinite(d)) firstNonFinite = std::min(firstNonFinite, 3*row+k);
+        else maxDisplacement = std::max(maxDisplacement, std::abs(d));
       }
+      ++nRead;
+    }
+
+    if (firstNonFinite != none) {
+      const std::size_t row = firstNonFinite / 3;
+      throw bitvf::Error(displacementName + " holds a non-finite value at entry " +
+                         std::to_string(firstNonFinite) + " (realization " +
+                         std::to_string(row / N) + ", tracer " + std::to_string(row % N) +
+                         ", component " + std::to_string(firstNonFinite % 3) +
+                         "), a valid displacement of a tracer the search reads");
+    }
+    search.counts.displacements = nValid;
+    search.maxDisplacement = maxDisplacement;
 
     if (nRead == 0)
       throw bitvf::Error("no valid displacement is left to read: of " +
