@@ -313,6 +313,60 @@ namespace bitvf {
      */
     void box_smooth (DivergenceGrid& grid, double sigmaLength, std::vector<double>* unsmoothed);
 
+    //==========================================================================
+
+    /// The basins of one kind found by the watershed, numbered by ascending
+    /// seed cell.
+    struct BasinSet {
+
+      /// The row of the seed cell of each basin, ascending.
+      std::vector<std::int64_t> seed;
+
+      /// The cells of each basin: the extended basin.
+      std::vector<std::uint64_t> nCells;
+
+      /// The cells of the core of each basin: divergence below 0 for a
+      /// void, at or above 0 for an overdense basin.
+      std::vector<std::uint64_t> nCoreCells;
+
+      /// The sum of DivergenceGrid::nTracers over the core cells of each
+      /// basin.
+      std::vector<std::uint64_t> nCoreTracers;
+    };
+
+    /// The voids and the overdense basins of a box grid.
+    struct BoxBasins {
+      BasinSet voids;
+      BasinSet overdense;
+    };
+
+    /// The cells a walk of the watershed records per thread. A longer walk
+    /// labels its first kPathCells cells; the others are labelled when the
+    /// loop over the cells reaches them, with the same result.
+    constexpr std::size_t kPathCells = 4096;
+
+    /**
+     *  @brief Split a box grid into basins by steepest descent of its
+     *  divergence, as BasinCatalog describes.
+     *
+     *  Each cell flows to the first neighbour, among the 26 cut at the
+     *  faces of the grid and taken in ascending row order, whose
+     *  divergence is strictly below that of the cell and of every
+     *  neighbour before it; a cell with no such neighbour is a seed. A
+     *  seed below 0 starts a void, one at or above 0 an overdense basin;
+     *  each kind is numbered by ascending seed row. Every cell belongs to
+     *  the basin its flow reaches. The result does not depend on the
+     *  number of threads.
+     *
+     *  Reads only divergence, nTracers and nCellsAxis. Writes voidIndex and
+     *  overdenseIndex, one of which is -1 in every cell, and every field
+     *  of basins.
+     *
+     *  @exception Error if no cell has a divergence below 0, so that there
+     *  is no void
+     */
+    void box_watershed (DivergenceGrid& grid, BoxBasins& basins);
+
   }
 }
 

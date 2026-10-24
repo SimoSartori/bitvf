@@ -236,13 +236,26 @@ namespace bitvf {
    *
    *  The columns are the same for both kinds and in both geometries.
    *  Row b is basin b, numbered from 0 in the order of the index of its
-   *  seed cell, the extremum of the smoothed divergence it grew from: a
-   *  minimum for a void, a maximum for an overdense basin. The order does
-   *  not depend on the number of threads.
+   *  seed cell, a local minimum of the divergence (smoothed when a
+   *  smoothing is set): below 0 for a void, at or above 0 for an
+   *  overdense basin. In a box every cell belongs to exactly one basin, a
+   *  void or an overdense basin. The order does not depend on the number
+   *  of threads.
    *
-   *  The core of a basin is its underdense cells for a void, its
-   *  overdense cells for an overdense basin; the extended basin is all of
-   *  its cells.
+   *  The core of a void is the part of the void where the divergence is
+   *  below 0; the extended void is the whole basin. In a box the core and
+   *  the extended basin of an overdense basin coincide, since every cell
+   *  of a basin has a divergence at or above that of its seed.
+   *
+   *  Each cell flows to the neighbour where the divergence drops the most
+   *  (the largest decrease, not divided by the distance), among the cells
+   *  that share a face, an edge or a corner with it, when that value is
+   *  strictly below its own; among equal smallest values, the neighbour
+   *  with the lowest cell index. A cell with no strictly smaller
+   *  neighbour is a seed, so two adjacent cells of equal value with no
+   *  smaller neighbour are both seeds. A basin is the seed and every cell
+   *  whose flow reaches it. In a box the grid is not periodic: a cell on
+   *  a face has fewer neighbours.
    */
   struct BasinCatalog {
 
@@ -708,7 +721,8 @@ namespace bitvf {
    *    which means the arrays do not come from one reconstruction; if the
    *    grid would hold more cells than an int64 index can address;
    *    if empty cells remain that the fill of the divergence (see
-   *    DivergenceGrid::weight) cannot reach.
+   *    DivergenceGrid::weight) cannot reach; if the divergence is 0 or
+   *    positive in every cell, so that no void can be found.
    *
    *  @return the voids and overdense basins, with Result::mps set to mps.
    */
