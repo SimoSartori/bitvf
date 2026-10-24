@@ -173,46 +173,67 @@ void bitvf::internal::box_watershed (DivergenceGrid& grid, BoxBasins& basins)
   std::vector<std::int64_t>().swap(paths);
   flow.reset();
 
-  for (BasinSet* set : {&basins.voids, &basins.overdense}) {
-    set->nCells.assign(set->seed.size(), 0);
-    set->nCoreCells.assign(set->seed.size(), 0);
-    set->nCoreTracers.assign(set->seed.size(), 0);
-  }
-  std::uint64_t* voidCells = basins.voids.nCells.data();
-  std::uint64_t* voidCoreCells = basins.voids.nCoreCells.data();
-  std::uint64_t* voidCoreTracers = basins.voids.nCoreTracers.data();
-  std::uint64_t* overdenseCells = basins.overdense.nCells.data();
-  std::uint64_t* overdenseCoreCells = basins.overdense.nCoreCells.data();
-  std::uint64_t* overdenseCoreTracers = basins.overdense.nCoreTracers.data();
+  const std::size_t nVoid = basins.voids.seed.size();
+  const std::size_t nOverdense = basins.overdense.seed.size();
+  const std::size_t stride = 3 * (nVoid + nOverdense);
+  std::unique_ptr<std::uint64_t[]> counts(new std::uint64_t[nThreads * stride]);
+  std::size_t nTeam = 1;
   const std::uint64_t* nTracers = grid.nTracers.data();
   std::int64_t* overdense = grid.overdenseIndex.data();
 
-#pragma omp parallel for schedule(static)
-  for (std::int64_t c = 0; c < C; ++c) {
-    const std::int64_t L = label[c];
-    if (L >= 0) {
-      overdense[c] = -1;
-#pragma omp atomic
-      voidCells[L] += 1;
-      if (D[c] < 0.) {
-#pragma omp atomic
-        voidCoreCells[L] += 1;
-#pragma omp atomic
-        voidCoreTracers[L] += nTracers[c];
+#pragma omp parallel
+  {
+#ifdef _OPENMP
+    std::uint64_t* voidCells = &counts[(std::size_t)omp_get_thread_num() * stride];
+#pragma omp single nowait
+    nTeam = (std::size_t)omp_get_num_threads();
+#else
+    std::uint64_t* voidCells = counts.get();
+#endif
+    std::fill(voidCells, voidCells + stride, std::uint64_t(0));
+    std::uint64_t* voidCoreCells = voidCells + nVoid;
+    std::uint64_t* voidCoreTracers = voidCoreCells + nVoid;
+    std::uint64_t* overdenseCells = voidCoreTracers + nVoid;
+    std::uint64_t* overdenseCoreCells = overdenseCells + nOverdense;
+    std::uint64_t* overdenseCoreTracers = overdenseCoreCells + nOverdense;
+
+#pragma omp for schedule(static)
+    for (std::int64_t c = 0; c < C; ++c) {
+      const std::int64_t L = label[c];
+      if (L >= 0) {
+        overdense[c] = -1;
+        voidCells[L] += 1;
+        if (D[c] < 0.) {
+          voidCoreCells[L] += 1;
+          voidCoreTracers[L] += nTracers[c];
+        }
       }
-    }
-    else {
-      const std::int64_t b = -2 - L;
-      overdense[c] = b;
-      label[c] = -1;
-#pragma omp atomic
-      overdenseCells[b] += 1;
-      if (D[c] >= 0.) {
-#pragma omp atomic
-        overdenseCoreCells[b] += 1;
-#pragma omp atomic
-        overdenseCoreTracers[b] += nTracers[c];
+      else {
+        const std::int64_t b = -2 - L;
+        overdense[c] = b;
+        label[c] = -1;
+        overdenseCells[b] += 1;
+        if (D[c] >= 0.) {
+          overdenseCoreCells[b] += 1;
+          overdenseCoreTracers[b] += nTracers[c];
+        }
       }
     }
   }
+
+  std::size_t offset = 0;
+  for (BasinSet* set : {&basins.voids, &basins.overdense})
+    for (std::vector<std::uint64_t>* count : {&set->nCells, &set->nCoreCells, &set->nCoreTracers}) {
+      const std::int64_t m = (std::int64_t)set->seed.size();
+      count->resize((std::size_t)m);
+      std::uint64_t* sum = count->data();
+#pragma omp parallel for schedule(static)
+      for (std::int64_t b = 0; b < m; ++b) {
+        std::uint64_t s = 0;
+        for (std::size_t t = 0; t < nTeam; ++t)
+          s += counts[t * stride + offset + (std::size_t)b];
+        sum[b] = s;
+      }
+      offset += (std::size_t)m;
+    }
 }
