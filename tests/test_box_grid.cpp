@@ -56,7 +56,7 @@ namespace {
   /// Tracers uniform in [0, 100) x [0, 60) x [0, 30), so that the axes need
   /// different counts; one realization of displacements within 4 of zero.
   struct Input {
-    std::vector<double> tracers, displacement, randoms;
+    std::vector<double> tracers, displacement;
     std::vector<std::uint8_t> valid;
     std::optional<otswap::BoxLimits> limits;
     Config config;
@@ -76,13 +76,13 @@ namespace {
 
     internal::BoxSearch search () const
     {
-      return internal::check_box(tracers, displacement, valid, randoms, kMps, config, limits, {},
+      return internal::check_box(tracers, displacement, valid, kMps, config, limits, {},
                                  nullptr);
     }
   };
 
-  /// Extent of the points read: the tracers and, given none, the
-  /// randoms, else the displacement endpoints.
+  /// Extent of the points read: the tracers and the displacement
+  /// endpoints.
   void extent (const Input& in, double lo[3], double hi[3])
   {
     for (std::size_t k = 0; k < 3; ++k) { lo[k] = 1e300; hi[k] = -1e300; }
@@ -93,15 +93,12 @@ namespace {
       }
     };
     for (std::size_t i = 0; i < kN; ++i) add(&in.tracers[3*i]);
-    if (!in.randoms.empty())
-      for (std::size_t i = 0; i < in.randoms.size() / 3; ++i) add(&in.randoms[3*i]);
-    else
-      for (std::size_t i = 0; i < kN; ++i) {
-        const double end[3] = {in.tracers[3*i] + in.displacement[3*i],
-                               in.tracers[3*i+1] + in.displacement[3*i+1],
-                               in.tracers[3*i+2] + in.displacement[3*i+2]};
-        add(end);
-      }
+    for (std::size_t i = 0; i < kN; ++i) {
+      const double end[3] = {in.tracers[3*i] + in.displacement[3*i],
+                             in.tracers[3*i+1] + in.displacement[3*i+1],
+                             in.tracers[3*i+2] + in.displacement[3*i+2]};
+      add(end);
+    }
   }
 
   /// The placement of DivergenceGrid: one count, floor(E / s + 1) for the
@@ -173,15 +170,15 @@ int main ()
     check_placement(g, lo, hi, "endpoints");
   }
 
-  group("the grid on the tracers and the randoms");
+  group("without limits an endpoint beyond the tracers widens the grid");
   {
     Input in;
-    in.randoms = {-20., 10., 10., 50., 80., 40.};
+    in.displacement[0] = -20. - in.tracers[0];
     const DivergenceGrid g = internal::box_grid(in.search(), 0.5);
     double lo[3], hi[3];
     extent(in, lo, hi);
-    check(lo[0] == -20. && hi[1] == 80., "the randoms extend the extent");
-    check_placement(g, lo, hi, "randoms");
+    check(lo[0] == -20., "the endpoint sets the lower extent");
+    check_placement(g, lo, hi, "endpoint beyond the tracers");
   }
 
   group("with limits the grid is built on them, and overhangs them");
@@ -191,7 +188,6 @@ int main ()
     box.lower = {10., 10., 10.};
     box.upper = {50., 40., 20.};
     in.limits = box;
-    in.randoms = {15., 15., 15.};
     const DivergenceGrid g = internal::box_grid(in.search(), 1.);
     const double lo[3] = {10., 10., 10.}, hi[3] = {50., 40., 20.};
     check_placement(g, lo, hi, "limits");

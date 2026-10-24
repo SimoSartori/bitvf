@@ -42,9 +42,9 @@ bitvf::DivergenceGrid bitvf::internal::box_grid (const BoxSearch& search, const 
 {
   std::array<double, 3> lo, hi;
 
-  if (search.limits) {
-    lo = search.limits->lower;
-    hi = search.limits->upper;
+  if (search.box) {
+    lo = search.box->lower;
+    hi = search.box->upper;
   }
   else {
     lo.fill(std::numeric_limits<double>::infinity());
@@ -59,28 +59,18 @@ bitvf::DivergenceGrid bitvf::internal::box_grid (const BoxSearch& search, const 
           hi[k] = std::max(hi[k], tracers[3*i+k]);
         }
 
-    if (search.randomsGiven) {
-      const std::vector<double>& randoms = search.randoms;
-      for (std::size_t i = 0; i < randoms.size() / 3; ++i)
+    const std::vector<double>& displacement = *search.displacement;
+    const std::vector<std::uint8_t>& valid = *search.valid;
+    for (std::size_t r = 0; r < search.nRealizations; ++r)
+      for (std::size_t i = 0; i < N; ++i) {
+        const std::size_t row = r * N + i;
+        if (!search.inBox[i] || (!valid.empty() && !valid[row])) continue;
         for (std::size_t k = 0; k < 3; ++k) {
-          lo[k] = std::min(lo[k], randoms[3*i+k]);
-          hi[k] = std::max(hi[k], randoms[3*i+k]);
+          const double end = tracers[3*i+k] + displacement[3*row+k];
+          lo[k] = std::min(lo[k], end);
+          hi[k] = std::max(hi[k], end);
         }
-    }
-    else {
-      const std::vector<double>& displacement = *search.displacement;
-      const std::vector<std::uint8_t>& valid = *search.valid;
-      for (std::size_t r = 0; r < search.nRealizations; ++r)
-        for (std::size_t i = 0; i < N; ++i) {
-          const std::size_t row = r * N + i;
-          if (!search.inBox[i] || (!valid.empty() && !valid[row])) continue;
-          for (std::size_t k = 0; k < 3; ++k) {
-            const double end = tracers[3*i+k] + displacement[3*row+k];
-            lo[k] = std::min(lo[k], end);
-            hi[k] = std::max(hi[k], end);
-          }
-        }
-    }
+      }
   }
 
   const double mps = search.mps;

@@ -72,21 +72,13 @@ namespace bitvf {
       /// The identity of each tracer, as given; empty for none.
       const std::vector<std::int64_t>* ids = nullptr;
 
-      /// [tracer]: 0 for a tracer outside the box limits; all 1 without
-      /// them.
+      /// [tracer]: 0 for a tracer outside the box limits, or flagged in
+      /// otswap::Result::outsideBox; all 1 otherwise.
       std::vector<std::uint8_t> inBox;
 
       /// [tracer]: 1 for a tracer inside the limits but outside every cell
       /// of the reused grid; empty without a reused grid.
       std::vector<std::uint8_t> outsideGrid;
-
-      /// The randoms kept, inside the limits and the reused grid, [random][xyz];
-      /// empty when none were given.
-      std::vector<double> randoms;
-
-      /// Whether randoms were given; when not, the displacement endpoints
-      /// take their place.
-      bool randomsGiven = false;
 
       /// The mean particle separation of the search, in coordinate units.
       double mps = 0.;
@@ -100,12 +92,14 @@ namespace bitvf {
       /// fixed-point accumulation of the divergence.
       double maxDisplacement = 0.;
 
-      /// The box limits, when given.
-      std::optional<otswap::BoxLimits> limits;
+      /// The box the grid is built on: the limits given, or the
+      /// reconstruction's box (otswap::Result::box). Absent, the grid
+      /// covers the tracers read and the endpoints of their valid
+      /// displacements.
+      std::optional<otswap::BoxLimits> box;
 
       /// The counts known after the checks: tracers, tracersOutsideBox,
-      /// tracersOutsideGrid, randoms, randomsOutsideBox, randomsOutsideGrid,
-      /// displacements.
+      /// tracersOutsideGrid, displacements.
       Counts counts;
     };
 
@@ -124,7 +118,6 @@ namespace bitvf {
     BoxSearch check_box (const std::vector<double>& tracers,
                          const std::vector<double>& displacement,
                          const std::vector<std::uint8_t>& valid,
-                         const std::vector<double>& randoms,
                          double mps,
                          const Config& config,
                          const std::optional<otswap::BoxLimits>& limits,
@@ -135,8 +128,8 @@ namespace bitvf {
      *  @brief Check the arguments of the otswap::Result overload of
      *  findVoidsBox and select what the search reads.
      *
-     *  The tracers flagged in otswap::Result::outsideBox are skipped
-     *  unread. With a grid, its mps is the search's, and the
+     *  The box is otswap::Result::box. The tracers flagged in
+     *  otswap::Result::outsideBox are skipped unread. With a grid, its mps is the search's, and the
      *  reconstruction's is not read.
      *
      *  @exception Error as the overload above, and on a reconstruction that
@@ -144,7 +137,6 @@ namespace bitvf {
      */
     BoxSearch check_box (const otswap::Result& reconstruction,
                          const Config& config,
-                         const std::vector<double>& randoms,
                          const DivergenceGrid* grid);
 
     /**
@@ -173,9 +165,8 @@ namespace bitvf {
     /**
      *  @brief Build the box grid of a search.
      *
-     *  The extent is the box limits when given, otherwise the bounding box
-     *  of the tracers read and of the randoms kept, or of the endpoints of
-     *  the valid displacements read when no randoms were given. It is
+     *  The extent is search.box when set, otherwise the bounding box of the
+     *  tracers read and of the endpoints of their valid displacements. It is
      *  padded by 0.1 mps on each side and placed in a cube of cells as
      *  DivergenceGrid describes. Only the fields that define the cells, and
      *  mps, are set; the per-cell arrays are left empty.

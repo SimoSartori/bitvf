@@ -76,7 +76,6 @@ namespace {
 bitvf::Result bitvf::findVoidsBox (const std::vector<double>& tracers,
                                    const std::vector<double>& displacement,
                                    const std::vector<std::uint8_t>& valid,
-                                   const std::vector<double>& randoms,
                                    const double mps,
                                    const Config& config,
                                    const std::optional<otswap::BoxLimits>& limits,
@@ -84,7 +83,7 @@ bitvf::Result bitvf::findVoidsBox (const std::vector<double>& tracers,
                                    const DivergenceGrid* grid)
 {
   const internal::BoxSearch search =
-    internal::check_box(tracers, displacement, valid, randoms, mps, config, limits, ids, grid);
+    internal::check_box(tracers, displacement, valid, mps, config, limits, ids, grid);
   return search_box(search, config, grid);
 }
 
@@ -94,9 +93,8 @@ bitvf::Result bitvf::findVoidsBox (const std::vector<double>& tracers,
 
 bitvf::Result bitvf::findVoidsBox (const otswap::Result& reconstruction,
                                    const Config& config,
-                                   const std::vector<double>& randoms,
                                    const DivergenceGrid* grid)
 {
-  const internal::BoxSearch search = internal::check_box(reconstruction, config, randoms, grid);
+  const internal::BoxSearch search = internal::check_box(reconstruction, config, grid);
   return search_box(search, config, grid);
 }

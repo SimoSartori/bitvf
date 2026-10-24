@@ -46,10 +46,19 @@ namespace {
   constexpr std::size_t kR = 2;
   constexpr double kMps = 10.;
 
+  otswap::BoxLimits box (const double lo, const double hi)
+  {
+    otswap::BoxLimits limits;
+    limits.lower = {lo, lo, lo};
+    limits.upper = {hi, hi, hi};
+    return limits;
+  }
+
   /// A valid input: tracers uniform in [0, 100)^3, displacements within 2
-  /// of zero, all valid, no randoms.
+  /// of zero, all valid. Its reconstruction is recorded as otswap records
+  /// one given the limits [-2, 102]^3, which hold every endpoint.
   struct Input {
-    std::vector<double> tracers, displacement, randoms;
+    std::vector<double> tracers, displacement;
     std::vector<std::uint8_t> valid;
     double mps = kMps;
     Config config;
@@ -71,13 +80,12 @@ namespace {
 
     Result run () const
     {
-      return findVoidsBox(tracers, displacement, valid, randoms, mps, config, limits, ids, grid);
+      return findVoidsBox(tracers, displacement, valid, mps, config, limits, ids, grid);
     }
 
     internal::BoxSearch search () const
     {
-      return internal::check_box(tracers, displacement, valid, randoms, mps, config, limits, ids,
-                                 grid);
+      return internal::check_box(tracers, displacement, valid, mps, config, limits, ids, grid);
     }
 
     otswap::Result reconstruction () const
@@ -90,6 +98,8 @@ namespace {
       rec.displacement = displacement;
       rec.valid = valid;
       rec.mps = mps;
+      rec.selection.boxLimits = box(-2., 102.);
+      rec.box = rec.selection.boxLimits;
       return rec;
     }
   };
@@ -99,14 +109,6 @@ namespace {
   void accepted (F&& f, const std::string& what)
   {
     throws_naming(f, "not implemented", what);
-  }
-
-  otswap::BoxLimits box (const double lo, const double hi)
-  {
-    otswap::BoxLimits limits;
-    limits.lower = {lo, lo, lo};
-    limits.upper = {hi, hi, hi};
-    return limits;
   }
 
 }
@@ -125,10 +127,6 @@ int main ()
     logged.config.log = nullptr;
     logged.config.verbosity = otswap::Verbosity::Detailed;
     accepted([&] { logged.run(); }, "a null log");
-
-    Input withRandoms;
-    for (std::size_t i = 0; i < 3 * kN; ++i) withRandoms.randoms.push_back(50.);
-    accepted([&] { withRandoms.run(); }, "randoms given");
   }
 
   group("the tracers: empty, not a multiple of three, a non-finite coordinate on any row");
@@ -190,17 +188,6 @@ int main ()
     throws_naming([&] { two.run(); }, "valid holds 2 at entry 7", "V2");
   }
 
-  group("the randoms: a multiple of three, finite");
-  {
-    Input in;
-    in.randoms = {1., 2., 3., 4.};
-    throws_naming([&] { in.run(); }, "randoms holds 4 entries", "R1");
-
-    Input nan;
-    nan.randoms = {1., kNaN, 3.};
-    throws_naming([&] { nan.run(); }, "randoms holds a non-finite", "R2");
-  }
-
   group("mps: finite and positive");
   for (const double mps : {0., -1., kNaN, std::numeric_limits<double>::infinity()}) {
     Input in;
@@ -224,12 +211,9 @@ int main ()
     face.limits = box(0., 100.);
     face.tracers[0] = 100.;
     face.tracers[1] = 0.;
-    face.randoms = {100., 0., 50., 100.5, 50., 50.};
     const internal::BoxSearch search = face.search();
     check(search.inBox[0] == 1 && search.counts.tracersOutsideBox == 0,
           "a tracer on a face is inside");
-    check(search.counts.randomsOutsideBox == 1 && search.randoms.size() == 3,
-          "a random on a face is kept, one outside removed");
   }
 
   group("ids: one per tracer, no value twice");
@@ -379,12 +363,9 @@ int main ()
     half.nCellsAxis = {good.nCellsAxis[0] / 2, good.nCellsAxis[0] / 2, good.nCellsAxis[0] / 2};
     half.nCells = half.nCellsAxis[0] * half.nCellsAxis[0] * half.nCellsAxis[0];
     small.grid = &half;
-    small.randoms = {1., 1., 1., 99., 99., 99.};
     const internal::BoxSearch search = small.search();
     check(search.counts.tracersOutsideGrid > 0 && search.counts.tracersOutsideGrid < kN,
           "tracers outside a reused grid are flagged");
-    check(search.counts.randomsOutsideGrid == 1 && search.randoms.size() == 3,
-          "randoms outside a reused grid are removed");
   }
 
   group("the data: something left to read, the size of the grid");
@@ -396,11 +377,6 @@ int main ()
     Input away;
     away.limits = box(200., 300.);
     throws_naming([&] { away.run(); }, "no valid displacement is left", "E1, all outside");
-
-    Input randoms;
-    randoms.limits = box(-10., 110.);
-    randoms.randoms = {200., 200., 200.};
-    throws_naming([&] { randoms.run(); }, "no random is left", "E2");
 
     Input huge;
     huge.config.divergenceCellSize = 1e-9;
@@ -422,7 +398,7 @@ int main ()
     const std::vector<double> tracers = {0.5, 0.5, 0.5, 1.5, 0.5, 0.5};
 
     auto run = [&] (const std::vector<double>& displacement) {
-      findVoidsBox(tracers, displacement, {}, {}, 1., config, std::nullopt, {}, &cells);
+      findVoidsBox(tracers, displacement, {}, 1., config, std::nullopt, {}, &cells);
     };
     throws_naming([&] { run({1., 1., 0., 2.5, 0., 0.}); },
                   "displacement of tracer 1 in realization 0 ends outside every cell", "E6");
@@ -466,9 +442,26 @@ int main ()
     with([] (otswap::Result& r) { r.mps = kNaN; }, "the reconstruction's mps", "O5");
     with([] (otswap::Result& r) { r.selection.boxLimits = box(5., 1.); },
          "the reconstruction's box limits", "O6");
+    with([] (otswap::Result& r) { r.box.reset(); }, "it holds no box", "O6, no box");
+    with([] (otswap::Result& r) { r.box->upper[1] = kNaN; }, "every bound must be finite",
+         "O6, box not finite");
+    with([] (otswap::Result& r) { r.box = box(5., 1.); }, "must not be above the upper one",
+         "O6, box reversed");
+    with([] (otswap::Result& r) { r.selection.boxLimits = box(-10., 110.); },
+         "differs from its box limits", "O6, box not the limits");
+    with([] (otswap::Result& r) { r.tracers[3] = r.box->upper[0] + 1.; },
+         "tracer 1 lies outside its box", "O7");
+
+    otswap::Result plane = in.reconstruction();
+    for (std::size_t i = 0; i < kN; ++i) plane.tracers[3*i+2] = 50.;
+    plane.selection.boxLimits.reset();
+    plane.box->lower[2] = plane.box->upper[2] = 50.;
+    check(internal::check_box(plane, config, nullptr).box->upper[2] == 50.,
+          "O6 accepts a flat box");
 
     otswap::Result flagged = in.reconstruction();
     flagged.selection.boxLimits = box(-10., 110.);
+    flagged.box = flagged.selection.boxLimits;
     flagged.outsideBox.assign(kN, 0);
     flagged.outsideBox[1] = 1;
     flagged.tracers[4] = kNaN;
@@ -478,7 +471,7 @@ int main ()
     const DivergenceGrid grid = internal::box_grid(in.search(), 1.);
     otswap::Result other = in.reconstruction();
     other.mps = kNaN;
-    accepted([&] { findVoidsBox(other, config, {}, &grid); },
+    accepted([&] { findVoidsBox(other, config, &grid); },
              "O5 and X2: with a grid, the grid's mps wins");
 
     Input seven;
@@ -486,20 +479,44 @@ int main ()
     const DivergenceGrid grid7 = internal::box_grid(seven.search(), 1.);
     Config sigma = config;
     sigma.smoothing.sigma = 0.7;
-    check(internal::check_box(in.reconstruction(), sigma, {}, &grid7).sigmaLength == 0.7 * 7.,
+    check(internal::check_box(in.reconstruction(), sigma, &grid7).sigmaLength == 0.7 * 7.,
           "sigmaLength in Mps uses the reused grid's mps, not the reconstruction's");
 
     const otswap::Result rec = in.reconstruction();
-    const internal::BoxSearch a = in.search();
-    const internal::BoxSearch b = internal::check_box(rec, config, {}, nullptr);
+    Input limited = in;
+    limited.limits = rec.box;
+    const internal::BoxSearch a = limited.search();
+    const internal::BoxSearch b = internal::check_box(rec, config, nullptr);
     check(a.nTracers == b.nTracers && a.nRealizations == b.nRealizations && a.mps == b.mps &&
           a.sigmaLength == b.sigmaLength &&
-          a.maxDisplacement == b.maxDisplacement && a.inBox == b.inBox && a.randoms == b.randoms &&
-          a.counts.displacements == b.counts.displacements &&
-          a.counts.randoms == b.counts.randoms,
-          "both overloads select the same from the same arrays");
-    check(internal::box_grid(a, 1.).lower == internal::box_grid(b, 1.).lower,
+          a.maxDisplacement == b.maxDisplacement && a.inBox == b.inBox &&
+          a.box->lower == b.box->lower && a.box->upper == b.box->upper &&
+          a.counts.displacements == b.counts.displacements,
+          "both overloads select the same from the same arrays, the box as the limits");
+    check(internal::box_grid(a, 1.).lower == internal::box_grid(b, 1.).lower &&
+          internal::box_grid(a, 1.).upper == internal::box_grid(b, 1.).upper,
           "both overloads build the same grid");
+
+    otswap::Result wide = in.reconstruction();
+    wide.box = wide.selection.boxLimits = box(-30., 130.);
+    Input wideLimits = in;
+    wideLimits.limits = wide.box;
+    const DivergenceGrid g = internal::box_grid(internal::check_box(wide, config, nullptr), 1.);
+    check(g.lower == internal::box_grid(wideLimits.search(), 1.).lower && g.lower[0] < -30. &&
+          g.upper[0] > 130.,
+          "the grid is built on the reconstruction's box, wider than its tracers");
+  }
+
+  group("an endpoint beyond the box: E6 from a reconstruction, none from arrays without limits");
+  {
+    Input far;
+    far.displacement[0] = 150. - far.tracers[0];
+    otswap::Result rec = far.reconstruction();
+    throws_naming([&] { findVoidsBox(rec, far.config); },
+                  "ends outside every cell of the grid, which spans the box limits", "E6, box");
+    accepted([&] { far.run(); }, "arrays without limits cover the endpoints");
+    far.limits = rec.box;
+    throws_naming([&] { far.run(); }, "pass the box limits the reconstruction used", "E6, limits");
   }
 
   return report("test_checks");

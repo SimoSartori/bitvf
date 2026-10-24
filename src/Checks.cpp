@@ -144,17 +144,14 @@ namespace {
    *  the arrays, mps, the limits and the IDs are checked and the tracers
    *  outside the limits are known.
    *
-   *  Sets and checks sigmaLength; removes the randoms outside the limits;
-   *  with a grid, flags the tracers and removes the randoms outside it;
-   *  checks the valid displacements of the tracers read; counts.
+   *  Sets and checks sigmaLength; with a grid, flags the tracers outside
+   *  it; checks the valid displacements of the tracers read; counts.
    *
-   *  @param search the search, with every field but outsideGrid, randoms,
+   *  @param search the search, with every field but outsideGrid,
    *  sigmaLength and counts other than tracers and tracersOutsideBox set
-   *  @param randoms the randoms given
    *  @param displacementName the name of the displacements in the messages
    */
-  void select_box (bitvf::internal::BoxSearch& search, const std::vector<double>& randoms,
-                   const bitvf::Config& config, const bitvf::DivergenceGrid* grid,
+  void select_box (bitvf::internal::BoxSearch& search, const bitvf::Config& config, const bitvf::DivergenceGrid* grid,
                    const bool mpsMustMatch, const std::string& displacementName)
   {
     bitvf::internal::check_config(config, grid != nullptr);
@@ -171,20 +168,6 @@ namespace {
                          " to build the kernel; use 0 to disable the smoothing");
 
     const std::size_t N = search.nTracers;
-    const std::size_t nRandoms = randoms.size() / 3;
-    search.randomsGiven = nRandoms > 0;
-
-    std::vector<std::uint8_t> keep(nRandoms, 1);
-    if (search.limits) {
-      const otswap::BoxLimits& box = *search.limits;
-      for (std::size_t i = 0; i < nRandoms; ++i)
-        for (std::size_t k = 0; k < 3; ++k)
-          if (!(randoms[3*i+k] >= box.lower[k] && randoms[3*i+k] <= box.upper[k])) {
-            keep[i] = 0;
-            ++search.counts.randomsOutsideBox;
-            break;
-          }
-    }
 
     if (grid != nullptr) {
       search.outsideGrid.assign(N, 0);
@@ -193,18 +176,7 @@ namespace {
           search.outsideGrid[i] = 1;
           ++search.counts.tracersOutsideGrid;
         }
-      for (std::size_t i = 0; i < nRandoms; ++i)
-        if (keep[i] && bitvf::internal::box_cell(*grid, &randoms[3*i]) < 0) {
-          keep[i] = 0;
-          ++search.counts.randomsOutsideGrid;
-        }
     }
-
-    const std::size_t nKept = nRandoms - search.counts.randomsOutsideBox -
-                              search.counts.randomsOutsideGrid;
-    search.randoms.reserve(3 * nKept);
-    for (std::size_t i = 0; i < nRandoms; ++i)
-      if (keep[i]) search.randoms.insert(search.randoms.end(), &randoms[3*i], &randoms[3*i+3]);
 
     const std::vector<double>& displacement = *search.displacement;
     const std::vector<std::uint8_t>& valid = *search.valid;
@@ -246,15 +218,6 @@ namespace {
                          " tracers outside the limits, " +
                          std::to_string(search.counts.tracersOutsideGrid) +
                          " outside the grid)");
-
-    if (search.randomsGiven && nKept == 0)
-      throw bitvf::Error("no random is left: of " + std::to_string(nRandoms) + " randoms, " +
-                         std::to_string(search.counts.randomsOutsideBox) +
-                         " lie outside the box limits and " +
-                         std::to_string(search.counts.randomsOutsideGrid) +
-                         " outside the grid");
-
-    search.counts.randoms = search.randomsGiven ? nKept : nRead;
   }
 
 }
@@ -266,7 +229,6 @@ namespace {
 bitvf::internal::BoxSearch bitvf::internal::check_box (const std::vector<double>& tracers,
                                                        const std::vector<double>& displacement,
                                                        const std::vector<std::uint8_t>& valid,
-                                                       const std::vector<double>& randoms,
                                                        const double mps,
                                                        const Config& config,
                                                        const std::optional<otswap::BoxLimits>& limits,
@@ -291,8 +253,6 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const std::vector<double>
                 " tracers; give one per displacement, or none");
   check_valid(valid, "valid");
 
-  check_coordinates(randoms, "randoms", true);
-
   if (!std::isfinite(mps) || mps <= 0.)
     throw Error("mps is " + std::to_string(mps) + " in coordinate units; it must be finite and positive");
 
@@ -308,7 +268,7 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const std::vector<double>
   search.valid = &valid;
   search.ids = &ids;
   search.mps = mps;
-  search.limits = limits;
+  search.box = limits;
   search.counts.tracers = N;
 
   search.inBox.assign(N, 1);
@@ -321,7 +281,7 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const std::vector<double>
           break;
         }
 
-  select_box(search, randoms, config, grid, true, "displacement");
+  select_box(search, config, grid, true, "displacement");
   return search;
 }
 
@@ -331,7 +291,6 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const std::vector<double>
 
 bitvf::internal::BoxSearch bitvf::internal::check_box (const otswap::Result& reconstruction,
                                                        const Config& config,
-                                                       const std::vector<double>& randoms,
                                                        const DivergenceGrid* grid)
 {
   const otswap::Result& rec = reconstruction;
@@ -367,7 +326,6 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const otswap::Result& rec
   search.displacement = &rec.displacement;
   search.valid = &rec.valid;
   search.ids = &rec.ids;
-  search.limits = rec.selection.boxLimits;
   search.counts.tracers = N;
 
   search.inBox.assign(N, 1);
@@ -385,8 +343,6 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const otswap::Result& rec
                       std::to_string(3*i+k) + " (object " + std::to_string(i) + ", component " +
                       std::to_string(k) + ")");
 
-  check_coordinates(randoms, "randoms", true);
-
   if (grid == nullptr) {
     if (!std::isfinite(rec.mps) || rec.mps <= 0.)
       throw Error("the reconstruction's mps is " + std::to_string(rec.mps) +
@@ -395,9 +351,34 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const otswap::Result& rec
   }
   else search.mps = grid->mps;
 
-  if (search.limits) check_limits(*search.limits, "the reconstruction's box limits");
+  if (rec.selection.boxLimits) check_limits(*rec.selection.boxLimits, "the reconstruction's box limits");
 
-  select_box(search, randoms, config, grid, false, "the reconstruction's displacement");
+  if (!rec.box) throw Error(malformed + "it holds no box (otswap::Result::box)");
+  const otswap::BoxLimits& box = *rec.box;
+  for (std::size_t k = 0; k < 3; ++k) {
+    if (!std::isfinite(box.lower[k]) || !std::isfinite(box.upper[k]))
+      throw Error(malformed + "its box (otswap::Result::box) has a bound of " +
+                  std::to_string(std::isfinite(box.lower[k]) ? box.upper[k] : box.lower[k]) +
+                  " on axis " + kAxes[k] + "; every bound must be finite");
+    if (box.lower[k] > box.upper[k])
+      throw Error(malformed + "its box (otswap::Result::box) spans [" + exact(box.lower[k]) + ", " +
+                  exact(box.upper[k]) + "] on axis " + kAxes[k] +
+                  "; the lower bound must not be above the upper one");
+  }
+  if (rec.selection.boxLimits && (rec.selection.boxLimits->lower != box.lower ||
+                                  rec.selection.boxLimits->upper != box.upper))
+    throw Error(malformed + "its box (otswap::Result::box) differs from its box limits "
+                "(otswap::SelectionCounts::boxLimits); a reconstruction with limits uses them as its box");
+
+  for (std::size_t i = 0; i < N; ++i)
+    if (search.inBox[i])
+      for (std::size_t k = 0; k < 3; ++k)
+        if (!(rec.tracers[3*i+k] >= box.lower[k] && rec.tracers[3*i+k] <= box.upper[k]))
+          throw Error(malformed + "tracer " + std::to_string(i) + " lies outside its box "
+                      "(otswap::Result::box) and is not flagged in outsideBox");
+  search.box = box;
+
+  select_box(search, config, grid, false, "the reconstruction's displacement");
   return search;
 }
 

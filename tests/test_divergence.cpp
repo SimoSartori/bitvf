@@ -26,6 +26,7 @@
  *  of the number of threads.
  */
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -92,7 +93,7 @@ namespace {
   struct Case {
     DivergenceGrid grid;
     unsigned R;
-    std::vector<double> tracers, displacement, randoms;
+    std::vector<double> tracers, displacement;
     std::vector<std::uint8_t> valid;
     std::vector<std::int64_t> ids;
     std::vector<Vec> x;
@@ -123,8 +124,8 @@ namespace {
           if (std::isnan(d[i][r][0])) valid[r * N + i] = 0;
         }
       }
-      return internal::check_box(tracers, displacement, valid, randoms, 1., config, std::nullopt,
-                                 ids, &grid);
+      return internal::check_box(tracers, displacement, valid, 1., config, std::nullopt, ids,
+                                 &grid);
     }
 
     /// The divergence on a copy of the grid, left in out.
@@ -191,14 +192,16 @@ namespace {
   }
 
   /// Generated input: tracers uniform in [0, 100)^3, R = 4, displacements
-  /// uniform within 6 of zero, about 5% invalid, randoms covering every
-  /// endpoint.
+  /// uniform within 6 of zero, about 5% invalid; limits the bounding box
+  /// of the tracers and of randoms uniform in [-8, 108)^3, which covers
+  /// every endpoint.
   struct Generated {
     static constexpr std::size_t N = 20000;
     static constexpr unsigned R = 4;
     std::vector<double> tracers, displacement, randoms;
     std::vector<std::uint8_t> valid;
     std::vector<std::int64_t> ids;
+    otswap::BoxLimits limits;
     Config config;
 
     Generated ()
@@ -211,6 +214,13 @@ namespace {
       for (std::size_t i = 0; i < 3 * R * N; ++i) displacement.push_back(uniform(-6., 6.));
       for (std::size_t i = 0; i < R * N; ++i) valid.push_back(rng() % 20 != 0);
       for (std::size_t i = 0; i < 3 * N; ++i) randoms.push_back(uniform(-8., 108.));
+      limits.lower = {tracers[0], tracers[1], tracers[2]};
+      limits.upper = limits.lower;
+      for (const std::vector<double>* points : {&tracers, &randoms})
+        for (std::size_t i = 0; i < points->size(); ++i) {
+          limits.lower[i%3] = std::min(limits.lower[i%3], (*points)[i]);
+          limits.upper[i%3] = std::max(limits.upper[i%3], (*points)[i]);
+        }
       config.log = nullptr;
     }
 
@@ -218,8 +228,8 @@ namespace {
     /// the fill in passes.
     std::uint64_t hash (const double cellSizeMps, unsigned& passes) const
     {
-      const internal::BoxSearch s = internal::check_box(tracers, displacement, valid, randoms, 4.,
-                                                        config, std::nullopt, ids, nullptr);
+      const internal::BoxSearch s = internal::check_box(tracers, displacement, valid, 4., config,
+                                                        limits, ids, nullptr);
       DivergenceGrid g = internal::box_grid(s, cellSizeMps);
       const internal::BoxDivergence b = internal::box_divergence(s, g);
       passes = b.fillPasses;

@@ -322,9 +322,11 @@ namespace bitvf {
    *  Box. Cubic cells of side cellSize: cell (i, j, k) spans
    *  lower + (i, j, k) * cellSize to lower + (i + 1, j + 1, k + 1) *
    *  cellSize on the three axes, and is row (i * nY + j) * nZ + k, with
-   *  (nX, nY, nZ) = nCellsAxis. The grid is built from the bounding box of
-   *  the tracers and the randoms used, or from the box limits when they
-   *  are given, padded by 0.1 mps on each side. With E the padded extent
+   *  (nX, nY, nZ) = nCellsAxis. The grid is built from the box limits of
+   *  the call, or without them from the bounding box of the tracers read
+   *  and of the endpoints of their valid displacements; from a
+   *  reconstruction, from its box (otswap::Result::box). It is padded by
+   *  0.1 mps on each side. With E the padded extent
    *  and s the cell side, an axis needs floor(E / s + 1) cells; the
    *  largest count is used on all three axes, so the grid is a cube of
    *  cells even when the box is not. The padded box is then placed in the
@@ -538,12 +540,10 @@ namespace bitvf {
     /// excluded (Result::outsideCut).
     std::size_t tracersOutsideCut = 0;
 
-    /// N_r of delta2Mps: the randoms given and kept, or, in a box search
-    /// given no randoms, the displacement endpoints used.
+    /// Lightcone: N_r of delta2Mps, the randoms given and kept. 0 in a box.
     std::size_t randoms = 0;
 
-    std::size_t randomsOutsideBox = 0;   ///< box with limits: randoms given outside them, removed
-    std::size_t randomsOutsideGrid = 0;  ///< reused grid: randoms outside it, removed
+    std::size_t randomsOutsideGrid = 0;  ///< lightcone, reused grid: randoms outside it, removed
     std::size_t displacements = 0;       ///< valid displacements given
 
     /// Lightcone: valid displacements rejected because their endpoint, or a
@@ -663,11 +663,6 @@ namespace bitvf {
    *  entries, [realization][tracer], each 0 or 1; or empty, which means
    *  all valid.
    *
-   *  @param randoms Cartesian coordinates of randoms, or empty. Given, every
-   *  one inside the limits is used, as the random counts of delta2Mps and
-   *  in the extent of the grid. Empty, the displacement endpoints, tracer
-   *  plus displacement for every valid displacement, are used instead.
-   *
    *  @param mps mean particle separation, in coordinate units; must be
    *  positive. Use otswap::Result::mps of the reconstruction, or the
    *  overload below. With grid, it must equal grid->mps.
@@ -676,10 +671,13 @@ namespace bitvf {
    *
    *  @param limits the box limits, or none. Given, the tracers outside
    *  them keep their row but are skipped (TracerAssignment::inBox,
-   *  Counts::tracersOutsideBox), the randoms given outside them are removed
-   *  (Counts::randomsOutsideBox), and the grid is built on them instead of
-   *  on the extent of the tracers and randoms. A point on a face is
-   *  inside. Each bound must be finite, with lower[k] < upper[k].
+   *  Counts::tracersOutsideBox), and the grid is built on them. A point on
+   *  a face is inside. Each bound must be finite, with lower[k] <
+   *  upper[k]. Without them, the grid covers the tracers and the endpoints
+   *  of their valid displacements, tracer plus displacement, in every
+   *  realization, so that displacements from any source can be searched.
+   *  With them, pass the limits the reconstruction used, or a valid
+   *  displacement ending outside the grid is an error.
    *
    *  @param ids the identity of each tracer, copied into Result::ids: one
    *  per tracer, no value twice; or empty.
@@ -688,8 +686,7 @@ namespace bitvf {
    *  are used, and its mps sets the smoothing in mps and the delta2Mps
    *  radius; densities come from this search's own counts. Tracers outside
    *  every cell are excluded (Result::outsideGrid,
-   *  Counts::tracersOutsideGrid), and randoms outside every cell removed
-   *  (Counts::randomsOutsideGrid). Result::divergence, when kept, has the
+   *  Counts::tracersOutsideGrid). Result::divergence, when kept, has the
    *  reused cells with this search's values.
    *
    *  @exception Error
@@ -697,9 +694,8 @@ namespace bitvf {
    *    three; if the size of displacement is not 3 * nRealizations *
    *    nTracers for a whole nRealizations of at least 1 that fits in an
    *    unsigned; if valid is neither empty nor of size nRealizations *
-   *    nTracers, or holds a value other than 0 and 1; if the size of
-   *    randoms is not a multiple of three; if a coordinate of tracers or
-   *    randoms, or a component of a displacement read, is not finite; if
+   *    nTracers, or holds a value other than 0 and 1; if a coordinate of
+   *    tracers, or a component of a displacement read, is not finite; if
    *    ids is neither empty nor of size nTracers, or holds a value twice;
    *  - if mps is not finite and positive; if a bound of the limits is not
    *    finite, or a lower bound is not below the upper one;
@@ -715,10 +711,10 @@ namespace bitvf {
    *    nCellsAxis 0 or the three counts different, nCells not their cube,
    *    a field of the lightcone set; if config.divergenceCellSize is set;
    *    if mps differs from grid->mps, compared bit for bit;
-   *  - on the data: if no valid displacement is left to read; if randoms
-   *    were given and none is left after the limits and the reused grid;
-   *    if a valid displacement read ends outside every cell of the grid,
-   *    which means the arrays do not come from one reconstruction; if the
+   *  - on the data: if no valid displacement is left to read; with limits
+   *    or a reused grid, if a valid displacement read ends outside every
+   *    cell of the grid, which means the arrays do not come from one
+   *    reconstruction in that box; if the
    *    grid would hold more cells than an int64 index can address;
    *    if empty cells remain that the fill of the divergence (see
    *    DivergenceGrid::weight) cannot reach; if the divergence is 0 or
@@ -729,7 +725,6 @@ namespace bitvf {
   Result findVoidsBox (const std::vector<double>& tracers,
                        const std::vector<double>& displacement,
                        const std::vector<std::uint8_t>& valid,
-                       const std::vector<double>& randoms,
                        double mps,
                        const Config& config,
                        const std::optional<otswap::BoxLimits>& limits = std::nullopt,
@@ -741,18 +736,16 @@ namespace bitvf {
    *  reconstruction.
    *
    *  As the overload above, with tracers, displacement, valid, mps and ids
-   *  taken from the reconstruction. When the reconstruction had box
-   *  limits (otswap::SelectionCounts::boxLimits), they are the limits of
-   *  the search, and the tracers flagged in otswap::Result::outsideBox are
-   *  skipped without being read. Without them the grid spans the tracers
-   *  and randoms used; otswap::Result::box is not read. Given the same
-   *  arrays, the result equals that of the overload above.
+   *  taken from the reconstruction. The grid is built on
+   *  otswap::Result::box, the box the reconstruction used: its limits
+   *  (otswap::SelectionCounts::boxLimits), or the tracers' bounding box.
+   *  The tracers flagged in otswap::Result::outsideBox are skipped without
+   *  being read. Given the same arrays and otswap::Result::box as the
+   *  limits, the result equals that of the overload above.
    *
    *  @param reconstruction a box result of otswap::reconstructBox.
    *
    *  @param config the parameters of the search.
-   *
-   *  @param randoms Cartesian coordinates of randoms, or empty, as above.
    *
    *  @param grid a grid to reuse, or null, as above. Its mps wins over the
    *  reconstruction's without an error; at Detailed verbosity the report
@@ -761,15 +754,17 @@ namespace bitvf {
    *  @exception Error if the reconstruction is not a box result; if it is
    *  malformed: nObjects or nRealizations 0, tracers, displacement, valid,
    *  outsideBox or ids of a size that does not match them, valid holding a
-   *  value other than 0 and 1, ids holding a value twice; if its mps is
-   *  not finite and positive and no grid is given; and as above, but for
+   *  value other than 0 and 1, ids holding a value twice, box missing, with
+   *  a bound not finite or a lower bound above the upper one, or different
+   *  from selection.boxLimits when those are set, a tracer not flagged in
+   *  outsideBox lying outside box; if its mps is not finite and positive
+   *  and no grid is given; and as above, but for
    *  the mps of the grid, which wins over the reconstruction's. A positive
    *  smoothing.sigma in Mps is checked against the mps of the search: the
    *  grid's when given, otherwise the reconstruction's.
    */
   Result findVoidsBox (const otswap::Result& reconstruction,
                        const Config& config,
-                       const std::vector<double>& randoms = {},
                        const DivergenceGrid* grid = nullptr);
 
 }
