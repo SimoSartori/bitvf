@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <initializer_list>
+#include <memory>
 #include <utility>
 
 #ifdef _OPENMP
@@ -57,7 +58,7 @@ namespace {
    *  contiguous one
    *  @param buffer 4 n kTileLines entries per thread of the parallel region
    */
-  void convolve_axis (std::vector<double>& num, std::vector<double>& den, const std::size_t n,
+  void convolve_axis (double* num, double* den, const std::size_t n,
                       const int axis, const std::vector<double>& K, const std::size_t h,
                       std::vector<double>& buffer)
   {
@@ -82,7 +83,7 @@ namespace {
       double* outNum = inDen + tileSize;
       double* outDen = outNum + tileSize;
 
-#pragma omp for schedule(static)
+#pragma omp for schedule(dynamic)
       for (std::size_t t = 0; t < nTiles; ++t) {
         const std::size_t p0 = (t % nBlocks) * kTileLines;
         const std::size_t B = std::min(kTileLines, nInner - p0);
@@ -152,7 +153,7 @@ void bitvf::internal::box_smooth (DivergenceGrid& grid, const double sigmaLength
   if (unsmoothed != nullptr) *unsmoothed = std::move(grid.divergence);
   const std::vector<double>& field = unsmoothed != nullptr ? *unsmoothed : grid.divergence;
 
-  std::vector<double> num(C), den(C);
+  std::unique_ptr<double[]> num(new double[C]), den(new double[C]);
 #pragma omp parallel for schedule(static)
   for (std::size_t c = 0; c < C; ++c) {
     num[c] = grid.weight[c] * field[c];
@@ -166,12 +167,11 @@ void bitvf::internal::box_smooth (DivergenceGrid& grid, const double sigmaLength
 #endif
   std::vector<double> buffer(nThreads * 4 * n * kTileLines);
   for (const int axis : {2, 1, 0})
-    convolve_axis(num, den, n, axis, K, h, buffer);
+    convolve_axis(num.get(), den.get(), n, axis, K, h, buffer);
   std::vector<double>().swap(buffer);
 
+  if (unsmoothed != nullptr) grid.divergence.resize(C);
 #pragma omp parallel for schedule(static)
   for (std::size_t c = 0; c < C; ++c)
-    num[c] = den[c] > 1e-12 ? num[c] / den[c] : 0.;
-
-  grid.divergence = std::move(num);
+    grid.divergence[c] = den[c] > 1e-12 ? num[c] / den[c] : 0.;
 }
