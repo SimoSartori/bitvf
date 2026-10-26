@@ -21,7 +21,8 @@
 /**
  *  @file tests/test_checks.cpp
  *
- *  @brief The argument checks of findVoidsBox, both overloads.
+ *  @brief The argument checks of findVoidsBox, both overloads, and the
+ *  Result they return.
  */
 
 #include <cmath>
@@ -33,6 +34,12 @@
 #include <sstream>
 #include <string>
 #include <vector>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
+#include "otswap/Maths.h"
 
 #include "internal.h"
 #include "check.h"
@@ -104,11 +111,111 @@ namespace {
     }
   };
 
-  /// A call that passes every check ends in the error of the unbuilt search.
+  void threads (const int n)
+  {
+#ifdef _OPENMP
+    omp_set_num_threads(n);
+#else
+    (void)n;
+#endif
+  }
+
+  /// FNV-1a over raw bytes.
+  void hash_bytes (std::uint64_t& h, const void* data, const std::size_t size)
+  {
+    const unsigned char* p = static_cast<const unsigned char*>(data);
+    for (std::size_t i = 0; i < size; ++i) {
+      h ^= p[i];
+      h *= 0x100000001b3ull;
+    }
+  }
+
+  template <typename T>
+  void hash_vector (std::uint64_t& h, const std::vector<T>& v)
+  {
+    hash_bytes(h, v.data(), v.size() * sizeof(T));
+  }
+
+  /// The hash of every column of both catalogues.
+  std::uint64_t catalogue_hash (const Result& r)
+  {
+    std::uint64_t h = 0xcbf29ce484222325ull;
+    for (const BasinCatalog* c : {&r.voids, &r.overdense}) {
+      hash_bytes(h, &c->nBasins, sizeof(c->nBasins));
+      hash_vector(h, c->centre);
+      hash_vector(h, c->centreSky);
+      hash_vector(h, c->radius);
+      hash_vector(h, c->radiusExt);
+      hash_vector(h, c->deltaAv);
+      hash_vector(h, c->delta2Mps);
+      hash_vector(h, c->edgeFlag);
+      hash_vector(h, c->contamination);
+      hash_vector(h, c->nTracers);
+    }
+    return h;
+  }
+
+  /// The hash of everything a Result holds except elapsedSeconds.
+  std::uint64_t result_hash (const Result& r)
+  {
+    std::uint64_t h = catalogue_hash(r);
+    hash_bytes(h, &r.nTracers, sizeof(r.nTracers));
+    hash_bytes(h, &r.nRealizations, sizeof(r.nRealizations));
+    hash_bytes(h, &r.mps, sizeof(r.mps));
+    const double cellSize = r.config.divergenceCellSize.value_or(-1.);
+    hash_bytes(h, &cellSize, sizeof(cellSize));
+    hash_vector(h, r.ids);
+    hash_vector(h, r.outsideGrid);
+    const std::size_t counts[] = {r.counts.tracers, r.counts.tracersUsed, r.counts.tracersOutsideBox,
+                                  r.counts.tracersOutsideGrid, r.counts.displacements,
+                                  r.counts.displacementsRejected};
+    hash_bytes(h, counts, sizeof(counts));
+    if (r.divergence) {
+      const DivergenceGrid& g = *r.divergence;
+      hash_bytes(h, g.lower.data(), sizeof(g.lower));
+      hash_bytes(h, &g.cellSize, sizeof(g.cellSize));
+      hash_bytes(h, &g.nCells, sizeof(g.nCells));
+      hash_vector(h, g.centre);
+      hash_vector(h, g.volume);
+      hash_vector(h, g.divergence);
+      hash_vector(h, g.weight);
+      hash_vector(h, g.nDisplacements);
+      hash_vector(h, g.nTracers);
+      hash_vector(h, g.voidIndex);
+      hash_vector(h, g.overdenseIndex);
+    }
+    if (r.assignment) {
+      const TracerAssignment& a = *r.assignment;
+      hash_vector(h, a.cellIndex);
+      hash_vector(h, a.voidIndex);
+      hash_vector(h, a.overdenseIndex);
+      hash_vector(h, a.distance);
+      hash_vector(h, a.inMask);
+      hash_vector(h, a.inBox);
+      hash_vector(h, a.used);
+    }
+    return h;
+  }
+
+  /// Every column of a catalogue of the right size.
+  bool sized (const BasinCatalog& c)
+  {
+    const std::size_t B = c.nBasins;
+    return c.centre.size() == 3 * B && c.centreSky.empty() && c.radius.size() == B &&
+           c.radiusExt.size() == B && c.deltaAv.size() == B && c.delta2Mps.size() == B &&
+           c.edgeFlag.size() == B && c.contamination.size() == B && c.nTracers.size() == B;
+  }
+
+  /// A call that passes every check returns a Result.
   template <typename F>
   void accepted (F&& f, const std::string& what)
   {
-    throws_naming(f, "not implemented", what);
+    try {
+      f();
+    }
+    catch (const std::exception& e) {
+      check(false, what + " (threw \"" + e.what() + "\")");
+    }
   }
 
 }
@@ -517,6 +624,134 @@ int main ()
     accepted([&] { far.run(); }, "arrays without limits cover the endpoints");
     far.limits = rec.box;
     throws_naming([&] { far.run(); }, "pass the box limits the reconstruction used", "E6, limits");
+  }
+
+  group("the Result: its fields, with and without the kept outputs");
+  {
+    const Result r = Input().run();
+    check(r.geometry == otswap::Geometry::Box && r.nTracers == kN && r.nRealizations == kR && r.mps == kMps,
+          "geometry, nTracers, nRealizations, mps");
+    check(r.config.divergenceCellSize == otswap::maths::cbrt(20. / kR), "the default cell size, recorded");
+    check(r.counts.tracers == kN && r.counts.tracersUsed == kN && r.counts.displacements == kR * kN &&
+          r.counts.tracersOutsideBox == 0 && r.counts.tracersOutsideGrid == 0, "counts");
+    check(r.ids.empty() && !r.randomSeed && r.outsideGrid.empty() && r.uncorrected.empty() &&
+          r.outsideCut.empty() && !r.distances, "the fields a box search without ids leaves empty");
+    check(!r.divergence && !r.assignment, "no divergence or assignment unless kept");
+    check(r.voids.nBasins > 0 && sized(r.voids) && sized(r.overdense), "both catalogues, every column");
+    check(std::isfinite(r.elapsedSeconds) && r.elapsedSeconds >= 0., "elapsedSeconds");
+
+    Input kept;
+    kept.config.keepDivergence = true;
+    kept.config.keepAssignment = true;
+    const Result k = kept.run();
+    check(catalogue_hash(k) == catalogue_hash(r), "the kept outputs change no catalogue");
+    check(k.divergence && k.assignment, "divergence and assignment kept");
+    const DivergenceGrid& g = *k.divergence;
+    DivergenceGrid centres = g;
+    internal::box_centres(centres);
+    bool volume = g.volume.size() == g.nCells;
+    for (const double v : g.volume) volume = volume && v == g.cellSize * g.cellSize * g.cellSize;
+    check(g.centre.size() == 3 * g.nCells && g.centre == centres.centre && volume,
+          "the grid's centre and volume");
+    check(g.divergence.size() == g.nCells && g.voidIndex.size() == g.nCells &&
+          g.overdenseIndex.size() == g.nCells && g.divergenceUnsmoothed.empty(), "the grid's per-cell fields");
+    bool seeds = true;
+    for (std::size_t b = 0; b < k.voids.nBasins; ++b)
+      seeds = seeds && g.voidIndex[(std::size_t)internal::box_cell(g, &k.voids.centre[3*b])] == (std::int64_t)b;
+    for (std::size_t b = 0; b < k.overdense.nBasins; ++b)
+      seeds = seeds &&
+              g.overdenseIndex[(std::size_t)internal::box_cell(g, &k.overdense.centre[3*b])] == (std::int64_t)b;
+    check(seeds, "every centre in a cell of its basin");
+
+    const TracerAssignment& a = *k.assignment;
+    bool assigned = a.cellIndex.size() == kN && a.distance.size() == kN;
+    for (std::size_t i = 0; assigned && i < kN; ++i) {
+      const std::int64_t c = internal::box_cell(g, &kept.tracers[3*i]);
+      const std::int64_t v = a.voidIndex[i], o = a.overdenseIndex[i];
+      const double* x = v >= 0 ? &k.voids.centre[3*(std::size_t)v] : &k.overdense.centre[3*(std::size_t)o];
+      const double dx = kept.tracers[3*i] - x[0];
+      const double dy = kept.tracers[3*i+1] - x[1];
+      const double dz = kept.tracers[3*i+2] - x[2];
+      assigned = a.cellIndex[i] == c && v == g.voidIndex[(std::size_t)c] && o == g.overdenseIndex[(std::size_t)c] &&
+                 a.distance[i] == std::sqrt(dx*dx + dy*dy + dz*dz) && a.inMask[i] == 1 && a.inBox[i] == 1 &&
+                 a.used[i] == 1;
+    }
+    check(assigned, "every tracer's cell, basin and distance");
+
+    Input named = kept;
+    for (std::size_t i = 0; i < kN; ++i) named.ids.push_back((std::int64_t)(1000 - 3 * i));
+    const Result n = named.run();
+    check(n.ids == named.ids && catalogue_hash(n) == catalogue_hash(r), "ids copied, no catalogue changed");
+  }
+
+  group("both overloads give the same Result from the same arrays");
+  {
+    Input in;
+    in.config.keepDivergence = true;
+    in.config.keepAssignment = true;
+    const otswap::Result rec = in.reconstruction();
+    in.limits = rec.box;
+    check(result_hash(in.run()) == result_hash(findVoidsBox(rec, in.config)), "equal hashes");
+  }
+
+  group("a reused grid: the same catalogues, the tracers outside it not read, the cell size recorded");
+  {
+    Input in;
+    in.config.keepDivergence = true;
+    in.config.keepAssignment = true;
+    const Result first = in.run();
+
+    const std::size_t extra = 5;
+    Input more = in;
+    more.tracers.clear();
+    more.displacement.clear();
+    for (std::size_t i = 0; i < kN + extra; ++i)
+      for (std::size_t a = 0; a < 3; ++a) more.tracers.push_back(i < kN ? in.tracers[3*i+a] : 150. + i);
+    for (std::size_t r = 0; r < kR; ++r)
+      for (std::size_t i = 0; i < kN + extra; ++i)
+        for (std::size_t a = 0; a < 3; ++a)
+          more.displacement.push_back(i < kN ? in.displacement[3*(r*kN+i)+a] : 1.);
+    more.valid.clear();
+    more.config.keepDivergence = false;
+    more.grid = &*first.divergence;
+    const Result r = more.run();
+
+    std::vector<std::uint8_t> outside(kN + extra, 0);
+    for (std::size_t i = kN; i < kN + extra; ++i) outside[i] = 1;
+    check(catalogue_hash(r) == catalogue_hash(first), "the catalogues of the grid's own search");
+    check(r.outsideGrid == outside && r.counts.tracersOutsideGrid == extra && r.counts.tracersUsed == kN,
+          "outsideGrid and the counts");
+    check(r.config.divergenceCellSize == first.divergence->cellSize / first.divergence->mps,
+          "the cell size of the grid, in mps");
+    const TracerAssignment& a = *r.assignment;
+    bool unread = true;
+    for (std::size_t i = kN; i < kN + extra; ++i)
+      unread = unread && a.cellIndex[i] == -1 && a.voidIndex[i] == -1 && a.overdenseIndex[i] == -1 &&
+               std::isnan(a.distance[i]) && a.used[i] == 0;
+    check(unread, "the tracers outside it: no cell, no basin, distance NaN, not used");
+    bool same = true;
+    for (std::size_t i = 0; i < kN; ++i)
+      same = same && a.cellIndex[i] == first.assignment->cellIndex[i] &&
+             a.distance[i] == first.assignment->distance[i];
+    check(same, "the tracers inside it as in the grid's own search");
+  }
+
+  group("the same Result with 1 and 4 threads");
+  {
+    Input in;
+    in.config.keepDivergence = true;
+    in.config.keepAssignment = true;
+    threads(1);
+    const std::uint64_t one = result_hash(in.run());
+    threads(4);
+    const std::uint64_t four = result_hash(in.run());
+    const otswap::Result rec = in.reconstruction();
+    threads(1);
+    const std::uint64_t recOne = result_hash(findVoidsBox(rec, in.config));
+    threads(4);
+    const std::uint64_t recFour = result_hash(findVoidsBox(rec, in.config));
+    check(one == four, "arrays");
+    check(recOne == recFour, "reconstruction");
   }
 
   return report("test_checks");

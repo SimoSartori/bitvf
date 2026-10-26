@@ -283,22 +283,27 @@ namespace bitvf {
     /// mean density mps^-3 (mps(z)^-3 in a lightcone), minus 1.
     std::vector<double> deltaAv;
 
-    /// Density contrast within 2 mps of the centre (2 mps(z) at the
-    /// centre's redshift in a lightcone): n_t / (n_r N_t / N_r) - 1, with
-    /// n_t and n_r the tracers and randoms in the sphere, and N_t / N_r one
-    /// ratio of the tracers to the randoms over the whole search
-    /// (Counts::randoms).
+    /// Density contrast within 2 mps of the centre, the sphere closed. In
+    /// a box, n_t over its volume, divided by the mean density mps^-3,
+    /// minus 1, with n_t the tracers the search reads (inside the limits
+    /// and the reused grid) in the sphere. In a lightcone, within 2 mps(z)
+    /// at the centre's redshift, n_t / (n_r N_t / N_r) - 1, with n_t and
+    /// n_r the tracers and randoms in the sphere and N_t / N_r one ratio of
+    /// the tracers to the randoms over the whole search (Counts::randoms).
     std::vector<double> delta2Mps;
 
     /// Contact with the boundary: 0 none; 1 only the extended basin
     /// touches it; 2 the core already touches it. The boundary is, in a
     /// box, the faces of the grid, with or without box limits; in a
     /// lightcone, the masked cells, the cells outside the survey and the
-    /// borders of the grid.
+    /// borders of the grid. In a box, a basin touches the boundary when one
+    /// of its cells lies on a face of the grid.
     std::vector<std::uint8_t> edgeFlag;
 
     /// Fraction of the basin's surface that lies on the boundary of
-    /// edgeFlag.
+    /// edgeFlag. In a box, the faces of its cells on the faces of the grid,
+    /// over those faces plus the faces its cells share with cells of other
+    /// basins; 1 for a basin that fills the grid.
     std::vector<double> contamination;
 
     /// Tracers starting in the cells of the core: the count behind
@@ -500,8 +505,9 @@ namespace bitvf {
     /// Row of the tracer's overdense basin in Result::overdense; -1 none.
     std::vector<std::int64_t> overdenseIndex;
 
-    /// Distance from the centre of the tracer's void, in coordinate units;
-    /// NaN without one.
+    /// Distance from the centre of the tracer's basin, its void or its
+    /// overdense basin, in coordinate units; NaN for a tracer not in a
+    /// basin (not read by the search).
     std::vector<double> distance;
 
     /// 0 when the tracer falls on an unobserved pixel of the mask; all 1 in
@@ -646,8 +652,9 @@ namespace bitvf {
    *
    *  The divergence of the displacement field is computed on a grid of
    *  cubic cells (DivergenceGrid), smoothed (Config::smoothing) and
-   *  divided by a watershed into basins around its minima, the voids, and
-   *  its maxima, the overdense basins.
+   *  divided by a watershed into basins around its local minima: the
+   *  voids, below 0, and the overdense basins, at or above 0
+   *  (BasinCatalog).
    *
    *  @param tracers Cartesian coordinates of the tracers, the start of
    *  their displacements, 3 * nTracers entries.
@@ -711,7 +718,9 @@ namespace bitvf {
    *    nCellsAxis 0 or the three counts different, nCells not their cube,
    *    a field of the lightcone set; if config.divergenceCellSize is set;
    *    if mps differs from grid->mps, compared bit for bit;
-   *  - on the data: if no valid displacement is left to read; with limits
+   *  - on the data: if the search reads more than 4294967295 tracers, the
+   *    most the count of delta2Mps supports; if no valid displacement is
+   *    left to read; with limits
    *    or a reused grid, if a valid displacement read ends outside every
    *    cell of the grid, which means the arrays do not come from one
    *    reconstruction in that box; if the

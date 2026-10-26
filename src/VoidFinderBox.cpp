@@ -26,6 +26,9 @@
  *  @author Simone Sartori <simone.sartori@inaf.it>
  */
 
+#include <chrono>
+#include <utility>
+
 #include "otswap/Maths.h"
 
 #include "internal.h"
@@ -34,20 +37,28 @@ namespace {
 
   /**
    *  @brief The search shared by both overloads, once the arguments are
-   *  checked: the grid, then the steps of the search.
+   *  checked: the grid, then the steps of the search, then the result.
    *  @param grid the grid to reuse, or null to build one
+   *  @param start the time the public call began, for
+   *  Result::elapsedSeconds
    */
   bitvf::Result search_box (const bitvf::internal::BoxSearch& search, const bitvf::Config& config,
-                            const bitvf::DivergenceGrid* grid)
+                            const bitvf::DivergenceGrid* grid,
+                            const std::chrono::steady_clock::time_point start)
   {
+    bitvf::Result result;
+    result.config = config;
+
     bitvf::DivergenceGrid cells;
     if (grid == nullptr) {
       const double cellSizeMps = config.divergenceCellSize
         ? *config.divergenceCellSize
         : otswap::maths::cbrt(20. / search.nRealizations);
+      result.config.divergenceCellSize = cellSizeMps;
       cells = bitvf::internal::box_grid(search, cellSizeMps);
     }
     else {
+      result.config.divergenceCellSize = grid->cellSize / grid->mps;
       cells.geometry = grid->geometry;
       cells.mps = grid->mps;
       cells.cellSize = grid->cellSize;
@@ -57,14 +68,34 @@ namespace {
       cells.nCells = grid->nCells;
     }
 
-    bitvf::internal::box_divergence(search, cells);
+    const bitvf::internal::BoxDivergence div = bitvf::internal::box_divergence(search, cells);
     bitvf::internal::box_smooth(cells, search.sigmaLength,
                                 config.keepUnsmoothedDivergence ? &cells.divergenceUnsmoothed : nullptr);
     bitvf::internal::BoxBasins basins;
     bitvf::internal::box_watershed(cells, basins);
+    bitvf::internal::box_basins(search, div, cells, basins, result.voids, result.overdense);
 
-    throw bitvf::Error("findVoidsBox is not implemented yet: the arguments are checked and the "
-                       "divergence is computed, smoothed and split into basins, the search is not");
+    result.nTracers = search.nTracers;
+    result.nRealizations = search.nRealizations;
+    result.geometry = otswap::Geometry::Box;
+    result.ids = *search.ids;
+    result.outsideGrid = search.outsideGrid;
+    result.mps = search.mps;
+    result.counts = search.counts;
+    result.counts.tracersUsed = div.nUsed;
+
+    if (config.keepAssignment)
+      result.assignment = bitvf::internal::box_assignment(search, div, cells, result.voids, result.overdense);
+
+    if (config.keepDivergence) {
+      bitvf::internal::box_centres(cells);
+      cells.volume.assign(cells.nCells, cells.cellSize * cells.cellSize * cells.cellSize);
+      result.divergence = std::move(cells);
+    }
+
+    result.elapsedSeconds =
+      std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    return result;
   }
 
 }
@@ -82,9 +113,10 @@ bitvf::Result bitvf::findVoidsBox (const std::vector<double>& tracers,
                                    const std::vector<std::int64_t>& ids,
                                    const DivergenceGrid* grid)
 {
+  const auto start = std::chrono::steady_clock::now();
   const internal::BoxSearch search =
     internal::check_box(tracers, displacement, valid, mps, config, limits, ids, grid);
-  return search_box(search, config, grid);
+  return search_box(search, config, grid, start);
 }
 
 
@@ -95,6 +127,7 @@ bitvf::Result bitvf::findVoidsBox (const otswap::Result& reconstruction,
                                    const Config& config,
                                    const DivergenceGrid* grid)
 {
+  const auto start = std::chrono::steady_clock::now();
   const internal::BoxSearch search = internal::check_box(reconstruction, config, grid);
-  return search_box(search, config, grid);
+  return search_box(search, config, grid, start);
 }

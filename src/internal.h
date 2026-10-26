@@ -358,6 +358,44 @@ namespace bitvf {
      */
     void box_watershed (DivergenceGrid& grid, BoxBasins& basins);
 
+    //==========================================================================
+
+    /**
+     *  @brief Fill the catalogues of a box grid split by box_watershed, as
+     *  BasinCatalog describes for a box.
+     *
+     *  The centre is computed from the divergence of the seed's neighbours,
+     *  cut at the faces of the grid and taken in ascending row order, with a
+     *  sum of 0 over |div_n| read as 1. It is then clamped to the seed cell,
+     *  per axis, and moved by the least steps of one ulp that make
+     *  box_cell return the seed for it. The radii and deltaAv come from the
+     *  counts of basins, edgeFlag and contamination from the faces of the
+     *  cells counted in integers, delta2Mps from the tracers read (cell of
+     *  div at or above 0) within 2 mps of the centre, the sphere closed.
+     *  The result does not depend on the number of threads.
+     *
+     *  Reads divergence, voidIndex, overdenseIndex, mps and the fields that
+     *  define the cells of grid; cell of div; the tracers of search. Writes
+     *  every field of both catalogues; centreSky is left empty.
+     *
+     *  @exception Error internal, if the search of the tracers around the
+     *  centres fails, with the meshsearch error nested when there is one
+     */
+    void box_basins (const BoxSearch& search, const BoxDivergence& div, const DivergenceGrid& grid,
+                     const BoxBasins& basins, BasinCatalog& voids, BasinCatalog& overdense);
+
+    /**
+     *  @brief Where each input tracer of a box search ended up, from the
+     *  catalogues box_basins filled.
+     *
+     *  A tracer read gets its cell, the void or the overdense basin of that
+     *  cell, and its distance from the centre of that basin; a tracer not
+     *  read gets -1, -1 and NaN. inMask is all 1, inBox and used are those
+     *  of search and div.
+     */
+    TracerAssignment box_assignment (const BoxSearch& search, const BoxDivergence& div, const DivergenceGrid& grid,
+                                     const BasinCatalog& voids, const BasinCatalog& overdense);
+
   }
 }
 

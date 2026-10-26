@@ -178,6 +178,12 @@ namespace {
         }
     }
 
+    const std::size_t nTracersRead = N - search.counts.tracersOutsideBox - search.counts.tracersOutsideGrid;
+    if (nTracersRead > std::numeric_limits<unsigned>::max())
+      throw bitvf::Error("tracers: the search reads " + std::to_string(nTracersRead) + " tracers, more than " +
+                         std::to_string(std::numeric_limits<unsigned>::max()) +
+                         ", the most the count within 2 mps of a centre (delta2Mps) supports");
+
     const std::vector<double>& displacement = *search.displacement;
     const std::vector<std::uint8_t>& valid = *search.valid;
     const std::size_t rows = (std::size_t)search.nRealizations * N;
