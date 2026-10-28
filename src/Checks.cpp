@@ -275,6 +275,7 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const std::vector<double>
   search.ids = &ids;
   search.mps = mps;
   search.box = limits;
+  search.limits = limits;
   search.counts.tracers = N;
 
   search.inBox.assign(N, 1);
@@ -383,6 +384,7 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const otswap::Result& rec
           throw Error(malformed + "tracer " + std::to_string(i) + " lies outside its box "
                       "(otswap::Result::box) and is not flagged in outsideBox");
   search.box = box;
+  search.limits = rec.selection.boxLimits;
 
   select_box(search, config, grid, false, "the reconstruction's displacement");
   return search;
@@ -405,6 +407,10 @@ void bitvf::internal::check_config (const Config& config, const bool gridGiven)
       throw Error("the divergence cell size is " + std::to_string(cell) +
                   " mean particle separations; it must be finite and positive");
   }
+
+  if (config.nRealizationsMean == 0)
+    throw Error("the number of realizations averaged is 0; it must be at least 1 "
+                "(1 for displacements of single realizations)");
 
   if (config.keepUnsmoothedDivergence && !config.keepDivergence)
     throw Error("keeping the unsmoothed divergence requires keeping the divergence");
@@ -456,11 +462,20 @@ void bitvf::internal::check_box_grid (const DivergenceGrid& grid, const double m
     throw Error(bad + "has an mps of " + std::to_string(grid.mps) +
                 " in coordinate units; it must be finite and positive");
 
+  if (!std::isfinite(grid.cellSizeMps) || grid.cellSizeMps <= 0.)
+    throw Error(bad + "has a cell size of " + std::to_string(grid.cellSizeMps) +
+                " mps (cellSizeMps); it must be finite and positive");
+
+  if (grid.cellSize != grid.cellSizeMps * grid.mps)
+    throw Error(bad + "has a cell side of " + exact(grid.cellSize) +
+                " in coordinate units, but cellSizeMps * mps is " + exact(grid.cellSizeMps * grid.mps) +
+                "; they must be equal");
+
   const bool lightconeSet =
     !std::isnan(grid.distanceMin) || !std::isnan(grid.distanceMax) ||
     !std::isnan(grid.raMin) || !std::isnan(grid.raMax) ||
     !std::isnan(grid.decMin) || !std::isnan(grid.decMax) ||
-    !std::isnan(grid.cellSizeMps) || !grid.mpsProfile.redshift.empty() || !grid.mpsProfile.mps.empty() ||
+    !grid.mpsProfile.redshift.empty() || !grid.mpsProfile.mps.empty() ||
     !grid.mpsProfile.count.empty();
   if (lightconeSet)
     throw Error(bad + "is a box grid with a field of a lightcone grid set");

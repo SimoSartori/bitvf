@@ -367,6 +367,14 @@ int main ()
     throws_naming([&] { unsmoothed.run(); }, "requires keeping the divergence", "C3");
     unsmoothed.config.keepDivergence = true;
     accepted([&] { unsmoothed.run(); }, "C3 accepts both");
+
+    Input averaged;
+    averaged.config.nRealizationsMean = 0;
+    throws_naming([&] { averaged.run(); }, "the number of realizations averaged is 0", "C5");
+    throws_naming([&] { findVoidsBox(averaged.reconstruction(), averaged.config); },
+                  "the number of realizations averaged is 0", "C5, reconstruction");
+    averaged.config.nRealizationsMean = 7;
+    check(averaged.run().config.nRealizationsMean == 7, "nRealizationsMean copied into the Result");
   }
 
   group("the smoothing sigma in coordinate units, (2 sigma) sigma positive and finite: both "
@@ -445,6 +453,13 @@ int main ()
          "three counts must be equal and positive", "G4, zero");
     with([] (DivergenceGrid& g) { g.nCells += 1; }, "it must have their cube", "G5");
     with([] (DivergenceGrid& g) { g.mps = kNaN; }, "has an mps of", "G6");
+    for (const double c : {0., -1., kNaN, kInf})
+      with([c] (DivergenceGrid& g) { g.cellSizeMps = c; }, "mps (cellSizeMps); it must be finite and positive",
+           "G8");
+    with([] (DivergenceGrid& g) { g.cellSizeMps = std::nextafter(g.cellSizeMps, 2.); },
+         "but cellSizeMps * mps is", "G9, one ulp of cellSizeMps");
+    with([] (DivergenceGrid& g) { g.cellSize = std::nextafter(g.cellSize, 0.); },
+         "but cellSizeMps * mps is", "G9, one ulp of cellSize");
     with([] (DivergenceGrid& g) { g.raMin = 0.; }, "field of a lightcone grid", "G7");
     with([] (DivergenceGrid& g) { g.mpsProfile.redshift = {0.5}; }, "field of a lightcone grid",
          "G7, the profile");
@@ -454,7 +469,12 @@ int main ()
     DivergenceGrid reused = good;
     reused.divergence = {1., 2.};
     reused.voidIndex = {7};
+    check(good.cellSizeMps == 1. && good.cellSize == kMps, "box_grid records cellSizeMps beside cellSize");
+
     Input in;
+    in.grid = &good;
+    accepted([&] { in.run(); }, "a box grid with cellSizeMps set is no G7");
+
     in.grid = &reused;
     accepted([&] { in.run(); }, "per-cell fields are ignored");
 
@@ -497,6 +517,7 @@ int main ()
     cells.geometry = otswap::Geometry::Box;
     cells.mps = 1.;
     cells.cellSize = 1.;
+    cells.cellSizeMps = 1.;
     cells.lower = {0., 0., 0.};
     cells.upper = {4., 4., 4.};
     cells.nCellsAxis = {4, 4, 4};
@@ -767,8 +788,22 @@ int main ()
     check(catalogue_hash(r) == catalogue_hash(first), "the catalogues of the grid's own search");
     check(r.outsideGrid == outside && r.counts.tracersOutsideGrid == extra && r.counts.tracersUsed == kN,
           "outsideGrid and the counts");
-    check(r.config.divergenceCellSize == first.divergence->cellSize / first.divergence->mps,
-          "the cell size of the grid, in mps");
+    check(r.config.divergenceCellSize == first.divergence->cellSizeMps, "the cell size of the grid, in mps");
+
+    DivergenceGrid skew = *first.divergence;
+    const double c = 1.001799;
+    skew.mps = 31.94434690031884;
+    check(skew.mps > first.divergence->cellSize && (c * skew.mps) / skew.mps != c,
+          "a cell size whose cellSize / mps differs from it, on a grid larger than the first");
+    skew.cellSizeMps = c;
+    skew.cellSize = c * skew.mps;
+    Input onSkew = in;
+    onSkew.mps = skew.mps;
+    onSkew.config.keepDivergence = false;
+    onSkew.grid = &skew;
+    const Result s = onSkew.run();
+    check(s.config.divergenceCellSize == c && *s.config.divergenceCellSize != skew.cellSize / skew.mps,
+          "cellSizeMps recorded, not cellSize / mps, where the two differ");
     const TracerAssignment& a = *r.assignment;
     bool unread = true;
     for (std::size_t i = kN; i < kN + extra; ++i)
@@ -780,6 +815,43 @@ int main ()
       same = same && a.cellIndex[i] == first.assignment->cellIndex[i] &&
              a.distance[i] == first.assignment->distance[i];
     check(same, "the tracers inside it as in the grid's own search");
+  }
+
+  group("the limits recorded: on the grid and the Result, as given, otswap's, none, the call's on reuse");
+  {
+    Input in;
+    in.config.keepDivergence = true;
+    in.limits = box(-2.5, 102.5);
+    const Result given = in.run();
+    check(given.limits && given.limits->lower == in.limits->lower && given.limits->upper == in.limits->upper &&
+          given.divergence->limits && given.divergence->limits->lower == in.limits->lower &&
+          given.divergence->limits->upper == in.limits->upper, "the array limits");
+
+    const otswap::Result rec = in.reconstruction();
+    const Result fromRec = findVoidsBox(rec, in.config);
+    const otswap::BoxLimits& sel = *rec.selection.boxLimits;
+    check(fromRec.limits && fromRec.limits->lower == sel.lower && fromRec.limits->upper == sel.upper &&
+          fromRec.divergence->limits && fromRec.divergence->limits->lower == sel.lower &&
+          fromRec.divergence->limits->upper == sel.upper, "otswap::SelectionCounts::boxLimits");
+
+    Input none = in;
+    none.limits.reset();
+    const Result without = none.run();
+    check(!without.limits && !without.divergence->limits, "empty without limits");
+
+    Input reuse = none;
+    reuse.grid = &*without.divergence;
+    reuse.limits = box(1., 99.);
+    const Result reused = reuse.run();
+    check(reused.limits && reused.limits->lower == reuse.limits->lower &&
+          reused.limits->upper == reuse.limits->upper && reused.divergence->limits &&
+          reused.divergence->limits->lower == reuse.limits->lower &&
+          reused.divergence->limits->upper == reuse.limits->upper, "the call's limits on a reused grid");
+    Input reuseNone = reuse;
+    reuseNone.grid = &*given.divergence;
+    reuseNone.limits.reset();
+    const Result reusedNone = reuseNone.run();
+    check(!reusedNone.limits && !reusedNone.divergence->limits, "none on a grid built with limits, reused without");
   }
 
   group("the same Result with 1 and 4 threads");

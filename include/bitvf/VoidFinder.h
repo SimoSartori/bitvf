@@ -217,6 +217,13 @@ namespace bitvf {
     /// default: it holds one entry per tracer in several arrays.
     bool keepAssignment = false;
 
+    /// Realizations averaged into each displacement given: 1 for the
+    /// displacements of single realizations; for the displacements of a
+    /// mean displacement file, the NREC of that file. A record only,
+    /// written as the keyword NRECMEAN of bitvf's files; no computation
+    /// reads it. Must be at least 1.
+    unsigned nRealizationsMean = 1;
+
     /// What the call reports, at otswap's levels; each line starts with
     /// "bitvf: " and ends in '\n'. Every number reported is also in
     /// Result::counts.
@@ -318,10 +325,11 @@ namespace bitvf {
    *  An output: filled in Result::divergence when Config::keepDivergence
    *  is set, or read from a divergence file. The void finder takes one
    *  back as a grid to reuse. A reuse reads only the fields that define
-   *  the cells, marked so below, and mps or mpsProfile; it checks that
-   *  they are consistent, and throws Error otherwise. The per-cell
-   *  results of the search that filled the grid (divergence, weights,
-   *  counts, basin indices, cell limits) are ignored, whatever their size.
+   *  the cells, marked so below, cellSizeMps, and mps or mpsProfile; it
+   *  checks that they are consistent, and throws Error otherwise. The
+   *  per-cell results of the search that filled the grid (divergence,
+   *  weights, counts, basin indices, cell limits) and its box limits are
+   *  ignored, whatever their size.
    *  Cell c is row c; basins are ordered by the index of their seed cell.
    *
    *  Box. Cubic cells of side cellSize: cell (i, j, k) spans
@@ -368,7 +376,7 @@ namespace bitvf {
     std::size_t nCells = 0;
 
     /// Box, defines the cells: cell side, in coordinate units,
-    /// Config::divergenceCellSize times mps. NaN in a lightcone.
+    /// cellSizeMps times mps. NaN in a lightcone.
     double cellSize = std::numeric_limits<double>::quiet_NaN();
 
     /// Box, defines the cells: x, y, z of the lower grid face, in
@@ -389,6 +397,12 @@ namespace bitvf {
     /// three axes. 0 in a lightcone.
     std::array<std::size_t, 3> nCellsAxis = {0, 0, 0};
 
+    /// Box: the box limits of the search that filled the grid; the tracers
+    /// outside them were skipped. Empty without limits and in a lightcone.
+    /// Not part of the cells: a search reusing the grid does not read it,
+    /// its own limits apply.
+    std::optional<otswap::BoxLimits> limits;
+
     /// Lightcone, defines the cells: comoving distance range of the
     /// tracers and randoms the grid covers, in coordinate units. NaN in a
     /// box.
@@ -406,8 +420,10 @@ namespace bitvf {
     double decMin = std::numeric_limits<double>::quiet_NaN();
     double decMax = std::numeric_limits<double>::quiet_NaN();
 
-    /// Lightcone, defines the cells: Config::divergenceCellSize used, in
-    /// units of mps(z). NaN in a box.
+    /// Config::divergenceCellSize used. In a box, in units of mps, a record
+    /// of the choice beside cellSize, which is cellSizeMps * mps as built,
+    /// and which a search reusing the grid reports in Result::config; in a
+    /// lightcone, in units of mps(z), and it defines the cells.
     double cellSizeMps = std::numeric_limits<double>::quiet_NaN();
 
     /// Box: the mean particle separation the grid was built with, in
@@ -622,6 +638,11 @@ namespace bitvf {
     /// outsideGrid, checked in that order.
     std::vector<std::uint8_t> outsideCut;
 
+    /// Box: the box limits of the search, the limits given or
+    /// otswap::SelectionCounts::boxLimits; the tracers outside them were
+    /// skipped. Empty without limits and in a lightcone.
+    std::optional<otswap::BoxLimits> limits;
+
     /// Box: the mean particle separation the search used, in coordinate
     /// units: the one given, otswap::Result::mps, or a reused grid's. NaN
     /// in a lightcone.
@@ -708,15 +729,17 @@ namespace bitvf {
    *    finite, or a lower bound is not below the upper one;
    *  - on config: if smoothing.sigma is not finite and non-negative; if
    *    divergenceCellSize is set and not finite and positive; if
-   *    keepUnsmoothedDivergence is set without keepDivergence; if
+   *    nRealizationsMean is 0; if keepUnsmoothedDivergence is set without keepDivergence; if
    *    smoothing.sigma is positive but, in coordinate units (times mps in
    *    Mps), below about 1e-162 or above about 1e154, too small or too
    *    large to build the kernel;
    *  - on grid: if it is not a box grid; if a field that defines the cells
-   *    is inconsistent: cellSize or mps not finite and positive, a bound of
-   *    lower or upper not finite or lower[k] not below upper[k], a count of
-   *    nCellsAxis 0 or the three counts different, nCells not their cube,
-   *    a field of the lightcone set; if config.divergenceCellSize is set;
+   *    is inconsistent: cellSize, mps or cellSizeMps not finite and
+   *    positive, cellSize not equal to cellSizeMps * mps bit for bit, a
+   *    bound of lower or upper not finite or lower[k] not below upper[k], a
+   *    count of nCellsAxis 0 or the three counts different, nCells not
+   *    their cube, a field of the lightcone set; if
+   *    config.divergenceCellSize is set;
    *    if mps differs from grid->mps, compared bit for bit;
    *  - on the data: if the search reads more than 4294967295 tracers, the
    *    most the count of delta2Mps supports; if no valid displacement is

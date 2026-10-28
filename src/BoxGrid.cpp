@@ -79,6 +79,7 @@ bitvf::DivergenceGrid bitvf::internal::box_grid (const BoxSearch& search, const 
   grid.geometry = otswap::Geometry::Box;
   grid.mps = mps;
   grid.cellSize = cellSizeMps * mps;
+  grid.cellSizeMps = cellSizeMps;
 
   double count = 0.;
   for (std::size_t k = 0; k < 3; ++k) {

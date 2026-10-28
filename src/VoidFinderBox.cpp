@@ -58,15 +58,17 @@ namespace {
       cells = bitvf::internal::box_grid(search, cellSizeMps);
     }
     else {
-      result.config.divergenceCellSize = grid->cellSize / grid->mps;
+      result.config.divergenceCellSize = grid->cellSizeMps;
       cells.geometry = grid->geometry;
       cells.mps = grid->mps;
       cells.cellSize = grid->cellSize;
+      cells.cellSizeMps = grid->cellSizeMps;
       cells.lower = grid->lower;
       cells.upper = grid->upper;
       cells.nCellsAxis = grid->nCellsAxis;
       cells.nCells = grid->nCells;
     }
+    cells.limits = search.limits;
 
     const bitvf::internal::BoxDivergence div = bitvf::internal::box_divergence(search, cells);
     bitvf::internal::box_smooth(cells, search.sigmaLength,
@@ -80,6 +82,7 @@ namespace {
     result.geometry = otswap::Geometry::Box;
     result.ids = *search.ids;
     result.outsideGrid = search.outsideGrid;
+    result.limits = search.limits;
     result.mps = search.mps;
     result.counts = search.counts;
     result.counts.tracersUsed = div.nUsed;

@@ -1,0 +1,184 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/********************************************************************
+ * Copyright (C) 2026 by Simone Sartori, simone.sartori@inaf.it     *
+ *                                                                  *
+ * This program is free software; you can redistribute it and/or    *
+ * modify it under the terms of the GNU General Public License as   *
+ * published by the Free Software Foundation; either version 2 of   *
+ * the License, or (at your option) any later version.              *
+ *                                                                  *
+ * This program is distributed in the hope that it will be useful,  *
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of   *
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the    *
+ * GNU General Public License for more details.                     *
+ *                                                                  *
+ * You should have received a copy of the GNU General Public        *
+ * License along with this program; if not, write to the Free       *
+ * Software Foundation, Inc., 51 Franklin Street, Fifth Floor,      *
+ * Boston, MA 02110-1301 USA.                                       *
+ ********************************************************************/
+
+/**
+ *  @file include/bitvf/io.h
+ *
+ *  @brief The writers of the results of the void finder.
+ *
+ *  Each writer writes one product of a Result, a table with one row per
+ *  void, overdense basin, cell or input tracer. The format follows the
+ *  extension of the file name, as in otswap::io: FITS for .fits, .fit and
+ *  .fits.gz, ASCII for anything else, with the layouts otswap::io::write
+ *  produces. An existing file is overwritten. Every check runs before the
+ *  file is opened, so a call that throws leaves no file.
+ *
+ *  Lengths are in coordinate units, which bitvf cannot know, so their
+ *  columns carry no unit and their descriptions say "in coordinate units".
+ *  Index columns hold rows of the products: index is the row of the file
+ *  itself, voidIndex, overdenseIndex and cellIndex the rows of the voids,
+ *  overdense basins and divergence files of the same result, -1 for none.
+ *  Counts and indices are 64-bit integers (FITS K), flags 32-bit integers
+ *  (FITS J) holding 0 or 1, and every other column a double (FITS D),
+ *  written in ASCII with 9 significant digits, or 17 in the divergence
+ *  file, which then reads back as the same double. FITS stores the doubles
+ *  themselves. NaN is written as NaN.
+ *
+ *  Every file starts with these keywords, in this order:
+ *  - PRODUCT, what the file holds: voids, overdense_basins, divergence or
+ *    galaxies;
+ *  - BITVFV, the bitvf version that wrote it;
+ *  - GEOMETRY, box;
+ *  - the row count: NBASINS (voids, overdense basins), NCELLS (divergence)
+ *    or NOBJECTS (galaxies, the input tracers);
+ *  - NREC, Result::nRealizations;
+ *  - NRECMEAN, Config::nRealizationsMean of the search;
+ *  - SIGMA and SIGUNIT, the smoothing sigma and its unit, mps or
+ *    coordinate;
+ *  - CELLSIZE, the divergence cell size used, in units of the mps;
+ *  - MPS, the mean particle separation, in coordinate units;
+ *  - RANDSEED, Result::randomSeed, when set;
+ *  - BOXLIM = 1, then BOXXLO, BOXXHI, BOXYLO, BOXYHI, BOXZLO, BOXZHI, the
+ *    box limits of the search in coordinate units, when Result::limits is
+ *    set.
+ *
+ *  A number is written as the shortest decimal of at most 17 significant
+ *  digits that reads back as the same double, an integer as an integer;
+ *  otswap::io::readKeywords returns them as written, in both formats.
+ *
+ *  Only box results are written for now.
+ *
+ *  @author Simone Sartori <simone.sartori@inaf.it>
+ */
+
+#ifndef BITVF_IO_H
+#define BITVF_IO_H
+
+#include <string>
+
+#include "bitvf/VoidFinder.h"
+
+namespace bitvf::io {
+
+  /// The products, each with its file-name stem: voids,
+  /// overdense_basins, divergence, galaxies.
+  enum class Product { Voids, Overdense, Divergence, Galaxies };
+
+  /**
+   *  @brief The conventional name of the file of a product.
+   *
+   *  <directory>/<stem>_[zspace_]<name>, with the stem of the product. A
+   *  '/' is added only when directory is not empty and does not end in
+   *  one; an empty directory gives <stem>_[zspace_]<name>. The extension,
+   *  which sets the format, is part of name.
+   *
+   *  @param zspace true only for the redshift-space pass of a run with
+   *  redshift-space correction, whose files then do not collide with those
+   *  of the real-space pass.
+   *
+   *  @exception Error if name is empty.
+   */
+  std::string fileName (Product product, const std::string& directory, const std::string& name, bool zspace);
+
+  /**
+   *  @brief Write the voids, one row per void (Result::voids).
+   *
+   *  Columns: index (K); centreX, centreY, centreZ, in coordinate units;
+   *  radius, radiusExt, in coordinate units; deltaAv; delta2Mps; edgeFlag
+   *  (J); contamination; nTracers (K). Keywords as listed in the file
+   *  description, the row count NBASINS. ASCII: 9 significant digits.
+   *
+   *  @exception Error
+   *  - if the result is not a box result;
+   *  - if it is malformed: Config::divergenceCellSize empty,
+   *    Config::nRealizationsMean 0, a column of the catalogue not of
+   *    nBasins entries (centre 3 * nBasins), centreSky not empty, a count
+   *    above the largest 64-bit integer;
+   *  - if the file cannot be written: the message starts with "otswap: ",
+   *    the otswap::Error nested.
+   */
+  void writeVoids (const std::string& file, const Result& result);
+
+  /**
+   *  @brief Write the overdense basins, one row per basin
+   *  (Result::overdense), with the columns, keywords and errors of
+   *  writeVoids.
+   */
+  void writeOverdense (const std::string& file, const Result& result);
+
+  /**
+   *  @brief Write the divergence grid, one row per cell
+   *  (Result::divergence).
+   *
+   *  Columns: index (K); cellX, cellY, cellZ, the cell centre, in
+   *  coordinate units; divergence, after smoothing; divergenceUnsmoothed,
+   *  only when DivergenceGrid::divergenceUnsmoothed is not empty; volume, in
+   *  coordinate units cubed; weight; nDispl (K), the displacement ends
+   *  counted; nTracers (K); voidIndex (K); overdenseIndex (K). ASCII: 17
+   *  significant digits.
+   *
+   *  Keywords as listed in the file description, the row count NCELLS,
+   *  followed by the record of the grid: LOWERX, LOWERY, LOWERZ, UPPERX,
+   *  UPPERY, UPPERZ, CELLSIDE, in coordinate units, and NCELLX, NCELLY,
+   *  NCELLZ. With MPS and CELLSIZE, they hold every field that defines the
+   *  cells at 17 significant digits, so the grid read back is the same bit
+   *  for bit.
+   *
+   *  @exception Error
+   *  - if the result is not a box result, or holds no divergence grid
+   *    (Config::keepDivergence);
+   *  - if the grid fails the checks of a grid to reuse (see findVoidsBox),
+   *    the message starting with "cannot write the divergence: ";
+   *  - if it is malformed: as writeVoids; a column of the grid not of
+   *    nCells entries (centre 3 * nCells; divergenceUnsmoothed nCells or
+   *    none); the mps, cellSizeMps or limits of the grid different from
+   *    Result::mps, Config::divergenceCellSize or Result::limits, bit for
+   *    bit;
+   *  - if the file cannot be written, as writeVoids.
+   */
+  void writeDivergence (const std::string& file, const Result& result);
+
+  /**
+   *  @brief Write where each tracer ended up, one row per input tracer,
+   *  in input order (Result::assignment).
+   *
+   *  Columns: id (K), Result::ids, or the row from 0 when it is empty;
+   *  cellIndex (K); voidIndex (K); overdenseIndex (K); distance, from the
+   *  centre of the tracer's basin, in coordinate units, NaN for a tracer
+   *  not in a basin; inMask (J); inBox (J), only when Result::limits is
+   *  set; used (J); uncorrected (J), only when Result::uncorrected is not
+   *  empty; outsideGrid (J), only when Result::outsideGrid is not empty.
+   *  Keywords as listed in the file description, the row count NOBJECTS.
+   *  ASCII: 9 significant digits.
+   *
+   *  @exception Error
+   *  - if the result is not a box result, or holds no tracer assignment
+   *    (Config::keepAssignment);
+   *  - if it is malformed: Config::divergenceCellSize empty,
+   *    Config::nRealizationsMean 0; ids, uncorrected or outsideGrid
+   *    neither empty nor of nTracers entries; a column of the assignment
+   *    not of nTracers entries;
+   *  - if the file cannot be written, as writeVoids.
+   */
+  void writeGalaxies (const std::string& file, const Result& result);
+
+}
+
+#endif

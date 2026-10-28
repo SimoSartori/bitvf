@@ -98,6 +98,10 @@ namespace bitvf {
       /// displacements.
       std::optional<otswap::BoxLimits> box;
 
+      /// The box limits of the search: the limits given, or
+      /// otswap::SelectionCounts::boxLimits; empty without them.
+      std::optional<otswap::BoxLimits> limits;
+
       /// The counts known after the checks: tracers, tracersOutsideBox,
       /// tracersOutsideGrid, displacements.
       Counts counts;
@@ -148,7 +152,9 @@ namespace bitvf {
     void check_config (const Config& config, bool gridGiven);
 
     /**
-     *  @brief Check the fields of a box grid to reuse that define its cells.
+     *  @brief Check the fields of a box grid to reuse that define its cells,
+     *  and cellSizeMps against them; also the record of a divergence file
+     *  before it is written.
      *  @param mps the mps of the search
      *  @param mpsMustMatch whether mps must equal grid.mps, bit for bit
      *  @exception Error on an inconsistent field, or on a different mps

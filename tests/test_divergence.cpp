@@ -73,6 +73,7 @@ namespace {
     g.geometry = otswap::Geometry::Box;
     g.mps = 1.;
     g.cellSize = s;
+    g.cellSizeMps = s;
     g.lower = {0., 0., 0.};
     g.upper = {n * s, n * s, n * s};
     g.nCellsAxis = {n, n, n};
