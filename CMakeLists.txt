@@ -82,14 +82,14 @@ find_package(OpenMP COMPONENTS CXX)
 # ---------------------------------------------------------------------------
 # otswap
 #
-# An installed otswap 0.2.x is used when found, through CMAKE_PREFIX_PATH or
-# otswap_DIR; otherwise the pinned tag is fetched and built from source, and
-# brings meshsearch the same way. A parent project that already defines
+# An installed otswap 0.2.x, 0.2.1 or later, is used when found, through
+# CMAKE_PREFIX_PATH or otswap_DIR; otherwise the pinned tag is fetched and
+# built from source, and brings meshsearch the same way. A parent project that already defines
 # otswap::otswap provides its own.
 # ---------------------------------------------------------------------------
 
-set(BITVF_OTSWAP_VERSION 0.2)
-set(BITVF_OTSWAP_TAG "v0.2.0" CACHE STRING
+set(BITVF_OTSWAP_VERSION 0.2.1)
+set(BITVF_OTSWAP_TAG "v0.2.1" CACHE STRING
     "otswap tag to fetch when no installed otswap is found")
 set(BITVF_OTSWAP_REPOSITORY "https://github.com/SimoSartori/otswap.git"
     CACHE STRING "otswap repository to fetch from; may be a local path")
@@ -218,8 +218,8 @@ endif()
 #
 # find_package(bitvf 0.1 CONFIG) then bitvf::bitvf. Its dependencies are
 # found again on the consumer's machine by bitvfConfig.cmake: otswap 0.2.x,
-# which brings meshsearch and cfitsio, and OpenMP when bitvf was built with
-# it.
+# 0.2.1 or later, which brings meshsearch and cfitsio, and OpenMP when bitvf
+# was built with it.
 # ---------------------------------------------------------------------------
 
 if (BITVF_INSTALL)

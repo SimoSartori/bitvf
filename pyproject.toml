@@ -10,7 +10,7 @@ requires-python = ">= 3.10"
 license = "GPL-2.0-or-later"
 license-files = ["LICENSE"]
 authors = [{ name = "Simone Sartori" }]
-dependencies = ["otswap >= 0.2, < 0.3"]
+dependencies = ["otswap >= 0.2.1, < 0.3"]
 
 [project.optional-dependencies]
 test = ["pytest"]

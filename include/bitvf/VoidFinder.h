@@ -747,7 +747,9 @@ namespace bitvf {
    *  As the overload above, with tracers, displacement, valid, mps and ids
    *  taken from the reconstruction. The grid is built on
    *  otswap::Result::box, the box the reconstruction used: its limits
-   *  (otswap::SelectionCounts::boxLimits), or the tracers' bounding box.
+   *  (otswap::SelectionCounts::boxLimits), or without them the bounding box
+   *  of the tracers and the given randoms (of the tracers alone when the
+   *  randoms were drawn). Every endpoint otswap computes lies inside it.
    *  The tracers flagged in otswap::Result::outsideBox are skipped without
    *  being read. Given the same arrays and otswap::Result::box as the
    *  limits, the result equals that of the overload above.

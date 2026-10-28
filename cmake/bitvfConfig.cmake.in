@@ -2,8 +2,8 @@
 
 include(CMakeFindDependencyMacro)
 
-# otswap: any patch release of the minor version bitvf requires. It finds
-# meshsearch and cfitsio in turn.
+# otswap: the release bitvf requires or a later patch release of its minor
+# version. It finds meshsearch and cfitsio in turn.
 find_dependency(otswap @BITVF_OTSWAP_VERSION@ CONFIG)
 
 # OpenMP, when bitvf was built with it. AppleClang needs to be pointed at a

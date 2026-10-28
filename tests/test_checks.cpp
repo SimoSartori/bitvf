@@ -25,6 +25,7 @@
  *  Result they return.
  */
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <iomanip>
@@ -49,6 +50,7 @@ using namespace bitvf;
 namespace {
 
   constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
+  constexpr double kInf = std::numeric_limits<double>::infinity();
   constexpr std::size_t kN = 200;
   constexpr std::size_t kR = 2;
   constexpr double kMps = 10.;
@@ -370,7 +372,6 @@ int main ()
   group("the smoothing sigma in coordinate units, (2 sigma) sigma positive and finite: both "
         "overloads, both units, both sides of both limits (C4)");
   {
-    constexpr double kInf = std::numeric_limits<double>::infinity();
     const double tiny = std::ldexp(1., -538);
     double big = std::sqrt(std::numeric_limits<double>::max() / 2);
     while (std::isfinite(2 * std::nextafter(big, kInf) * std::nextafter(big, kInf)))
@@ -624,6 +625,51 @@ int main ()
     accepted([&] { far.run(); }, "arrays without limits cover the endpoints");
     far.limits = rec.box;
     throws_naming([&] { far.run(); }, "pass the box limits the reconstruction used", "E6, limits");
+  }
+
+  group("an otswap reconstruction on given randoms beyond the tracers, without limits: no E6");
+  {
+    const Input in;
+    std::mt19937 rng(7);
+    std::vector<double> randoms;
+    for (std::size_t i = 0; i < 3 * kR * kN; ++i) randoms.push_back(-30. + 160. * (rng() / 4294967296.));
+    otswap::BoxLimits tracersBox = box(kInf, -kInf);
+    for (std::size_t i = 0; i < kN; ++i)
+      for (std::size_t a = 0; a < 3; ++a) {
+        tracersBox.lower[a] = std::min(tracersBox.lower[a], in.tracers[3*i+a]);
+        tracersBox.upper[a] = std::max(tracersBox.upper[a], in.tracers[3*i+a]);
+      }
+    otswap::Config ot;
+    ot.nRealizations = kR;
+    ot.seed = 1;
+    ot.log = nullptr;
+
+    for (const bool givenMps : {true, false}) {
+      const otswap::Result rec = givenMps ? otswap::reconstructBox(in.tracers, randoms, kMps, ot)
+                                          : otswap::reconstructBox(in.tracers, randoms, ot);
+      const std::string what = givenMps ? "mps given" : "mps computed";
+      bool inside = true, beyond = false;
+      for (std::size_t j = 0; j < kR * kN; ++j)
+        for (std::size_t a = 0; a < 3; ++a) {
+          const double end = rec.tracers[3*(j%kN)+a] + rec.displacement[3*j+a];
+          inside = inside && end >= rec.box->lower[a] && end <= rec.box->upper[a];
+          beyond = beyond || end < tracersBox.lower[a] || end > tracersBox.upper[a];
+        }
+      check(!rec.selection.boxLimits && inside && beyond,
+            what + ": endpoints beyond the tracers' bounding box, all inside otswap::Result::box");
+
+      Input arrays = in;
+      arrays.displacement = rec.displacement;
+      arrays.valid = rec.valid;
+      arrays.mps = rec.mps;
+      arrays.limits = tracersBox;
+      throws_naming([&] { arrays.run(); }, "ends outside every cell of the grid",
+                    what + ": E6 on the tracers' bounding box");
+      accepted([&] { findVoidsBox(rec, in.config); }, what + ": the reconstruction accepted");
+      arrays.limits = rec.box;
+      check(result_hash(arrays.run()) == result_hash(findVoidsBox(rec, in.config)),
+            what + ": equal to the arrays with otswap::Result::box as the limits");
+    }
   }
 
   group("the Result: its fields, with and without the kept outputs");
