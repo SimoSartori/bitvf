@@ -46,6 +46,7 @@
 #include <omp.h>
 #endif
 
+#include "otswap/Maths.h"
 #include "otswap/io.h"
 
 #include "bitvf/io.h"
@@ -102,8 +103,8 @@ namespace {
 
   /// A search on tracers uniform in [0, 100)^3, kOut more beyond the
   /// limits [-2, 102]^3, displaced at random and towards the centre, so
-  /// that both kinds of basin appear; every output kept, IDs of both signs
-  /// and three realizations averaged.
+  /// that both kinds of basin appear on cells of cbrt(10) mps; every
+  /// output kept, IDs of both signs and three realizations averaged.
   struct Input {
     std::vector<double> tracers, displacement;
     std::vector<std::uint8_t> valid;
@@ -131,6 +132,7 @@ namespace {
       config.keepUnsmoothedDivergence = true;
       config.keepAssignment = true;
       config.nRealizationsMean = 3;
+      config.divergenceCellSize = otswap::maths::cbrt(10.);
     }
 
     Result run () const
@@ -640,6 +642,12 @@ int main ()
               "the result is malformed: the box limits of its divergence grid differ", "WR6, limits absent");
     malformed([] (Result& b) { b.limits->upper[1] = std::nextafter(b.limits->upper[1], 200.); }, write_divergence,
               "the result is malformed: the box limits of its divergence grid differ", "WR6, one bound");
+    malformed([] (Result& b) { b.divergence->nRealizations += 1; }, write_divergence,
+              "the result is malformed: its divergence grid records 3 realizations, but the search's are 2",
+              "WR6, nRealizations");
+    malformed([] (Result& b) { b.config.nRealizationsMean = 4; }, write_divergence,
+              "the result is malformed: its divergence grid records 3 realizations averaged, but its "
+              "configuration records 4", "WR6, nRealizationsMean");
 
     for (auto write : {write_voids, write_overdense, write_divergence, write_galaxies}) {
       malformed([] (Result& b) { b.config.divergenceCellSize.reset(); }, write,

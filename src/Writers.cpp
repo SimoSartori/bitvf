@@ -299,6 +299,14 @@ void bitvf::io::writeDivergence (const std::string& file, const Result& result)
       (grid.limits && (grid.limits->lower != result.limits->lower || grid.limits->upper != result.limits->upper)))
     throw Error(malformed + "the box limits of its divergence grid differ from those of the search; "
                 "they must be equal");
+  if (grid.nRealizations != result.nRealizations)
+    throw Error(malformed + "its divergence grid records " + std::to_string(grid.nRealizations) +
+                " realizations, but the search's are " + std::to_string(result.nRealizations) +
+                "; they must be equal");
+  if (grid.nRealizationsMean != result.config.nRealizationsMean)
+    throw Error(malformed + "its divergence grid records " + std::to_string(grid.nRealizationsMean) +
+                " realizations averaged, but its configuration records " +
+                std::to_string(result.config.nRealizationsMean) + "; they must be equal");
 
   std::vector<Source> sources = {
     integer("index", "row of the cell", [] (std::size_t c) { return (std::int64_t)c; }),

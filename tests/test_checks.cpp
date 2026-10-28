@@ -698,7 +698,7 @@ int main ()
     const Result r = Input().run();
     check(r.geometry == otswap::Geometry::Box && r.nTracers == kN && r.nRealizations == kR && r.mps == kMps,
           "geometry, nTracers, nRealizations, mps");
-    check(r.config.divergenceCellSize == otswap::maths::cbrt(20. / kR), "the default cell size, recorded");
+    check(r.config.divergenceCellSize == 1., "the default cell size, recorded");
     check(r.counts.tracers == kN && r.counts.tracersUsed == kN && r.counts.displacements == kR * kN &&
           r.counts.tracersOutsideBox == 0 && r.counts.tracersOutsideGrid == 0, "counts");
     check(r.ids.empty() && !r.randomSeed && r.outsideGrid.empty() && r.uncorrected.empty() &&
@@ -714,6 +714,8 @@ int main ()
     check(catalogue_hash(k) == catalogue_hash(r), "the kept outputs change no catalogue");
     check(k.divergence && k.assignment, "divergence and assignment kept");
     const DivergenceGrid& g = *k.divergence;
+    check(g.nRealizations == kR && g.nRealizationsMean == kept.config.nRealizationsMean,
+          "the grid's nRealizations and nRealizationsMean, those of the search");
     DivergenceGrid centres = g;
     internal::box_centres(centres);
     bool volume = g.volume.size() == g.nCells;
@@ -789,6 +791,17 @@ int main ()
     check(r.outsideGrid == outside && r.counts.tracersOutsideGrid == extra && r.counts.tracersUsed == kN,
           "outsideGrid and the counts");
     check(r.config.divergenceCellSize == first.divergence->cellSizeMps, "the cell size of the grid, in mps");
+
+    Input fewer = in;
+    fewer.displacement.resize(3 * kN);
+    fewer.valid.clear();
+    fewer.config.keepDivergence = true;
+    fewer.config.nRealizationsMean = 7;
+    fewer.grid = &*first.divergence;
+    const Result f = fewer.run();
+    check(first.divergence->nRealizations == kR && first.divergence->nRealizationsMean == 1 &&
+          f.divergence->nRealizations == 1 && f.divergence->nRealizationsMean == 7,
+          "a reused grid records the realizations of the search reusing it, not those of the grid");
 
     DivergenceGrid skew = *first.divergence;
     const double c = 1.001799;

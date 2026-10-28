@@ -21,7 +21,8 @@
 /**
  *  @file include/bitvf/io.h
  *
- *  @brief The writers of the results of the void finder.
+ *  @brief The writers of the results of the void finder, and the readers
+ *  of a divergence file and of otswap's mean displacement file.
  *
  *  Each writer writes one product of a Result, a table with one row per
  *  void, overdense basin, cell or input tracer. The format follows the
@@ -71,7 +72,11 @@
 #ifndef BITVF_IO_H
 #define BITVF_IO_H
 
+#include <cstdint>
+#include <limits>
+#include <optional>
 #include <string>
+#include <vector>
 
 #include "bitvf/VoidFinder.h"
 
@@ -150,7 +155,8 @@ namespace bitvf::io {
    *    nCells entries (centre 3 * nCells; divergenceUnsmoothed nCells or
    *    none); the mps, cellSizeMps or limits of the grid different from
    *    Result::mps, Config::divergenceCellSize or Result::limits, bit for
-   *    bit;
+   *    bit; its nRealizations or nRealizationsMean different from
+   *    Result::nRealizations or Config::nRealizationsMean;
    *  - if the file cannot be written, as writeVoids.
    */
   void writeDivergence (const std::string& file, const Result& result);
@@ -178,6 +184,108 @@ namespace bitvf::io {
    *  - if the file cannot be written, as writeVoids.
    */
   void writeGalaxies (const std::string& file, const Result& result);
+
+  /**
+   *  @brief otswap's mean displacement file
+   *  (otswap::io::writeDisplacementMean), ready for the array overload of
+   *  findVoidsBox as one realization.
+   */
+  struct DisplacementMean {
+
+    /// Tracer positions, in coordinate units: columns tracX, tracY, tracZ.
+    /// Flat, [tracer][xyz].
+    std::vector<double> tracers;
+
+    /// Mean displacement of each tracer, in coordinate units: columns
+    /// displX, displY, displZ, as stored, NaN where no realization was
+    /// valid. Flat, [tracer][xyz].
+    std::vector<double> displacement;
+
+    /// Validity of each displacement: 1 where column nValidRec is
+    /// positive, 0 otherwise. [tracer].
+    std::vector<std::uint8_t> valid;
+
+    /// Mean particle separation of the reconstruction, in coordinate units:
+    /// keyword MPS.
+    double mps = std::numeric_limits<double>::quiet_NaN();
+
+    /// The box limits of the reconstruction, keywords BOXXLO to BOXZHI,
+    /// when the file records them as limits (BOXLIM = 1); empty otherwise.
+    std::optional<otswap::BoxLimits> limits;
+
+    /// Column id when the file has one; empty otherwise.
+    std::vector<std::int64_t> ids;
+
+    /// Realizations averaged into each displacement: keyword NREC.
+    unsigned nRealizationsAveraged = 0;
+  };
+
+  /**
+   *  @brief Read otswap's mean displacement file of a box reconstruction.
+   *
+   *  The fields are filled for the array overload of findVoidsBox, which
+   *  searches them as one realization:
+   *
+   *      const bitvf::io::DisplacementMean m = bitvf::io::readDisplacementMean("displacement_mean.fits");
+   *      config.nRealizationsMean = m.nRealizationsAveraged;
+   *      const bitvf::Result r = bitvf::findVoidsBox(m.tracers, m.displacement, m.valid, m.mps, config,
+   *                                                  m.limits, m.ids);
+   *
+   *  FITS stores the doubles themselves; ASCII holds tracers and
+   *  displacements with 9 significant digits, so they are rounded, and a
+   *  tracer within rounding of a box limit can fall on the other side of
+   *  it. Keywords are exact in both formats. The box keywords are limits
+   *  only with BOXLIM = 1; otherwise the search builds its grid on the
+   *  tracers and the endpoints of their displacements. The default
+   *  Config::divergenceCellSize of such a search is 1, whatever the
+   *  realizations averaged.
+   *
+   *  The divergence is not linear in the displacement, so a search on the
+   *  mean of R realizations does not give the result of the search on the
+   *  R realizations. Set Config::nRealizationsMean to nRealizationsAveraged,
+   *  so that bitvf's files record it.
+   *
+   *  Reading a lightcone mean displacement file is not implemented.
+   *
+   *  @exception Error
+   *  - if the file cannot be read, or lacks a column, or an integer column
+   *    holds anything but an integer: the message starts with "otswap: ",
+   *    the otswap::Error nested;
+   *  - if it has no PRODUCT keyword, its PRODUCT is not displacements, or
+   *    GEOMETRY is not box;
+   *  - if NREC or MPS is missing or not a number, NREC is 0, BOXLIM holds
+   *    anything but 1, or BOXLIM = 1 comes without the six box keywords;
+   *  - if nValidRec lies outside 0 to NREC in a row.
+   */
+  DisplacementMean readDisplacementMean (const std::string& file);
+
+  /**
+   *  @brief Read a divergence file written by writeDivergence.
+   *
+   *  Every field the writer wrote is read back bit for bit, in both
+   *  formats: the cells (lower, upper, cellSize, nCellsAxis, nCells, mps,
+   *  cellSizeMps), the box limits, nRealizations, nRealizationsMean and
+   *  every per-cell column, divergenceUnsmoothed when the file has it.
+   *  The grid passes the checks of a grid to reuse, so it can be passed to
+   *  findVoidsBox as grid; the per-search fields are records, which a
+   *  search reusing the grid does not read.
+   *
+   *  Reading a lightcone divergence file is not implemented.
+   *
+   *  @exception Error
+   *  - if the file cannot be read, or lacks a column, as
+   *    readDisplacementMean;
+   *  - if it has no PRODUCT keyword, its PRODUCT is not divergence, or
+   *    GEOMETRY is not box;
+   *  - if a keyword of the grid record is missing, not a number, or not a
+   *    whole number in range; if NREC or NRECMEAN is 0; if BOXLIM holds
+   *    anything but 1, or BOXLIM and the six box keywords do not come
+   *    together;
+   *  - if the rows are not NCELLS, index is not 0 to NCELLS - 1 in order,
+   *    a count is negative, or a basin index is below -1;
+   *  - if the grid fails the checks of a grid to reuse.
+   */
+  DivergenceGrid readDivergence (const std::string& file);
 
 }
 

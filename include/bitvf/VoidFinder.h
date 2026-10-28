@@ -197,8 +197,10 @@ namespace bitvf {
 
     /// Side of the divergence-grid cell, in units of the mean particle
     /// separation: the box mps, or in a lightcone mps(z) at each shell.
-    /// Empty: (20 / nRealizations)^(1/3), which is 1 at 20 realizations,
-    /// the same rule in both geometries. Must be positive when set, and
+    /// Empty: min(1, (20 / nRealizations)^(1/3)), that is 1 up to 20
+    /// realizations and (20 / nRealizations)^(1/3) above, the same rule in
+    /// both geometries. A search on a mean displacement file runs with one
+    /// realization, so its default is 1. Must be positive when set, and
     /// left empty when a grid is reused. Result::config holds the value
     /// used. Unrelated to otswap::Config::cellSize, the cell of the
     /// neighbour search of the reconstruction, which affects speed only:
@@ -328,8 +330,8 @@ namespace bitvf {
    *  the cells, marked so below, cellSizeMps, and mps or mpsProfile; it
    *  checks that they are consistent, and throws Error otherwise. The
    *  per-cell results of the search that filled the grid (divergence,
-   *  weights, counts, basin indices, cell limits) and its box limits are
-   *  ignored, whatever their size.
+   *  weights, counts, basin indices, cell limits), its box limits and its
+   *  realization counts are ignored, whatever their size.
    *  Cell c is row c; basins are ordered by the index of their seed cell.
    *
    *  Box. Cubic cells of side cellSize: cell (i, j, k) spans
@@ -402,6 +404,15 @@ namespace bitvf {
     /// Not part of the cells: a search reusing the grid does not read it,
     /// its own limits apply.
     std::optional<otswap::BoxLimits> limits;
+
+    /// Box: the realizations of the search that filled the grid (keyword
+    /// NREC). A record: a search reusing the grid does not read it. 0 in a
+    /// lightcone.
+    unsigned nRealizations = 0;
+
+    /// Box: Config::nRealizationsMean of the search that filled the grid
+    /// (keyword NRECMEAN). A record, as nRealizations. 0 in a lightcone.
+    unsigned nRealizationsMean = 0;
 
     /// Lightcone, defines the cells: comoving distance range of the
     /// tracers and randoms the grid covers, in coordinate units. NaN in a

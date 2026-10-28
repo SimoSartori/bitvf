@@ -26,6 +26,7 @@
  *  @author Simone Sartori <simone.sartori@inaf.it>
  */
 
+#include <algorithm>
 #include <chrono>
 #include <utility>
 
@@ -53,7 +54,7 @@ namespace {
     if (grid == nullptr) {
       const double cellSizeMps = config.divergenceCellSize
         ? *config.divergenceCellSize
-        : otswap::maths::cbrt(20. / search.nRealizations);
+        : std::min(1., otswap::maths::cbrt(20. / search.nRealizations));
       result.config.divergenceCellSize = cellSizeMps;
       cells = bitvf::internal::box_grid(search, cellSizeMps);
     }
@@ -69,6 +70,8 @@ namespace {
       cells.nCells = grid->nCells;
     }
     cells.limits = search.limits;
+    cells.nRealizations = search.nRealizations;
+    cells.nRealizationsMean = config.nRealizationsMean;
 
     const bitvf::internal::BoxDivergence div = bitvf::internal::box_divergence(search, cells);
     bitvf::internal::box_smooth(cells, search.sigmaLength,
