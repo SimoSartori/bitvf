@@ -258,6 +258,33 @@ namespace {
     return names;
   }
 
+  /// The column descriptions of a file, in order: TCOMMn in FITS, the
+  /// "# name description" lines in ASCII, which hold them whole.
+  std::vector<std::string> descriptions_of (const std::string& file)
+  {
+    std::vector<std::string> descriptions;
+    if (file.size() > 5 && file.compare(file.size() - 5, 5, ".fits") == 0) {
+      const std::vector<otswap::io::Keyword> k = otswap::io::readKeywords(file);
+      const std::size_t n = names_of(file).size();
+      for (std::size_t c = 1; c <= n; ++c) {
+        std::string text;
+        for (const otswap::io::Keyword& w : k)
+          if (w.name == "TCOMM" + std::to_string(c)) text = w.value;
+        descriptions.push_back(text);
+      }
+      return descriptions;
+    }
+    std::ifstream in(file);
+    std::string line;
+    while (std::getline(in, line) && line.compare(0, 3, "###") != 0) {
+      if (line.compare(0, 2, "# ") != 0) continue;
+      const std::size_t end = line.find(' ', 2);
+      const std::size_t start = end == std::string::npos ? end : line.find_first_not_of(' ', end);
+      descriptions.push_back(start == std::string::npos ? "" : line.substr(start));
+    }
+    return descriptions;
+  }
+
   /// The file holds exactly @p columns, in order, with @p nRows rows equal
   /// to theirs: bit for bit at @p digits significant digits in ASCII (17
   /// is exact), and always in FITS.
@@ -487,6 +514,28 @@ int main ()
       reads_back(file, galaxies_columns(g), g.nTracers, std::string(format) == ".fits" ? 17 : 9,
                  std::string("a reused grid ") + format);
       std::remove(file.c_str());
+    }
+  }
+
+  group("descriptions: every column of every product described, FITS equal to ASCII, none truncated");
+  {
+    Result flagged = r;
+    flagged.uncorrected.assign(r.nTracers, 0);
+    flagged.outsideGrid.assign(r.nTracers, 0);
+    const char* const product[4] = {"voids", "overdense", "divergence", "galaxies"};
+    int p = 0;
+    for (auto write : {write_voids, write_overdense, write_divergence, write_galaxies}) {
+      const std::string fits = temporary("descriptions.fits"), ascii = temporary("descriptions.txt");
+      write(fits, flagged);
+      write(ascii, flagged);
+      const std::vector<std::string> f = descriptions_of(fits), a = descriptions_of(ascii);
+      const std::vector<std::string> names = names_of(fits);
+      check(a.size() == names.size() && f == a, std::string("FITS descriptions whole: ") + product[p]);
+      for (std::size_t c = 0; c < a.size(); ++c)
+        check(!a[c].empty(), std::string(product[p]) + " column " + names[c] + " described");
+      std::remove(fits.c_str());
+      std::remove(ascii.c_str());
+      ++p;
     }
   }
 

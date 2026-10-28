@@ -198,9 +198,9 @@ namespace {
       real("centreX", "x of the centre, in coordinate units", [&cat] (std::size_t b) { return cat.centre[3*b]; }),
       real("centreY", "y of the centre, in coordinate units", [&cat] (std::size_t b) { return cat.centre[3*b+1]; }),
       real("centreZ", "z of the centre, in coordinate units", [&cat] (std::size_t b) { return cat.centre[3*b+2]; }),
-      real("radius", "radius of the sphere with the volume of the core, in coordinate units",
+      real("radius", "equal-volume radius of the core, in coordinate units",
            [&cat] (std::size_t b) { return cat.radius[b]; }),
-      real("radiusExt", "radius of the sphere with the volume of the extended basin, in coordinate units",
+      real("radiusExt", "equal-volume radius of the extended basin, in coordinate units",
            [&cat] (std::size_t b) { return cat.radiusExt[b]; }),
       real("deltaAv", "mean density contrast of the tracers in the core",
            [&cat] (std::size_t b) { return cat.deltaAv[b]; }),
@@ -374,7 +374,7 @@ void bitvf::io::writeGalaxies (const std::string& file, const Result& result)
     integer("voidIndex", "row of the void of the tracer, -1 none", [&a] (std::size_t i) { return a.voidIndex[i]; }),
     integer("overdenseIndex", "row of the overdense basin of the tracer, -1 none",
             [&a] (std::size_t i) { return a.overdenseIndex[i]; }),
-    real("distance", "distance from the centre of the basin of the tracer, in coordinate units",
+    real("distance", "distance from the centre of its basin, in coordinate units",
          [&a] (std::size_t i) { return a.distance[i]; }),
     flag("inMask", "0 on an unobserved pixel of the mask", a.inMask)};
   if (result.limits) sources.push_back(flag("inBox", "0 outside the box limits, skipped", a.inBox));
