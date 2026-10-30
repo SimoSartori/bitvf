@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <initializer_list>
 #include <memory>
 #include <utility>
@@ -147,7 +148,9 @@ void bitvf::internal::box_smooth (DivergenceGrid& grid, const double sigmaLength
   const std::size_t C = grid.nCells;
   const double s = grid.cellSize;
 
-  const double hd = 3.5 * sigmaLength / s;
+  double hd = 3.5 * sigmaLength / s;
+  const double hn = std::floor(hd + 0.5);
+  if (std::abs(hd - hn) <= 1e-9 * hn) hd = hn;
   std::array<std::size_t, 3> h;
   for (std::size_t a = 0; a < 3; ++a)
     h[a] = (std::size_t)std::min(hd, (double)(n[a] - 1));

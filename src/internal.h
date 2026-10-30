@@ -385,9 +385,10 @@ namespace bitvf {
      *  1-D convolutions of weight times divergence and of weight, along k,
      *  j, then i, each sum taken from 0. in ascending order; the result
      *  does not depend on the number of threads. The half-width of the cube
-     *  is floor(3.5 sigmaLength / cellSize), capped per axis at
-     *  nCellsAxis - 1. A cell whose sum of weights is at most 1e-12 takes
-     *  0. Any nCellsAxis of at least 1 per axis.
+     *  is floor(3.5 sigmaLength / cellSize), or the nearest integer when
+     *  3.5 sigmaLength / cellSize lies within 1e-9 relative of it, capped
+     *  per axis at nCellsAxis - 1. A cell whose sum of weights is at most
+     *  1e-12 takes 0. Any nCellsAxis of at least 1 per axis.
      *
      *  Reads only divergence, weight and the fields that define the cells.
      *

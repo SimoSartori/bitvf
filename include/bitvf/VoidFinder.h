@@ -161,8 +161,11 @@ namespace bitvf {
    *
    *  Box: the cells around are those within floor(3.5 sigma / s) cells
    *  along each axis, s the cell side, cut at the faces of the grid: a
-   *  cube, not a sphere. Below sigma = s / 3.5 the cube holds the cell
-   *  alone. In Mps, sigma is multiplied by the box mps.
+   *  cube, not a sphere. When 3.5 sigma / s lies within 1e-9 relative of
+   *  an integer, that integer is taken instead, so that a cell side
+   *  rounded by one ulp gives the same cube. Below sigma = s / 3.5 the
+   *  cube holds the cell alone. In Mps, sigma is multiplied by the box
+   *  mps.
    *
    *  Lightcone: the cells around are those whose centre lies closer than
    *  4 sigma, and each weight is also multiplied by the cell's volume.
@@ -939,11 +942,12 @@ namespace bitvf {
    *
    *  A bitvf divergence file is valid input, read with io::readField: its
    *  cell centres, divergenceUnsmoothed and weight with the smoothing of
-   *  the search that wrote it give back that search's basins. The centres
-   *  are kept inside the seed cell from the grid's lower and s, which are
-   *  inferred here from the centres read and may differ from the original
-   *  grid's by rounding: a centre can then differ from that search's by as
-   *  much.
+   *  the search that wrote it give back that search's basins. Their
+   *  centre, radius and radiusExt can differ from that search's by a few
+   *  ulp, for two reasons: they are computed from the grid's lower and s,
+   *  which are inferred here from the centres read and may differ from
+   *  the original grid's by rounding; and the weights are divided by
+   *  their largest, which can move the smoothed field by an ulp.
    *
    *  @param centres Cartesian coordinates of the cell centres, 3 * nCells
    *  entries, [cell][xyz], in any order.

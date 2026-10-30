@@ -31,6 +31,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <iomanip>
 #include <iostream>
 #include <optional>
 #include <random>
@@ -118,19 +119,23 @@ namespace {
   /// The direct form, per cell: the weighted mean over the cube of half-width
   /// h cut at the faces, summed in ascending (i, j, k) order with total
   /// weight ((K_i K_j) K_k) w; the sum of the weights; the weighted mean of
-  /// |D|; m_x + m_y + m_z and m_x m_y m_z, the window's cells.
+  /// |D|; m_x + m_y + m_z and m_x m_y m_z, the window's cells. h is
+  /// halfWidth when given, otherwise from 3.5 sigma / s as the header states.
   struct Direct {
     std::vector<double> out, den, mean;
     std::vector<std::size_t> axes, cells;
   };
 
-  Direct direct (const DivergenceGrid& g, const double sigmaLength)
+  Direct direct (const DivergenceGrid& g, const double sigmaLength,
+                 const std::optional<double> halfWidth = std::nullopt)
   {
     const std::int64_t nx = (std::int64_t)g.nCellsAxis[0];
     const std::int64_t ny = (std::int64_t)g.nCellsAxis[1];
     const std::int64_t nz = (std::int64_t)g.nCellsAxis[2];
     const double s = g.cellSize;
-    const double hd = 3.5 * sigmaLength / s;
+    double hd = 3.5 * sigmaLength / s;
+    if (std::fabs(hd - std::round(hd)) <= 1e-9 * std::round(hd)) hd = std::round(hd);
+    if (halfWidth) hd = *halfWidth;
     const std::int64_t hx = (std::int64_t)std::min(hd, (double)(nx - 1));
     const std::int64_t hy = (std::int64_t)std::min(hd, (double)(ny - 1));
     const std::int64_t hz = (std::int64_t)std::min(hd, (double)(nz - 1));
@@ -313,6 +318,28 @@ int main ()
     const double sigma = 0.2;
     check(smoothed(base, sigma) == direct(base, sigma).out,
           wide ? "wide weights and values" : "weights in [1/4, 2)");
+  }
+
+  group("half-width: 3.5 sigma / s within 1e-9 of an integer takes that integer, s 1 ulp larger included; "
+        "farther below it, the integer below");
+  {
+    const std::size_t n = 17;
+    const double sigma = 1.;
+    const double exact = 0.5, above = std::nextafter(exact, 1.), farther = 3.5 / (7. * (1. - 1e-8));
+    check(3.5 * sigma / exact == 7. && 3.5 * sigma / above < 7. && 3.5 * sigma / farther < 7.,
+          "3.5 sigma / s is 7, just below 7, and 7 (1 - 1e-8)");
+    for (const double s : {exact, above, farther})
+      for (const bool wide : {false, true}) {
+        const DivergenceGrid base = random_grid(n, s, rng, wide);
+        const std::vector<double> out = smoothed(base, sigma);
+        const double h = s == farther ? 6. : 7., other = s == farther ? 7. : 6.;
+        std::size_t equal = 0;
+        std::ostringstream what;
+        what << "3.5 sigma / s = " << std::setprecision(17) << 3.5 * sigma / s << (wide ? ", wide" : "");
+        check(agrees(out, direct(base, sigma, h), equal), what.str() + ": half-width " + std::to_string((int)h));
+        check(!agrees(out, direct(base, sigma, other), equal),
+              what.str() + ": not half-width " + std::to_string((int)other));
+      }
   }
 
   group("separable against direct: every cell within beta_c, faces, edges and corners included");
