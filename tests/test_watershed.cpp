@@ -29,6 +29,7 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
@@ -64,20 +65,25 @@ namespace {
 #endif
   }
 
-  /// A box grid of n cells per axis, divergence v everywhere, no tracers.
-  DivergenceGrid cube (const std::size_t n, const double v)
+  /// A box grid of nCellsAxis cells, divergence v everywhere, no tracers.
+  DivergenceGrid box (const std::array<std::size_t, 3>& n, const double v)
   {
     DivergenceGrid g;
     g.geometry = otswap::Geometry::Box;
     g.mps = 1.;
     g.cellSize = 1.;
     g.lower = {0., 0., 0.};
-    g.upper = {(double)n, (double)n, (double)n};
-    g.nCellsAxis = {n, n, n};
-    g.nCells = n * n * n;
+    g.upper = {(double)n[0], (double)n[1], (double)n[2]};
+    g.nCellsAxis = n;
+    g.nCells = n[0] * n[1] * n[2];
     g.divergence.assign(g.nCells, v);
     g.nTracers.assign(g.nCells, 0);
     return g;
+  }
+
+  DivergenceGrid cube (const std::size_t n, const double v)
+  {
+    return box({n, n, n}, v);
   }
 
   std::int64_t row (const std::size_t n, const std::size_t i, const std::size_t j,
@@ -109,22 +115,24 @@ namespace {
 
   Reference reference (const DivergenceGrid& g)
   {
-    const std::int64_t n = (std::int64_t)g.nCellsAxis[0];
+    const std::int64_t nx = (std::int64_t)g.nCellsAxis[0];
+    const std::int64_t ny = (std::int64_t)g.nCellsAxis[1];
+    const std::int64_t nz = (std::int64_t)g.nCellsAxis[2];
     const std::int64_t C = (std::int64_t)g.nCells;
     const std::vector<double>& D = g.divergence;
     Reference r;
     r.flow.resize(C);
-    for (std::int64_t i = 0; i < n; ++i)
-      for (std::int64_t j = 0; j < n; ++j)
-        for (std::int64_t k = 0; k < n; ++k) {
-          const std::int64_t c = (i * n + j) * n + k;
+    for (std::int64_t i = 0; i < nx; ++i)
+      for (std::int64_t j = 0; j < ny; ++j)
+        for (std::int64_t k = 0; k < nz; ++k) {
+          const std::int64_t c = (i * ny + j) * nz + k;
           double minVal = D[c];
           std::int64_t target = c;
-          for (std::int64_t ii = std::max<std::int64_t>(0, i - 1); ii <= std::min(n - 1, i + 1); ++ii)
-            for (std::int64_t jj = std::max<std::int64_t>(0, j - 1); jj <= std::min(n - 1, j + 1); ++jj)
-              for (std::int64_t kk = std::max<std::int64_t>(0, k - 1); kk <= std::min(n - 1, k + 1); ++kk) {
+          for (std::int64_t ii = std::max<std::int64_t>(0, i - 1); ii <= std::min(nx - 1, i + 1); ++ii)
+            for (std::int64_t jj = std::max<std::int64_t>(0, j - 1); jj <= std::min(ny - 1, j + 1); ++jj)
+              for (std::int64_t kk = std::max<std::int64_t>(0, k - 1); kk <= std::min(nz - 1, k + 1); ++kk) {
                 if (ii == i && jj == j && kk == k) continue;
-                const std::int64_t nb = (ii * n + jj) * n + kk;
+                const std::int64_t nb = (ii * ny + jj) * nz + kk;
                 if (D[nb] < minVal) {
                   minVal = D[nb];
                   target = nb;
@@ -441,17 +449,22 @@ int main ()
           "a face cell flows inside the grid, not to its periodic image");
   }
 
-  group("no void: a divergence of 0 or above in every cell throws E7");
+  group("no void: a divergence of 0 or above in every cell gives an empty void set, voidIndex -1 in every "
+        "cell, no error");
   {
-    for (const double v : {1., 0., -0.}) {
-      const DivergenceGrid g = cube(6, v);
-      throws_naming([&g] { run(g); }, "no void found", "constant " + std::to_string(v));
-    }
+    const auto noVoid = [](const DivergenceGrid& g, const std::string& what) {
+      const Run r = run(g);
+      bool none = true;
+      for (const std::int64_t b : r.grid.voidIndex) none = none && b == -1;
+      check(r.basins.voids.seed.empty() && r.basins.voids.nCells.empty() && !r.basins.overdense.seed.empty() &&
+            none && consistent(r), what);
+    };
+    for (const double v : {1., 0., -0.}) noVoid(cube(6, v), "constant " + std::to_string(v));
     DivergenceGrid g = cube(7, 0.);
     const double levels[] = {0., -0., 1., 2.};
     for (double& d : g.divergence) d = levels[rng() % 4];
-    throws_naming([&g] { run(g); }, "no void found", "levels 0, -0, 1, 2");
-    throws_naming([] { run(cube(1, 0.)); }, "no void found", "one cell at 0");
+    noVoid(g, "levels 0, -0, 1, 2");
+    noVoid(cube(1, 0.), "one cell at 0");
   }
 
   group("no overdense seed: an empty overdense set, overdenseIndex -1 in every cell");
@@ -478,6 +491,71 @@ int main ()
       if (n == 1) g.divergence[0] = -1.;
       check(matches_threads(g), "n " + std::to_string(n) + (ties ? ", ties" : ", continuous"));
     }
+
+  group("any cell counts: non-cubic grids, axes of 1 cell included, equal to the serial reference walk "
+        "with 1, 3 and 4 threads");
+  for (const std::array<std::size_t, 3> n : {std::array<std::size_t, 3>{5, 9, 13}, {13, 5, 9}, {9, 13, 5},
+                                             {1, 7, 11}, {7, 1, 11}, {7, 11, 1}, {1, 1, 40}, {2, 3, 4}})
+    for (const bool ties : {false, true}) {
+      DivergenceGrid g = box(n, 0.);
+      const double levels[] = {-2., -1., -0., 0., 1., 2.};
+      for (std::size_t c = 0; c < g.nCells; ++c) {
+        g.divergence[c] = ties ? levels[rng() % 6] : uniform(-1., 1.);
+        g.nTracers[c] = rng() % 5;
+      }
+      check(matches_threads(g), "(" + std::to_string(n[0]) + ", " + std::to_string(n[1]) + ", " +
+            std::to_string(n[2]) + ")" + (ties ? ", ties" : ", continuous"));
+    }
+
+  group("any cell counts: a line of cells, along each axis, is the 1-D descent (left neighbour first)");
+  for (const std::size_t axis : {0, 1, 2}) {
+    const std::size_t L = 60;
+    std::array<std::size_t, 3> n = {1, 1, 1};
+    n[axis] = L;
+    DivergenceGrid g = box(n, 0.);
+    const double levels[] = {-2., -1., 0., 1., 2.};
+    for (double& d : g.divergence) d = rng() % 2 ? levels[rng() % 5] : uniform(-2., 2.);
+    const std::vector<double>& D = g.divergence;
+    std::vector<std::size_t> flow(L);
+    for (std::size_t c = 0; c < L; ++c) {
+      flow[c] = c;
+      if (c > 0 && D[c - 1] < D[c]) flow[c] = c - 1;
+      if (c + 1 < L && D[c + 1] < D[flow[c]]) flow[c] = c + 1;
+    }
+    std::vector<std::int64_t> voidIndex(L, -1), overdenseIndex(L, -1);
+    std::int64_t nVoid = 0, nOverdense = 0;
+    for (std::size_t c = 0; c < L; ++c)
+      if (flow[c] == c) (D[c] < 0. ? voidIndex[c] = nVoid++ : overdenseIndex[c] = nOverdense++);
+    for (std::size_t c = 0; c < L; ++c) {
+      std::size_t cur = c;
+      while (flow[cur] != cur) cur = flow[cur];
+      voidIndex[c] = voidIndex[cur];
+      overdenseIndex[c] = overdenseIndex[cur];
+    }
+    const Run r = run(g);
+    check(r.grid.voidIndex == voidIndex && r.grid.overdenseIndex == overdenseIndex && consistent(r),
+          "axis " + std::to_string(axis));
+  }
+
+  group("no nTracers: the same partition and cell counts, nCoreTracers empty");
+  {
+    DivergenceGrid g = box({6, 4, 9}, 0.);
+    for (std::size_t c = 0; c < g.nCells; ++c) {
+      g.divergence[c] = uniform(-1., 1.);
+      g.nTracers[c] = rng() % 5;
+    }
+    const Run with = run(g);
+    g.nTracers.clear();
+    const Run without = run(g);
+    bool ok = without.grid.voidIndex == with.grid.voidIndex &&
+              without.grid.overdenseIndex == with.grid.overdenseIndex;
+    const internal::BasinSet* x[2] = {&with.basins.voids, &with.basins.overdense};
+    const internal::BasinSet* y[2] = {&without.basins.voids, &without.basins.overdense};
+    for (int kind = 0; kind < 2; ++kind)
+      ok = ok && x[kind]->seed == y[kind]->seed && x[kind]->nCells == y[kind]->nCells &&
+           x[kind]->nCoreCells == y[kind]->nCoreCells && y[kind]->nCoreTracers.empty();
+    check(ok, "(6, 4, 9)");
+  }
 
   group("a walk longer than kPathCells: equal to the serial reference walk with 1, 3 and 4 threads");
   {

@@ -78,7 +78,9 @@ namespace {
                                 config.keepUnsmoothedDivergence ? &cells.divergenceUnsmoothed : nullptr);
     bitvf::internal::BoxBasins basins;
     bitvf::internal::box_watershed(cells, basins);
-    bitvf::internal::box_basins(search, div, cells, basins, result.voids, result.overdense);
+    if (basins.voids.seed.empty())
+      throw bitvf::Error("no void found: the divergence is 0 or positive in every cell");
+    bitvf::internal::box_basins(&search, &div, cells, basins, result.voids, result.overdense);
 
     result.nTracers = search.nTracers;
     result.nRealizations = search.nRealizations;

@@ -29,6 +29,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <exception>
 #include <initializer_list>
 #include <limits>
@@ -48,21 +49,72 @@ namespace {
 
   constexpr double kPi = 3.141592653589793;
 
+  /// The position of x in the order of the finite doubles: consecutive
+  /// doubles get consecutive integers, and both zeros get 0.
+  std::int64_t ordinal (const double x)
+  {
+    std::int64_t bits;
+    std::memcpy(&bits, &x, sizeof bits);
+    return bits >= 0 ? bits : -(bits & std::numeric_limits<std::int64_t>::max());
+  }
+
+  /// The double at position k of ordinal; +0. for 0.
+  double from_ordinal (const std::int64_t k)
+  {
+    const std::uint64_t bits = k >= 0 ? (std::uint64_t)k : ((std::uint64_t)0 - (std::uint64_t)k) |
+                                                           ((std::uint64_t)1 << 63);
+    double x;
+    std::memcpy(&x, &bits, sizeof x);
+    return x;
+  }
+
+  /**
+   *  @brief The double reached from x by steps of std::nextafter towards
+   *  -infinity (down) or +infinity (up) while inside(x) is false, in
+   *  O(log steps) evaluations of inside.
+   *
+   *  inside must be false at x, and monotone along the direction: once true
+   *  at some double, true at every double beyond it. A zero reached by
+   *  steps is +0. going down and -0. going up, as std::nextafter gives.
+   */
+  template <typename Inside>
+  double step_until (const double x, const bool down, const Inside& inside)
+  {
+    const std::int64_t start = ordinal(x);
+    const std::int64_t sign = down ? -1 : 1;
+    std::uint64_t fail = 0, pass = 1;
+    while (!inside(from_ordinal(start + sign * (std::int64_t)pass))) {
+      fail = pass;
+      pass *= 2;
+    }
+    while (pass - fail > 1) {
+      const std::uint64_t mid = fail + (pass - fail) / 2;
+      if (inside(from_ordinal(start + sign * (std::int64_t)mid))) pass = mid;
+      else fail = mid;
+    }
+    const std::int64_t end = start + sign * (std::int64_t)pass;
+    return end == 0 && !down ? -0. : from_ordinal(end);
+  }
+
 }
 
 
 // ============================================================================
 
 
-void bitvf::internal::box_basins (const BoxSearch& search, const BoxDivergence& div, const DivergenceGrid& grid,
+void bitvf::internal::box_basins (const BoxSearch* search, const BoxDivergence* div, const DivergenceGrid& grid,
                                   const BoxBasins& basins, BasinCatalog& voids, BasinCatalog& overdense)
 {
-  const std::int64_t n = (std::int64_t)grid.nCellsAxis[0];
+  const bool withTracers = search != nullptr;
+  const std::int64_t nx = (std::int64_t)grid.nCellsAxis[0];
+  const std::int64_t ny = (std::int64_t)grid.nCellsAxis[1];
+  const std::int64_t nz = (std::int64_t)grid.nCellsAxis[2];
+  const std::int64_t n[3] = {nx, ny, nz};
   const std::int64_t C = (std::int64_t)grid.nCells;
   const double s = grid.cellSize;
-  const double m = grid.mps;
+  const double m = withTracers ? grid.mps : 0.;
   const double inverse = 1. / s;
-  const double avDens = 1. / (m * m * m);
+  const double avDens = withTracers ? 1. / (m * m * m) : 0.;
   const double* D = grid.divergence.data();
   const std::array<double, 3> lower = grid.lower;
 
@@ -79,20 +131,27 @@ void bitvf::internal::box_basins (const BoxSearch& search, const BoxDivergence& 
     cat.centreSky.clear();
     cat.radius.resize((std::size_t)B);
     cat.radiusExt.resize((std::size_t)B);
-    cat.deltaAv.resize((std::size_t)B);
-    cat.delta2Mps.resize((std::size_t)B);
     cat.edgeFlag.resize((std::size_t)B);
     cat.contamination.resize((std::size_t)B);
-    cat.nTracers.resize((std::size_t)B);
+    if (withTracers) {
+      cat.deltaAv.resize((std::size_t)B);
+      cat.delta2Mps.resize((std::size_t)B);
+      cat.nTracers.resize((std::size_t)B);
+    }
+    else {
+      cat.deltaAv.clear();
+      cat.delta2Mps.clear();
+      cat.nTracers.clear();
+    }
 
 #pragma omp parallel for schedule(static)
     for (std::int64_t b = 0; b < B; ++b) {
       const std::int64_t c = set.seed[(std::size_t)b];
-      const std::int64_t idx[3] = {c / (n * n), (c / n) % n, c % n};
+      const std::int64_t idx[3] = {c / (ny * nz), (c / nz) % ny, c % nz};
       std::int64_t lo[3], hi[3];
       for (int a = 0; a < 3; ++a) {
         lo[a] = std::max<std::int64_t>(0, idx[a] - 1);
-        hi[a] = std::min(n - 1, idx[a] + 1);
+        hi[a] = std::min(n[a] - 1, idx[a] + 1);
       }
 
       double num[3] = {0., 0., 0.};
@@ -100,7 +159,7 @@ void bitvf::internal::box_basins (const BoxSearch& search, const BoxDivergence& 
       for (std::int64_t ii = lo[0]; ii <= hi[0]; ++ii)
         for (std::int64_t jj = lo[1]; jj <= hi[1]; ++jj)
           for (std::int64_t kk = lo[2]; kk <= hi[2]; ++kk) {
-            const std::int64_t nb = (ii * n + jj) * n + kk;
+            const std::int64_t nb = (ii * ny + jj) * nz + kk;
             if (nb == c) continue;
             num[0] += D[nb] * s * (double)(idx[0] - ii);
             num[1] += D[nb] * s * (double)(idx[1] - jj);
@@ -115,20 +174,23 @@ void bitvf::internal::box_basins (const BoxSearch& search, const BoxDivergence& 
         const double faceLo = lower[a] + s * i;
         const double faceHi = lower[a] + s * (i + 1.);
         x = std::max(faceLo, std::min(faceHi, x));
-        while ((x - lower[a]) * inverse >= i + 1.)
-          x = std::nextafter(x, -std::numeric_limits<double>::infinity());
-        while ((x - lower[a]) * inverse < i)
-          x = std::nextafter(x, std::numeric_limits<double>::infinity());
+        const double low = lower[a];
+        if ((x - low) * inverse >= i + 1.)
+          x = step_until(x, true, [low, inverse, i] (const double y) { return (y - low) * inverse < i + 1.; });
+        if ((x - low) * inverse < i)
+          x = step_until(x, false, [low, inverse, i] (const double y) { return (y - low) * inverse >= i; });
         cat.centre[3 * (std::size_t)b + (std::size_t)a] = x;
       }
 
       const std::uint64_t nCore = set.nCoreCells[(std::size_t)b];
-      const std::uint64_t nCoreTracers = set.nCoreTracers[(std::size_t)b];
       cat.radius[(std::size_t)b] = s * otswap::maths::cbrt(3.0 * (double)nCore / (4.0 * kPi));
       cat.radiusExt[(std::size_t)b] =
         s * otswap::maths::cbrt(3.0 * (double)set.nCells[(std::size_t)b] / (4.0 * kPi));
-      cat.deltaAv[(std::size_t)b] = ((double)nCoreTracers / ((double)nCore * s * s * s)) / avDens - 1.;
-      cat.nTracers[(std::size_t)b] = (std::size_t)nCoreTracers;
+      if (withTracers) {
+        const std::uint64_t nCoreTracers = set.nCoreTracers[(std::size_t)b];
+        cat.deltaAv[(std::size_t)b] = ((double)nCoreTracers / ((double)nCore * s * s * s)) / avDens - 1.;
+        cat.nTracers[(std::size_t)b] = (std::size_t)nCoreTracers;
+      }
     }
   }
 
@@ -164,12 +226,12 @@ void bitvf::internal::box_basins (const BoxSearch& search, const BoxDivergence& 
       const bool isVoid = voidIndex[c] >= 0;
       const std::int64_t g = isVoid ? voidIndex[c] : (std::int64_t)nVoid + overdenseIndex[c];
       const bool core = isVoid ? D[c] < 0. : D[c] >= 0.;
-      const std::int64_t idx[3] = {c / (n * n), (c / n) % n, c % n};
-      const std::int64_t step[3] = {n * n, n, 1};
+      const std::int64_t idx[3] = {c / (ny * nz), (c / nz) % ny, c % nz};
+      const std::int64_t step[3] = {ny * nz, nz, 1};
       for (int a = 0; a < 3; ++a)
         for (const std::int64_t d : {-1, 1}) {
           const std::int64_t to = idx[a] + d;
-          if (to < 0 || to >= n) {
+          if (to < 0 || to >= n[a]) {
             out[g] += 1;
             if (core) outCore[g] += 1;
             continue;
@@ -196,15 +258,17 @@ void bitvf::internal::box_basins (const BoxSearch& search, const BoxDivergence& 
   }
   faces.reset();
 
-  const std::size_t N = search.nTracers;
-  const std::vector<double>& tracers = *search.tracers;
-  const std::size_t nRead = N - search.counts.tracersOutsideBox - search.counts.tracersOutsideGrid;
+  if (!withTracers) return;
+
+  const std::size_t N = search->nTracers;
+  const std::vector<double>& tracers = *search->tracers;
+  const std::size_t nRead = N - search->counts.tracersOutsideBox - search->counts.tracersOutsideGrid;
   std::vector<double> X, Y, Z;
   X.reserve(nRead);
   Y.reserve(nRead);
   Z.reserve(nRead);
   for (std::size_t i = 0; i < N; ++i)
-    if (div.cell[i] >= 0) {
+    if (div->cell[i] >= 0) {
       X.push_back(tracers[3*i]);
       Y.push_back(tracers[3*i+1]);
       Z.push_back(tracers[3*i+2]);
@@ -212,7 +276,7 @@ void bitvf::internal::box_basins (const BoxSearch& search, const BoxDivergence& 
 
   std::vector<std::vector<double>> limits(3);
   for (std::size_t a = 0; a < 3; ++a)
-    limits[a] = {lower[a] - s, lower[a] + (double)(n + 1) * s};
+    limits[a] = {lower[a] - s, lower[a] + (double)(n[a] + 1) * s};
 
   std::unique_ptr<meshsearch::MeshGrid> mesh;
   try {

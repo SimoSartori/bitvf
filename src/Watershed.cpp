@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <initializer_list>
 #include <memory>
+#include <type_traits>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -51,7 +52,11 @@ namespace {
 
 void bitvf::internal::box_watershed (DivergenceGrid& grid, BoxBasins& basins)
 {
-  const std::int64_t n = (std::int64_t)grid.nCellsAxis[0];
+  const std::int64_t nx = (std::int64_t)grid.nCellsAxis[0];
+  const std::int64_t ny = (std::int64_t)grid.nCellsAxis[1];
+  const std::int64_t nz = (std::int64_t)grid.nCellsAxis[2];
+  const std::int64_t nLines = nx * ny;
+  const std::int64_t nyz = ny * nz;
   const std::int64_t C = (std::int64_t)grid.nCells;
   const double* D = grid.divergence.data();
 
@@ -62,20 +67,20 @@ void bitvf::internal::box_watershed (DivergenceGrid& grid, BoxBasins& basins)
   std::unique_ptr<std::int64_t[]> flow(new std::int64_t[(std::size_t)C]);
 
 #pragma omp parallel for schedule(static)
-  for (std::int64_t line = 0; line < n * n; ++line) {
-    const std::int64_t i = line / n;
-    const std::int64_t j = line % n;
-    const std::int64_t i0 = std::max<std::int64_t>(0, i - 1), i1 = std::min(n - 1, i + 1);
-    const std::int64_t j0 = std::max<std::int64_t>(0, j - 1), j1 = std::min(n - 1, j + 1);
-    for (std::int64_t k = 0; k < n; ++k) {
-      const std::int64_t c = line * n + k;
-      const std::int64_t k0 = std::max<std::int64_t>(0, k - 1), k1 = std::min(n - 1, k + 1);
+  for (std::int64_t line = 0; line < nLines; ++line) {
+    const std::int64_t i = line / ny;
+    const std::int64_t j = line % ny;
+    const std::int64_t i0 = std::max<std::int64_t>(0, i - 1), i1 = std::min(nx - 1, i + 1);
+    const std::int64_t j0 = std::max<std::int64_t>(0, j - 1), j1 = std::min(ny - 1, j + 1);
+    for (std::int64_t k = 0; k < nz; ++k) {
+      const std::int64_t c = line * nz + k;
+      const std::int64_t k0 = std::max<std::int64_t>(0, k - 1), k1 = std::min(nz - 1, k + 1);
       double minVal = D[c];
       std::int64_t target = c;
       for (std::int64_t ii = i0; ii <= i1; ++ii)
         for (std::int64_t jj = j0; jj <= j1; ++jj)
           for (std::int64_t kk = k0; kk <= k1; ++kk) {
-            const std::int64_t nb = (ii * n + jj) * n + kk;
+            const std::int64_t nb = ii * nyz + jj * nz + kk;
             if (nb == c) continue;
             if (D[nb] < minVal) {
               minVal = D[nb];
@@ -107,9 +112,6 @@ void bitvf::internal::box_watershed (DivergenceGrid& grid, BoxBasins& basins)
     voidOffset[b + 1] += voidOffset[b];
     overdenseOffset[b + 1] += overdenseOffset[b];
   }
-
-  if (voidOffset[(std::size_t)nBlocks] == 0)
-    throw Error("no void found: the divergence is 0 or positive in every cell");
 
   basins.voids.seed.resize((std::size_t)voidOffset[(std::size_t)nBlocks]);
   basins.overdense.seed.resize((std::size_t)overdenseOffset[(std::size_t)nBlocks]);
@@ -178,6 +180,7 @@ void bitvf::internal::box_watershed (DivergenceGrid& grid, BoxBasins& basins)
   const std::size_t stride = 3 * (nVoid + nOverdense);
   std::unique_ptr<std::uint64_t[]> counts(new std::uint64_t[nThreads * stride]);
   std::size_t nTeam = 1;
+  const bool withTracers = !grid.nTracers.empty();
   const std::uint64_t* nTracers = grid.nTracers.data();
   std::int64_t* overdense = grid.overdenseIndex.data();
 
@@ -197,34 +200,43 @@ void bitvf::internal::box_watershed (DivergenceGrid& grid, BoxBasins& basins)
     std::uint64_t* overdenseCoreCells = overdenseCells + nOverdense;
     std::uint64_t* overdenseCoreTracers = overdenseCoreCells + nOverdense;
 
+    auto count = [&] (auto tracers) {
 #pragma omp for schedule(static)
-    for (std::int64_t c = 0; c < C; ++c) {
-      const std::int64_t L = label[c];
-      if (L >= 0) {
-        overdense[c] = -1;
-        voidCells[L] += 1;
-        if (D[c] < 0.) {
-          voidCoreCells[L] += 1;
-          voidCoreTracers[L] += nTracers[c];
+      for (std::int64_t c = 0; c < C; ++c) {
+        const std::int64_t L = label[c];
+        if (L >= 0) {
+          overdense[c] = -1;
+          voidCells[L] += 1;
+          if (D[c] < 0.) {
+            voidCoreCells[L] += 1;
+            if constexpr (decltype(tracers)::value) voidCoreTracers[L] += nTracers[c];
+          }
+        }
+        else {
+          const std::int64_t b = -2 - L;
+          overdense[c] = b;
+          label[c] = -1;
+          overdenseCells[b] += 1;
+          if (D[c] >= 0.) {
+            overdenseCoreCells[b] += 1;
+            if constexpr (decltype(tracers)::value) overdenseCoreTracers[b] += nTracers[c];
+          }
         }
       }
-      else {
-        const std::int64_t b = -2 - L;
-        overdense[c] = b;
-        label[c] = -1;
-        overdenseCells[b] += 1;
-        if (D[c] >= 0.) {
-          overdenseCoreCells[b] += 1;
-          overdenseCoreTracers[b] += nTracers[c];
-        }
-      }
-    }
+    };
+    if (withTracers) count(std::true_type());
+    else count(std::false_type());
   }
 
   std::size_t offset = 0;
   for (BasinSet* set : {&basins.voids, &basins.overdense})
     for (std::vector<std::uint64_t>* count : {&set->nCells, &set->nCoreCells, &set->nCoreTracers}) {
       const std::int64_t m = (std::int64_t)set->seed.size();
+      if (count == &set->nCoreTracers && !withTracers) {
+        count->clear();
+        offset += (std::size_t)m;
+        continue;
+      }
       count->resize((std::size_t)m);
       std::uint64_t* sum = count->data();
 #pragma omp parallel for schedule(static)

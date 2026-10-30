@@ -298,7 +298,9 @@ namespace bitvf {
      *  1-D convolutions of weight times divergence and of weight, along k,
      *  j, then i, each sum taken from 0. in ascending order; the result
      *  does not depend on the number of threads. The half-width of the cube
-     *  is floor(3.5 sigmaLength / cellSize), capped at nCellsAxis - 1.
+     *  is floor(3.5 sigmaLength / cellSize), capped per axis at
+     *  nCellsAxis - 1. A cell whose sum of weights is at most 1e-12 takes
+     *  0. Any nCellsAxis of at least 1 per axis.
      *
      *  Reads only divergence, weight and the fields that define the cells.
      *
@@ -327,7 +329,7 @@ namespace bitvf {
       std::vector<std::uint64_t> nCoreCells;
 
       /// The sum of DivergenceGrid::nTracers over the core cells of each
-      /// basin.
+      /// basin; empty when the grid has no nTracers.
       std::vector<std::uint64_t> nCoreTracers;
     };
 
@@ -352,15 +354,14 @@ namespace bitvf {
      *  neighbour before it; a cell with no such neighbour is a seed. A
      *  seed below 0 starts a void, one at or above 0 an overdense basin;
      *  each kind is numbered by ascending seed row. Every cell belongs to
-     *  the basin its flow reaches. The result does not depend on the
-     *  number of threads.
+     *  the basin its flow reaches. Any nCellsAxis of at least 1 per axis;
+     *  with no cell below 0 there is no void, and no error. The result
+     *  does not depend on the number of threads.
      *
-     *  Reads only divergence, nTracers and nCellsAxis. Writes voidIndex and
-     *  overdenseIndex, one of which is -1 in every cell, and every field
-     *  of basins.
-     *
-     *  @exception Error if no cell has a divergence below 0, so that there
-     *  is no void
+     *  Reads only divergence, nCells, nCellsAxis and, when not empty,
+     *  nTracers. Writes voidIndex and overdenseIndex, one of which is -1
+     *  in every cell, and every field of basins (nCoreTracers left empty
+     *  without nTracers).
      */
     void box_watershed (DivergenceGrid& grid, BoxBasins& basins);
 
@@ -378,16 +379,22 @@ namespace bitvf {
      *  counts of basins, edgeFlag and contamination from the faces of the
      *  cells counted in integers, delta2Mps from the tracers read (cell of
      *  div at or above 0) within 2 mps of the centre, the sphere closed.
-     *  The result does not depend on the number of threads.
+     *  The result does not depend on the number of threads. Any
+     *  nCellsAxis of at least 1 per axis.
      *
-     *  Reads divergence, voidIndex, overdenseIndex, mps and the fields that
-     *  define the cells of grid; cell of div; the tracers of search. Writes
-     *  every field of both catalogues; centreSky is left empty.
+     *  Reads divergence, voidIndex, overdenseIndex and the fields that
+     *  define the cells of grid; with search, also mps of grid, cell of
+     *  div and the tracers of search. Writes every field of both
+     *  catalogues; centreSky is left empty, and without search so are
+     *  deltaAv, delta2Mps and nTracers.
      *
+     *  @param search the search of the tracers, or null for none; basins
+     *  then needs no nCoreTracers
+     *  @param div the divergence of search; read only with search
      *  @exception Error internal, if the search of the tracers around the
      *  centres fails, with the meshsearch error nested when there is one
      */
-    void box_basins (const BoxSearch& search, const BoxDivergence& div, const DivergenceGrid& grid,
+    void box_basins (const BoxSearch* search, const BoxDivergence* div, const DivergenceGrid& grid,
                      const BoxBasins& basins, BasinCatalog& voids, BasinCatalog& overdense);
 
     /**

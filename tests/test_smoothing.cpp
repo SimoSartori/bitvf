@@ -28,11 +28,13 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
 #include <optional>
 #include <random>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -66,18 +68,18 @@ namespace {
 #endif
   }
 
-  /// A box grid with lower corner 0, n cells of side s along each axis, mps
-  /// 1; the per-cell arrays empty.
-  DivergenceGrid cube (const std::size_t n, const double s)
+  /// A box grid with lower corner 0, nCellsAxis cells of side s, mps 1;
+  /// the per-cell arrays empty.
+  DivergenceGrid box (const std::array<std::size_t, 3>& nCellsAxis, const double s)
   {
     DivergenceGrid g;
     g.geometry = otswap::Geometry::Box;
     g.mps = 1.;
     g.cellSize = s;
     g.lower = {0., 0., 0.};
-    g.upper = {n * s, n * s, n * s};
-    g.nCellsAxis = {n, n, n};
-    g.nCells = n * n * n;
+    g.upper = {nCellsAxis[0] * s, nCellsAxis[1] * s, nCellsAxis[2] * s};
+    g.nCellsAxis = nCellsAxis;
+    g.nCells = nCellsAxis[0] * nCellsAxis[1] * nCellsAxis[2];
     return g;
   }
 
@@ -90,13 +92,13 @@ namespace {
   /// A grid of random divergence in [-1, 1) and weights in [1/4, 2); with
   /// wide, about one cell in 16 has its weight multiplied by 1e4 and one in
   /// 16 its divergence by 1e6.
-  DivergenceGrid random_grid (const std::size_t n, const double s, std::mt19937& rng,
+  DivergenceGrid random_grid (const std::array<std::size_t, 3>& nCellsAxis, const double s, std::mt19937& rng,
                               const bool wide)
   {
     auto uniform = [&rng] (const double lo, const double hi) {
       return lo + (hi - lo) * (rng() / 4294967296.);
     };
-    DivergenceGrid g = cube(n, s);
+    DivergenceGrid g = box(nCellsAxis, s);
     g.divergence.resize(g.nCells);
     g.weight.resize(g.nCells);
     for (std::size_t c = 0; c < g.nCells; ++c) {
@@ -106,6 +108,11 @@ namespace {
       if (wide && rng() % 16 == 0) g.divergence[c] *= 1e6;
     }
     return g;
+  }
+
+  DivergenceGrid random_grid (const std::size_t n, const double s, std::mt19937& rng, const bool wide)
+  {
+    return random_grid({n, n, n}, s, rng, wide);
   }
 
   /// The direct form, per cell: the weighted mean over the cube of half-width
@@ -119,10 +126,15 @@ namespace {
 
   Direct direct (const DivergenceGrid& g, const double sigmaLength)
   {
-    const std::int64_t n = (std::int64_t)g.nCellsAxis[0];
+    const std::int64_t nx = (std::int64_t)g.nCellsAxis[0];
+    const std::int64_t ny = (std::int64_t)g.nCellsAxis[1];
+    const std::int64_t nz = (std::int64_t)g.nCellsAxis[2];
     const double s = g.cellSize;
     const double hd = 3.5 * sigmaLength / s;
-    const std::int64_t h = (std::int64_t)std::min(hd, (double)(n - 1));
+    const std::int64_t hx = (std::int64_t)std::min(hd, (double)(nx - 1));
+    const std::int64_t hy = (std::int64_t)std::min(hd, (double)(ny - 1));
+    const std::int64_t hz = (std::int64_t)std::min(hd, (double)(nz - 1));
+    const std::int64_t h = std::max(hx, std::max(hy, hz));
     const double two = 2 * sigmaLength * sigmaLength;
     std::vector<double> K(2 * h + 1);
     for (std::int64_t i = 0; i < 2 * h + 1; ++i) {
@@ -136,25 +148,25 @@ namespace {
     d.mean.resize(g.nCells);
     d.axes.resize(g.nCells);
     d.cells.resize(g.nCells);
-    for (std::int64_t i = 0; i < n; ++i)
-      for (std::int64_t j = 0; j < n; ++j)
-        for (std::int64_t k = 0; k < n; ++k) {
-          const std::int64_t i0 = std::max<std::int64_t>(0, i - h), i1 = std::min(n - 1, i + h);
-          const std::int64_t j0 = std::max<std::int64_t>(0, j - h), j1 = std::min(n - 1, j + h);
-          const std::int64_t k0 = std::max<std::int64_t>(0, k - h), k1 = std::min(n - 1, k + h);
+    for (std::int64_t i = 0; i < nx; ++i)
+      for (std::int64_t j = 0; j < ny; ++j)
+        for (std::int64_t k = 0; k < nz; ++k) {
+          const std::int64_t i0 = std::max<std::int64_t>(0, i - hx), i1 = std::min(nx - 1, i + hx);
+          const std::int64_t j0 = std::max<std::int64_t>(0, j - hy), j1 = std::min(ny - 1, j + hy);
+          const std::int64_t k0 = std::max<std::int64_t>(0, k - hz), k1 = std::min(nz - 1, k + hz);
           double num = 0., den = 0., abs = 0.;
           for (std::int64_t ii = i0; ii <= i1; ++ii)
             for (std::int64_t jj = j0; jj <= j1; ++jj) {
               const double wxy = K[ii - i + h] * K[jj - j + h];
               for (std::int64_t kk = k0; kk <= k1; ++kk) {
-                const std::size_t cc = (std::size_t)((ii * n + jj) * n + kk);
+                const std::size_t cc = (std::size_t)((ii * ny + jj) * nz + kk);
                 const double total = (wxy * K[kk - k + h]) * g.weight[cc];
                 num += g.divergence[cc] * total;
                 den += total;
                 abs += std::fabs(g.divergence[cc]) * total;
               }
             }
-          const std::size_t c = (std::size_t)((i * n + j) * n + k);
+          const std::size_t c = (std::size_t)((i * ny + j) * nz + k);
           d.out[c] = den > 1e-12 ? num / den : 0.;
           d.den[c] = den;
           d.mean[c] = den > 0. ? abs / den : 0.;
@@ -319,7 +331,8 @@ int main ()
                   << " cells equal bit for bit" << std::endl;
       }
 
-  group("threshold: weights summing to 1e-12 or less give 0, just above give num / den");
+  group("threshold: weights summing to 1e-12 or less give 0, just above give num / den, whatever the "
+        "largest weight");
   {
     const std::size_t n = 12;
     DivergenceGrid base = random_grid(n, 1., rng, false);
@@ -338,13 +351,70 @@ int main ()
     std::size_t equal = 0;
     check(agrees(out, d, equal), "the other cells within beta_c");
 
-    DivergenceGrid tiny = random_grid(5, 1., rng, false);
-    tiny.weight[0] = 1e-12;
-    tiny.weight[1] = std::nextafter(1e-12, 1.);
-    const std::vector<double> single = smoothed(tiny, 0.2);
-    check(single[0] == 0., "a weight sum of exactly 1e-12 gives 0");
-    check(single[1] == tiny.weight[1] * tiny.divergence[1] / tiny.weight[1],
-          "a weight sum just above 1e-12 gives num / den");
+    for (const double wMax : {1., 1e20}) {
+      DivergenceGrid tiny = random_grid(5, 1., rng, false);
+      for (double& w : tiny.weight) w *= wMax / 2.;
+      tiny.weight[2] = wMax;
+      tiny.weight[0] = 1e-12;
+      tiny.weight[1] = std::nextafter(1e-12, 1.);
+      const std::vector<double> single = smoothed(tiny, 0.2);
+      std::ostringstream what;
+      what << "largest weight " << wMax;
+      check(single[0] == 0., what.str() + ": a weight sum of exactly 1e-12 gives 0");
+      check(single[1] == tiny.weight[1] * tiny.divergence[1] / tiny.weight[1],
+            what.str() + ": a weight sum just above gives num / den");
+    }
+  }
+
+  group("any cell counts: non-cubic grids, an axis of 1 cell included, within beta_c of the direct form");
+  for (const std::array<std::size_t, 3> n : {std::array<std::size_t, 3>{5, 9, 13}, {13, 5, 9}, {9, 13, 5},
+                                             {1, 7, 11}, {6, 1, 1}, {1, 1, 9}, {2, 3, 4}})
+    for (const std::size_t h : {1, 3, 1000})
+      for (const bool wide : {false, true}) {
+        const double s = 0.75;
+        const double sigma = h == 1000 ? 10. * 13 * s : (h + 0.5) * s / 3.5;
+        const DivergenceGrid base = random_grid(n, s, rng, wide);
+        std::size_t equal = 0;
+        std::ostringstream what;
+        what << "(" << n[0] << ", " << n[1] << ", " << n[2] << "), h "
+             << (h == 1000 ? std::string("clamped") : std::to_string(h)) << (wide ? ", wide" : "");
+        check(agrees(smoothed(base, sigma), direct(base, sigma), equal), what.str());
+      }
+
+  group("any cell counts: a field constant along one axis gives on each plane the smoothing of one plane, "
+        "within the sum of both beta_c");
+  for (const int axis : {0, 1, 2}) {
+    std::array<std::size_t, 3> n = {5, 9, 13};
+    std::array<std::size_t, 3> plane = n;
+    plane[(std::size_t)axis] = 1;
+    const DivergenceGrid one = random_grid(plane, 1., rng, false);
+    DivergenceGrid g = box(n, 1.);
+    g.divergence.resize(g.nCells);
+    g.weight.resize(g.nCells);
+    for (std::size_t i = 0; i < n[0]; ++i)
+      for (std::size_t j = 0; j < n[1]; ++j)
+        for (std::size_t k = 0; k < n[2]; ++k) {
+          std::size_t idx[3] = {i, j, k};
+          idx[axis] = 0;
+          const std::size_t p = (idx[0] * plane[1] + idx[1]) * plane[2] + idx[2];
+          g.divergence[(i * n[1] + j) * n[2] + k] = one.divergence[p];
+          g.weight[(i * n[1] + j) * n[2] + k] = one.weight[p];
+        }
+    const double sigma = 2.5 / 3.5;
+    const std::vector<double> flat = smoothed(one, sigma), full = smoothed(g, sigma);
+    const Direct d = direct(one, sigma), dFull = direct(g, sigma);
+    bool ok = true;
+    for (std::size_t i = 0; i < n[0]; ++i)
+      for (std::size_t j = 0; j < n[1]; ++j)
+        for (std::size_t k = 0; k < n[2]; ++k) {
+          std::size_t idx[3] = {i, j, k};
+          idx[axis] = 0;
+          const std::size_t p = (idx[0] * plane[1] + idx[1]) * plane[2] + idx[2];
+          const std::size_t c = (i * n[1] + j) * n[2] + k;
+          const double v = full[c];
+          ok = ok && std::fabs(v - flat[p]) <= bound(d, p, flat[p], v) + bound(dFull, c, v, flat[p]);
+        }
+    check(ok, "constant along axis " + std::to_string(axis));
   }
 
   group("clamp: a large sigma caps the half-width, every cell within beta_c of the global "

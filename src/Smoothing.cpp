@@ -27,6 +27,7 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <initializer_list>
 #include <memory>
 #include <utility>
@@ -46,27 +47,32 @@ namespace {
 
   /**
    *  @brief Replace num and den by their 1-D convolution with K along one
-   *  axis of a cubic grid of n cells per axis, cut at the faces.
+   *  axis of a grid of nCellsAxis cells, cut at the faces.
    *
    *  Each entry becomes the sum, from 0. and over the cells x' of its line
-   *  within h of it in ascending order, of K[x' - x + h] times the entry at
-   *  x'. The lines are convolved in tiles of up to kTileLines adjacent
+   *  within h of it in ascending order, of K[x' - x + hK] times the entry
+   *  at x'. The lines are convolved in tiles of up to kTileLines adjacent
    *  lines, each tile by one thread; the result does not depend on the
    *  tiles or the threads.
    *
    *  @param axis 0, 1 or 2: the axis of the row index (i, j, k), k the
    *  contiguous one
-   *  @param buffer 4 n kTileLines entries per thread of the parallel region
+   *  @param h the half-width along axis, at most hK
+   *  @param hK the half-width of K, which holds 2 hK + 1 entries
+   *  @param buffer 4 max(nCellsAxis) kTileLines entries per thread of the
+   *  parallel region
    */
-  void convolve_axis (double* num, double* den, const std::size_t n,
-                      const int axis, const std::vector<double>& K, const std::size_t h,
+  void convolve_axis (double* num, double* den, const std::array<std::size_t, 3>& nCellsAxis,
+                      const int axis, const std::vector<double>& K, const std::size_t h, const std::size_t hK,
                       std::vector<double>& buffer)
   {
-    const std::size_t nOuter = axis == 0 ? 1 : n;
-    const std::size_t nInner = axis == 0 ? n * n : n;
-    const std::size_t outerStride = n * n;
-    const std::size_t lineStride = axis == 2 ? n : 1;
-    const std::size_t stride = axis == 0 ? n * n : (axis == 1 ? n : 1);
+    const std::size_t n = nCellsAxis[(std::size_t)axis];
+    const std::size_t ny = nCellsAxis[1], nz = nCellsAxis[2];
+    const std::size_t nOuter = axis == 0 ? 1 : nCellsAxis[0];
+    const std::size_t nInner = axis == 0 ? ny * nz : (axis == 1 ? nz : ny);
+    const std::size_t outerStride = ny * nz;
+    const std::size_t lineStride = axis == 2 ? nz : 1;
+    const std::size_t stride = axis == 0 ? ny * nz : (axis == 1 ? nz : 1);
     const std::size_t nBlocks = (nInner + kTileLines - 1) / kTileLines;
     const std::size_t nTiles = nOuter * nBlocks;
     const std::size_t tileSize = n * kTileLines;
@@ -104,7 +110,7 @@ namespace {
           }
           const std::size_t hi = std::min(n - 1, x + h);
           for (std::size_t xx = (x >= h ? x - h : 0); xx <= hi; ++xx) {
-            const double k = K[xx + h - x];
+            const double k = K[xx + hK - x];
             const double* iNum = inNum + xx * B;
             const double* iDen = inDen + xx * B;
             for (std::size_t b = 0; b < B; ++b) {
@@ -137,16 +143,19 @@ void bitvf::internal::box_smooth (DivergenceGrid& grid, const double sigmaLength
     return;
   }
 
-  const std::size_t n = grid.nCellsAxis[0];
+  const std::array<std::size_t, 3> n = grid.nCellsAxis;
   const std::size_t C = grid.nCells;
   const double s = grid.cellSize;
 
   const double hd = 3.5 * sigmaLength / s;
-  const std::size_t h = (std::size_t)std::min(hd, (double)(n - 1));
+  std::array<std::size_t, 3> h;
+  for (std::size_t a = 0; a < 3; ++a)
+    h[a] = (std::size_t)std::min(hd, (double)(n[a] - 1));
+  const std::size_t hK = *std::max_element(h.begin(), h.end());
   const double two = 2 * sigmaLength * sigmaLength;
-  std::vector<double> K(2 * h + 1);
+  std::vector<double> K(2 * hK + 1);
   for (std::size_t i = 0; i < K.size(); ++i) {
-    const double dist = (double)((long long)i - (long long)h) * s;
+    const double dist = (double)((long long)i - (long long)hK) * s;
     K[i] = otswap::maths::exp(-(dist * dist) / two);
   }
 
@@ -165,9 +174,9 @@ void bitvf::internal::box_smooth (DivergenceGrid& grid, const double sigmaLength
 #else
   const std::size_t nThreads = 1;
 #endif
-  std::vector<double> buffer(nThreads * 4 * n * kTileLines);
+  std::vector<double> buffer(nThreads * 4 * *std::max_element(n.begin(), n.end()) * kTileLines);
   for (const int axis : {2, 1, 0})
-    convolve_axis(num.get(), den.get(), n, axis, K, h, buffer);
+    convolve_axis(num.get(), den.get(), n, axis, K, h[(std::size_t)axis], hK, buffer);
   std::vector<double>().swap(buffer);
 
   if (unsmoothed != nullptr) grid.divergence.resize(C);

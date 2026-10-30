@@ -28,6 +28,7 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
@@ -76,21 +77,27 @@ namespace {
 #endif
   }
 
-  /// A box grid of n cells per axis of side s from lower, divergence v
+  /// A box grid of nCellsAxis cells of side s from lower, divergence v
   /// everywhere, no tracers, mps s.
-  DivergenceGrid cube (const std::size_t n, const double v, const double lower = 0., const double s = 1.)
+  DivergenceGrid box_grid (const std::array<std::size_t, 3>& n, const double v, const double lower = 0.,
+                           const double s = 1.)
   {
     DivergenceGrid g;
     g.geometry = otswap::Geometry::Box;
     g.mps = s;
     g.cellSize = s;
     g.lower = {lower, lower, lower};
-    g.upper = {lower + s * n, lower + s * n, lower + s * n};
-    g.nCellsAxis = {n, n, n};
-    g.nCells = n * n * n;
+    g.upper = {lower + s * n[0], lower + s * n[1], lower + s * n[2]};
+    g.nCellsAxis = n;
+    g.nCells = n[0] * n[1] * n[2];
     g.divergence.assign(g.nCells, v);
     g.nTracers.assign(g.nCells, 0);
     return g;
+  }
+
+  DivergenceGrid cube (const std::size_t n, const double v, const double lower = 0., const double s = 1.)
+  {
+    return box_grid({n, n, n}, v, lower, s);
   }
 
   std::int64_t row (const std::size_t n, const std::size_t i, const std::size_t j, const std::size_t k)
@@ -178,24 +185,25 @@ namespace {
       for (std::size_t i = 0; i < search.nTracers; ++i) cell.push_back(internal::box_cell(h.grid, &tracers[3*i]));
     div.cell = cell;
     Catalogues out;
-    internal::box_basins(search, div, h.grid, h.basins, out.voids, out.overdense);
+    internal::box_basins(&search, &div, h.grid, h.basins, out.voids, out.overdense);
     return out;
   }
 
   /// The centre CBL computes before any clamp, evaluated directly.
   std::array<double, 3> unclamped (const DivergenceGrid& g, const std::int64_t c)
   {
-    const std::int64_t n = (std::int64_t)g.nCellsAxis[0];
-    const std::int64_t i[3] = {c / (n * n), (c / n) % n, c % n};
+    const std::int64_t n[3] = {(std::int64_t)g.nCellsAxis[0], (std::int64_t)g.nCellsAxis[1],
+                               (std::int64_t)g.nCellsAxis[2]};
+    const std::int64_t i[3] = {c / (n[1] * n[2]), (c / n[2]) % n[1], c % n[2]};
     const double s = g.cellSize;
     double num[3] = {0., 0., 0.}, den = 0.;
     for (std::int64_t a = -1; a <= 1; ++a)
       for (std::int64_t b = -1; b <= 1; ++b)
         for (std::int64_t d = -1; d <= 1; ++d) {
           const std::int64_t ii = i[0] + a, jj = i[1] + b, kk = i[2] + d;
-          if (ii < 0 || jj < 0 || kk < 0 || ii >= n || jj >= n || kk >= n) continue;
+          if (ii < 0 || jj < 0 || kk < 0 || ii >= n[0] || jj >= n[1] || kk >= n[2]) continue;
           if (a == 0 && b == 0 && d == 0) continue;
-          const double D = g.divergence[(ii * n + jj) * n + kk];
+          const double D = g.divergence[(ii * n[1] + jj) * n[2] + kk];
           num[0] += D * s * (i[0] - ii);
           num[1] += D * s * (i[1] - jj);
           num[2] += D * s * (i[2] - kk);
@@ -214,29 +222,31 @@ namespace {
   bool brute_force (const Hand& h, const Catalogues& cat)
   {
     const DivergenceGrid& g = h.grid;
-    const std::int64_t n = (std::int64_t)g.nCellsAxis[0];
+    const std::int64_t nx = (std::int64_t)g.nCellsAxis[0];
+    const std::int64_t ny = (std::int64_t)g.nCellsAxis[1];
+    const std::int64_t nz = (std::int64_t)g.nCellsAxis[2];
     const std::size_t nVoid = h.basins.voids.seed.size();
     const std::size_t nAll = nVoid + h.basins.overdense.seed.size();
     std::vector<std::uint64_t> out(nAll, 0), outCore(nAll, 0), phy(nAll, 0);
     auto basin = [&] (const std::int64_t c) {
       return g.voidIndex[c] >= 0 ? g.voidIndex[c] : (std::int64_t)nVoid + g.overdenseIndex[c];
     };
-    for (std::int64_t i = 0; i < n; ++i)
-      for (std::int64_t j = 0; j < n; ++j)
-        for (std::int64_t k = 0; k < n; ++k) {
-          const std::int64_t c = (i * n + j) * n + k;
+    for (std::int64_t i = 0; i < nx; ++i)
+      for (std::int64_t j = 0; j < ny; ++j)
+        for (std::int64_t k = 0; k < nz; ++k) {
+          const std::int64_t c = (i * ny + j) * nz + k;
           const std::int64_t b = basin(c);
           const bool core = g.voidIndex[c] >= 0 ? g.divergence[c] < 0. : g.divergence[c] >= 0.;
-          std::uint64_t onFace = 0;
-          for (const std::int64_t x : {i, j, k}) onFace += (x == 0) + (x == n - 1);
+          const std::uint64_t onFace = (std::uint64_t)((i == 0) + (i == nx - 1) + (j == 0) + (j == ny - 1) +
+                                                       (k == 0) + (k == nz - 1));
           out[b] += onFace;
           if (core) outCore[b] += onFace;
-          if (i > 0 && basin(c - n * n) != b) ++phy[b];
-          if (i < n - 1 && basin(c + n * n) != b) ++phy[b];
-          if (j > 0 && basin(c - n) != b) ++phy[b];
-          if (j < n - 1 && basin(c + n) != b) ++phy[b];
+          if (i > 0 && basin(c - ny * nz) != b) ++phy[b];
+          if (i < nx - 1 && basin(c + ny * nz) != b) ++phy[b];
+          if (j > 0 && basin(c - nz) != b) ++phy[b];
+          if (j < ny - 1 && basin(c + nz) != b) ++phy[b];
           if (k > 0 && basin(c - 1) != b) ++phy[b];
-          if (k < n - 1 && basin(c + 1) != b) ++phy[b];
+          if (k < nz - 1 && basin(c + 1) != b) ++phy[b];
         }
     bool ok = cat.voids.edgeFlag.size() == nVoid && cat.overdense.edgeFlag.size() == nAll - nVoid;
     for (std::size_t b = 0; ok && b < nAll; ++b) {
@@ -340,7 +350,7 @@ namespace {
       internal::box_smooth(h.grid, s.sigmaLength, nullptr);
       internal::box_watershed(h.grid, h.basins);
       Catalogues cat;
-      internal::box_basins(s, div, h.grid, h.basins, cat.voids, cat.overdense);
+      internal::box_basins(&s, &div, h.grid, h.basins, cat.voids, cat.overdense);
       const TracerAssignment as = internal::box_assignment(s, div, h.grid, cat.voids, cat.overdense);
 
       const internal::BasinSet& o = h.basins.overdense;
@@ -510,6 +520,35 @@ int main ()
           "every cell centre in its cell, other grids");
   }
 
+  group("clamp at a face exactly at 0 with lower < 0, where one-ulp steps from 0 would run through the "
+        "subnormals: the centre in the seed cell, one more ulp leaves it, in bounded time");
+  {
+    struct Zero { double lower, s; std::size_t i, n; bool upper; };
+    const Zero cases[] = {{-3., 0.75, 3, 8, true}, {-(0.7 * 3), 0.7, 3, 6, false}};
+    for (const Zero& z : cases) {
+      DivergenceGrid g = cube(z.n, 0., z.lower, z.s);
+      const double face = z.lower + z.s * (double)(z.upper ? z.i + 1 : z.i);
+      const double t = (0. - z.lower) * (1. / z.s);
+      check(face == 0. && (z.upper ? t >= (double)z.i + 1. : t < (double)z.i),
+            std::string(z.upper ? "upper" : "lower") + " face at 0 that the cell lookup puts in the next cell");
+      for (int a = 0; a < 3; ++a) {
+        const std::int64_t c = row(z.n, z.i, z.i, z.i);
+        DivergenceGrid h = g;
+        h.divergence[c] = -1.;
+        std::size_t q[3] = {z.i, z.i, z.i};
+        q[a] = z.upper ? z.i - 1 : z.i + 1;
+        h.divergence[row(z.n, q[0], q[1], q[2])] = 1.;
+        const Catalogues cat = catalogues(one_basin(h, c));
+        const double* x = &cat.voids.centre[0];
+        double beyond[3] = {x[0], x[1], x[2]};
+        beyond[a] = std::nextafter(x[a], z.upper ? kInf : -kInf);
+        const std::string what = std::string(z.upper ? "upper" : "lower") + " face at 0, axis " + std::to_string(a);
+        check(internal::box_cell(h, x) == c && (z.upper ? x[a] < 0. : x[a] > 0.), what + ": in the seed cell");
+        check(internal::box_cell(h, beyond) != c, what + ": one more ulp leaves it");
+      }
+    }
+  }
+
   group("radii, deltaAv and nTracers from the counts of the basins");
   {
     const std::size_t n = 6;
@@ -573,7 +612,7 @@ int main ()
       h.grid.divergence[c] = -1.;
       internal::box_watershed(h.grid, h.basins);
       Catalogues cat;
-      internal::box_basins(s, div, h.grid, h.basins, cat.voids, cat.overdense);
+      internal::box_basins(&s, &div, h.grid, h.basins, cat.voids, cat.overdense);
       const double nt = (cat.voids.delta2Mps[0] + 1.) * (4 * kPi * 8 / 3.);
       check(cat.voids.nBasins == 1 && cat.voids.delta2Mps[0] == delta2(expected, m),
             what + " (n_t " + std::to_string(nt) + ")");
@@ -720,6 +759,96 @@ int main ()
     check(ok, "n " + std::to_string(n));
   }
 
+  group("any cell counts: face counts on (2, 3, 4) by hand; random and watershed partitions of non-cubic "
+        "grids equal to the brute-force count, centres unclamped bit for bit or in their seed cell");
+  {
+    DivergenceGrid g = box_grid({2, 3, 4}, 1.);
+    std::vector<std::int64_t> label(g.nCells, -1);
+    const std::int64_t corner = 0, middle = (1 * 3 + 1) * 4 + 2;
+    label[corner] = 0;
+    label[middle] = 1;
+    g.divergence[corner] = -1.;
+    g.divergence[middle] = -1.;
+    Catalogues cat = catalogues(partition(g, label));
+    check(cat.voids.edgeFlag[0] == 2 && cat.voids.contamination[0] == 3. / 6.,
+          "corner cell (0, 0, 0): 3 faces on the grid, 3 shared");
+    check(cat.voids.edgeFlag[1] == 2 && cat.voids.contamination[1] == 1. / 6.,
+          "cell (1, 1, 2): 1 face on the grid (i = nx - 1), 5 shared");
+    check(cat.overdense.edgeFlag[0] == 2 && cat.overdense.contamination[0] == 48. / 56.,
+          "the rest: 52 - 4 faces on the grid, 8 shared");
+
+    for (const std::array<std::size_t, 3> n : {std::array<std::size_t, 3>{5, 9, 13}, {13, 5, 9}, {9, 13, 5},
+                                               {1, 7, 11}, {7, 1, 11}, {7, 11, 1}, {1, 1, 40}})
+      for (const bool watershed : {false, true}) {
+        DivergenceGrid r = box_grid(n, 0., -3., 0.75);
+        for (double& d : r.divergence) d = uniform(-1., 1.);
+        r.divergence[0] = -1.;
+        Hand h;
+        if (watershed) {
+          h.grid = r;
+          internal::box_watershed(h.grid, h.basins);
+        }
+        else {
+          std::vector<std::int64_t> l(r.nCells);
+          for (std::size_t c = 0; c < r.nCells; ++c) l[c] = (std::int64_t)(rng() % 4) - 2;
+          const std::int64_t firsts[4] = {0, 1, -1, -2};
+          for (std::size_t c = 0; c < 4; ++c) l[c] = firsts[c];
+          h = partition(r, l);
+        }
+        bool ok = true;
+        for (const int t : {1, 3, 4}) {
+          threads(t);
+          const Catalogues c = catalogues(h);
+          ok = ok && brute_force(h, c) && in_seed(h.grid, h.basins, c);
+          for (std::size_t b = 0; watershed && b < c.voids.nBasins; ++b) {
+            const std::int64_t seed = h.basins.voids.seed[b];
+            const std::array<double, 3> u = unclamped(h.grid, seed);
+            const std::int64_t idx[3] = {seed / (std::int64_t)(n[1] * n[2]), (seed / (std::int64_t)n[2]) %
+                                         (std::int64_t)n[1], seed % (std::int64_t)n[2]};
+            bool inside = true;
+            for (int a = 0; a < 3; ++a) {
+              const double x = (u[a] - h.grid.lower[a]) * (1. / h.grid.cellSize);
+              inside = inside && x >= (double)idx[a] && x < (double)idx[a] + 1.;
+            }
+            if (inside)
+              ok = ok && c.voids.centre[3*b] == u[0] && c.voids.centre[3*b+1] == u[1] &&
+                   c.voids.centre[3*b+2] == u[2];
+          }
+        }
+        threads(4);
+        check(ok, "(" + std::to_string(n[0]) + ", " + std::to_string(n[1]) + ", " + std::to_string(n[2]) + ")" +
+              (watershed ? ", watershed" : ", random labels"));
+      }
+  }
+
+  group("no tracers: centres, radii, edge flags and contamination as with them; deltaAv, delta2Mps, nTracers "
+        "empty");
+  {
+    DivergenceGrid g = box_grid({6, 4, 9}, 0.);
+    for (double& d : g.divergence) d = uniform(-1., 1.);
+    g.divergence[0] = -1.;
+    for (std::uint64_t& t : g.nTracers) t = rng() % 4;
+    Hand with;
+    with.grid = g;
+    internal::box_watershed(with.grid, with.basins);
+    const Catalogues a = catalogues(with);
+    Hand without;
+    without.grid = g;
+    without.grid.nTracers.clear();
+    internal::box_watershed(without.grid, without.basins);
+    Catalogues b;
+    internal::box_basins(nullptr, nullptr, without.grid, without.basins, b.voids, b.overdense);
+    bool ok = true;
+    for (int kind = 0; kind < 2; ++kind) {
+      const BasinCatalog& x = kind == 0 ? a.voids : a.overdense;
+      const BasinCatalog& y = kind == 0 ? b.voids : b.overdense;
+      ok = ok && x.nBasins == y.nBasins && x.centre == y.centre && x.radius == y.radius &&
+           x.radiusExt == y.radiusExt && x.edgeFlag == y.edgeFlag && x.contamination == y.contamination &&
+           y.deltaAv.empty() && y.delta2Mps.empty() && y.nTracers.empty() && y.centreSky.empty();
+    }
+    check(ok, "(6, 4, 9)");
+  }
+
   group("assignment: cell, void or overdense basin, distance from its centre (NaN when not read), inMask, "
         "inBox, used");
   {
@@ -742,7 +871,7 @@ int main ()
     div.cell = {internal::box_cell(g, &tracers[0]), internal::box_cell(g, &tracers[3]), -1};
     div.used = {1, 0, 0};
     Catalogues cat;
-    internal::box_basins(search, div, h.grid, h.basins, cat.voids, cat.overdense);
+    internal::box_basins(&search, &div, h.grid, h.basins, cat.voids, cat.overdense);
     const TracerAssignment as = internal::box_assignment(search, div, h.grid, cat.voids, cat.overdense);
     auto distance = [&] (const std::size_t i, const double* centre) {
       const double dx = tracers[3*i] - centre[0];
