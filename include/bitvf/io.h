@@ -64,6 +64,12 @@
  *  digits that reads back as the same double, an integer as an integer;
  *  otswap::io::readKeywords returns them as written, in both formats.
  *
+ *  A field result (findVoidsBoxFromField, Result::nTracers 0) has no
+ *  tracer: its files carry no NREC and NRECMEAN, MPS and CELLSIZE only
+ *  when an mps was given, and none of the columns that count tracers or
+ *  displacements; its voids and overdense basins files carry fieldCentre.
+ *  It has no galaxies file.
+ *
  *  Only box results are written for now.
  *
  *  @author Simone Sartori <simone.sartori@inaf.it>
@@ -72,6 +78,7 @@
 #ifndef BITVF_IO_H
 #define BITVF_IO_H
 
+#include <array>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -107,15 +114,20 @@ namespace bitvf::io {
    *
    *  Columns: index (K); centreX, centreY, centreZ, in coordinate units;
    *  radius, radiusExt, in coordinate units; deltaAv; delta2Mps; edgeFlag
-   *  (J); contamination; nTracers (K). Keywords as listed in the file
-   *  description, the row count NBASINS. ASCII: 9 significant digits.
+   *  (J); contamination; nTracers (K). A field result has no deltaAv,
+   *  delta2Mps and nTracers, and has fieldCentre after contamination.
+   *  Keywords as listed in the file description, the row count NBASINS.
+   *  ASCII: 9 significant digits.
    *
    *  @exception Error
    *  - if the result is not a box result;
-   *  - if it is malformed: Config::divergenceCellSize empty,
+   *  - if it is malformed: Config::divergenceCellSize empty (in a field
+   *    result, only when Result::mps is a number),
    *    Config::nRealizationsMean 0, a column of the catalogue not of
-   *    nBasins entries (centre 3 * nBasins), centreSky not empty, a count
-   *    above the largest 64-bit integer;
+   *    nBasins entries (centre 3 * nBasins), centreSky not empty, a column
+   *    of the other kind of result not empty (fieldCentre, or deltaAv,
+   *    delta2Mps and nTracers in a field result), a count above the
+   *    largest 64-bit integer;
    *  - if the file cannot be written: the message starts with "otswap: ",
    *    the otswap::Error nested.
    */
@@ -136,8 +148,8 @@ namespace bitvf::io {
    *  coordinate units; divergence, after smoothing; divergenceUnsmoothed,
    *  only when DivergenceGrid::divergenceUnsmoothed is not empty; volume, in
    *  coordinate units cubed; weight; nDispl (K), the displacement ends
-   *  counted; nTracers (K); voidIndex (K); overdenseIndex (K). ASCII: 17
-   *  significant digits.
+   *  counted; nTracers (K); voidIndex (K); overdenseIndex (K). A field
+   *  result has no nDispl and nTracers. ASCII: 17 significant digits.
    *
    *  Keywords as listed in the file description, the row count NCELLS,
    *  followed by the record of the grid: LOWERX, LOWERY, LOWERZ, UPPERX,
@@ -150,13 +162,16 @@ namespace bitvf::io {
    *  - if the result is not a box result, or holds no divergence grid
    *    (Config::keepDivergence);
    *  - if the grid fails the checks of a grid to reuse (see findVoidsBox),
-   *    the message starting with "cannot write the divergence: ";
+   *    the message starting with "cannot write the divergence: "; in a
+   *    field result, which no search reuses, only if its cell side is not
+   *    finite and positive, a bound of lower or upper is not finite, or
+   *    nCells is not the product of nCellsAxis;
    *  - if it is malformed: as writeVoids; a column of the grid not of
    *    nCells entries (centre 3 * nCells; divergenceUnsmoothed nCells or
-   *    none); the mps, cellSizeMps or limits of the grid different from
-   *    Result::mps, Config::divergenceCellSize or Result::limits, bit for
-   *    bit; its nRealizations or nRealizationsMean different from
-   *    Result::nRealizations or Config::nRealizationsMean;
+   *    none); outside a field result, the mps, cellSizeMps or limits of the
+   *    grid different from Result::mps, Config::divergenceCellSize or
+   *    Result::limits, bit for bit; its nRealizations or nRealizationsMean
+   *    different from Result::nRealizations or Config::nRealizationsMean;
    *  - if the file cannot be written, as writeVoids.
    */
   void writeDivergence (const std::string& file, const Result& result);
@@ -169,14 +184,16 @@ namespace bitvf::io {
    *  cellIndex (K); voidIndex (K); overdenseIndex (K); distance, from the
    *  centre of the tracer's basin, in coordinate units, NaN for a tracer
    *  not in a basin; inMask (J); inBox (J), only when Result::limits is
-   *  set; used (J); uncorrected (J), only when Result::uncorrected is not
-   *  empty; outsideGrid (J), only when Result::outsideGrid is not empty.
+   *  set; used (J), only when TracerAssignment::used is not empty (it is
+   *  empty after findVoidsBoxFromDivergence); uncorrected (J), only when
+   *  Result::uncorrected is not empty; outsideGrid (J), only when
+   *  Result::outsideGrid is not empty.
    *  Keywords as listed in the file description, the row count NOBJECTS.
    *  ASCII: 9 significant digits.
    *
    *  @exception Error
-   *  - if the result is not a box result, or holds no tracer assignment
-   *    (Config::keepAssignment);
+   *  - if the result is not a box result, is a field result, or holds no
+   *    tracer assignment (Config::keepAssignment);
    *  - if it is malformed: Config::divergenceCellSize empty,
    *    Config::nRealizationsMean 0; ids, uncorrected or outsideGrid
    *    neither empty nor of nTracers entries; a column of the assignment
@@ -284,8 +301,49 @@ namespace bitvf::io {
    *  - if the rows are not NCELLS, index is not 0 to NCELLS - 1 in order,
    *    a count is negative, or a basin index is below -1;
    *  - if the grid fails the checks of a grid to reuse.
+   *
+   *  The divergence file of a field result has no NREC and is refused;
+   *  read it with readField.
    */
   DivergenceGrid readDivergence (const std::string& file);
+
+  /// A field at the centres of cells, for findVoidsBoxFromField.
+  struct Field {
+
+    /// The centre of each cell, in coordinate units. Flat, [cell][xyz].
+    std::vector<double> centres;
+
+    /// The field at each centre. [cell].
+    std::vector<double> values;
+
+    /// The weight of each cell; empty when no weight column is named.
+    /// [cell].
+    std::vector<double> weights;
+  };
+
+  /**
+   *  @brief Read a field at cell centres from a table, for
+   *  findVoidsBoxFromField, in the order of the rows.
+   *
+   *  The columns are read through otswap::io::read: in FITS by name, from
+   *  the table of HDU 2; in ASCII by name, from the last line starting with
+   *  "###" before the data, or by 0-based index given as digits alone.
+   *  Nothing is checked beyond reading: findVoidsBoxFromField checks the
+   *  values. A divergence file of bitvf is valid input:
+   *
+   *      const bitvf::io::Field f = bitvf::io::readField("divergence.fits", {"cellX", "cellY", "cellZ"},
+   *                                                      "divergenceUnsmoothed", "weight");
+   *
+   *  @param centreColumns the columns of x, y and z of the centres.
+   *  @param valueColumn the column of the field.
+   *  @param weightColumn the column of the weights, or empty for none.
+   *
+   *  @exception Error if the file cannot be read, a column is missing or
+   *  named twice: the message starts with "otswap: ", the otswap::Error
+   *  nested.
+   */
+  Field readField (const std::string& file, const std::array<std::string, 3>& centreColumns,
+                   const std::string& valueColumn, const std::string& weightColumn = "");
 
 }
 

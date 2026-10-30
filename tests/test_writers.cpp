@@ -52,6 +52,7 @@
 #include "bitvf/io.h"
 #include "internal.h"
 #include "check.h"
+#include "fixtures.h"
 
 using namespace bitvf;
 
@@ -159,23 +160,29 @@ namespace {
     return {name, type, {}, std::move(f)};
   }
 
-  std::vector<Expected> catalogue_columns (const BasinCatalog& c)
+  /// The columns of a catalogue; @p field for a field result.
+  std::vector<Expected> catalogue_columns (const BasinCatalog& c, const bool field = false)
   {
-    return {
+    std::vector<Expected> e = {
       integer("index", 'K', [] (std::size_t b) { return (std::int64_t)b; }),
       real("centreX", [&c] (std::size_t b) { return c.centre[3*b]; }),
       real("centreY", [&c] (std::size_t b) { return c.centre[3*b+1]; }),
       real("centreZ", [&c] (std::size_t b) { return c.centre[3*b+2]; }),
       real("radius", [&c] (std::size_t b) { return c.radius[b]; }),
-      real("radiusExt", [&c] (std::size_t b) { return c.radiusExt[b]; }),
-      real("deltaAv", [&c] (std::size_t b) { return c.deltaAv[b]; }),
-      real("delta2Mps", [&c] (std::size_t b) { return c.delta2Mps[b]; }),
-      integer("edgeFlag", 'J', [&c] (std::size_t b) { return (std::int64_t)c.edgeFlag[b]; }),
-      real("contamination", [&c] (std::size_t b) { return c.contamination[b]; }),
-      integer("nTracers", 'K', [&c] (std::size_t b) { return (std::int64_t)c.nTracers[b]; })};
+      real("radiusExt", [&c] (std::size_t b) { return c.radiusExt[b]; })};
+    if (!field) {
+      e.push_back(real("deltaAv", [&c] (std::size_t b) { return c.deltaAv[b]; }));
+      e.push_back(real("delta2Mps", [&c] (std::size_t b) { return c.delta2Mps[b]; }));
+    }
+    e.push_back(integer("edgeFlag", 'J', [&c] (std::size_t b) { return (std::int64_t)c.edgeFlag[b]; }));
+    e.push_back(real("contamination", [&c] (std::size_t b) { return c.contamination[b]; }));
+    if (field) e.push_back(real("fieldCentre", [&c] (std::size_t b) { return c.fieldCentre[b]; }));
+    else e.push_back(integer("nTracers", 'K', [&c] (std::size_t b) { return (std::int64_t)c.nTracers[b]; }));
+    return e;
   }
 
-  std::vector<Expected> divergence_columns (const DivergenceGrid& g)
+  /// The columns of a divergence grid; @p field for a field result.
+  std::vector<Expected> divergence_columns (const DivergenceGrid& g, const bool field = false)
   {
     std::vector<Expected> e = {
       integer("index", 'K', [] (std::size_t c) { return (std::int64_t)c; }),
@@ -187,8 +194,10 @@ namespace {
       e.push_back(real("divergenceUnsmoothed", [&g] (std::size_t c) { return g.divergenceUnsmoothed[c]; }));
     e.push_back(real("volume", [&g] (std::size_t c) { return g.volume[c]; }));
     e.push_back(real("weight", [&g] (std::size_t c) { return g.weight[c]; }));
-    e.push_back(integer("nDispl", 'K', [&g] (std::size_t c) { return (std::int64_t)g.nDisplacements[c]; }));
-    e.push_back(integer("nTracers", 'K', [&g] (std::size_t c) { return (std::int64_t)g.nTracers[c]; }));
+    if (!field) {
+      e.push_back(integer("nDispl", 'K', [&g] (std::size_t c) { return (std::int64_t)g.nDisplacements[c]; }));
+      e.push_back(integer("nTracers", 'K', [&g] (std::size_t c) { return (std::int64_t)g.nTracers[c]; }));
+    }
     e.push_back(integer("voidIndex", 'K', [&g] (std::size_t c) { return g.voidIndex[c]; }));
     e.push_back(integer("overdenseIndex", 'K', [&g] (std::size_t c) { return g.overdenseIndex[c]; }));
     return e;
@@ -342,13 +351,20 @@ namespace {
   std::vector<Key> expected_keywords (const std::string& product, const Result& r, const std::string& count,
                                       const std::size_t n)
   {
+    const bool field = r.nTracers == 0;
     std::vector<Key> k = {
       text("PRODUCT", product), text("BITVFV", internal::version), text("GEOMETRY", "box"),
-      text(count, std::to_string(n)), text("NREC", std::to_string(r.nRealizations)),
-      text("NRECMEAN", std::to_string(r.config.nRealizationsMean)),
-      number("SIGMA", r.config.smoothing.sigma),
-      text("SIGUNIT", r.config.smoothing.unit == LengthUnit::Mps ? "mps" : "coordinate"),
-      number("CELLSIZE", *r.config.divergenceCellSize), number("MPS", r.mps)};
+      text(count, std::to_string(n))};
+    if (!field) {
+      k.push_back(text("NREC", std::to_string(r.nRealizations)));
+      k.push_back(text("NRECMEAN", std::to_string(r.config.nRealizationsMean)));
+    }
+    k.push_back(number("SIGMA", r.config.smoothing.sigma));
+    k.push_back(text("SIGUNIT", r.config.smoothing.unit == LengthUnit::Mps ? "mps" : "coordinate"));
+    if (!field || !std::isnan(r.mps)) {
+      k.push_back(number("CELLSIZE", *r.config.divergenceCellSize));
+      k.push_back(number("MPS", r.mps));
+    }
     if (r.randomSeed) k.push_back(text("RANDSEED", std::to_string(*r.randomSeed)));
     if (r.limits) {
       k.push_back(text("BOXLIM", "1"));
@@ -391,9 +407,10 @@ namespace {
   }
 
   /// Each of the four products, written to <stem><format>, read back and
-  /// removed.
+  /// removed; a field result without the galaxies.
   void round_trip (const Result& r, const std::string& stem, const std::string& what)
   {
+    const bool field = r.nTracers == 0;
     for (const char* format : kFormats) {
       const bool fits = std::string(format) == ".fits";
       const std::string tag = what + " " + format;
@@ -401,22 +418,24 @@ namespace {
 
       std::string file = temporary(stem + "_voids" + format);
       io::writeVoids(file, r);
-      reads_back(file, catalogue_columns(r.voids), r.voids.nBasins, digits, tag + " voids");
+      reads_back(file, catalogue_columns(r.voids, field), r.voids.nBasins, digits, tag + " voids");
       keywords_are(file, expected_keywords("voids", r, "NBASINS", r.voids.nBasins), tag + " voids");
       std::remove(file.c_str());
 
       file = temporary(stem + "_overdense" + format);
       io::writeOverdense(file, r);
-      reads_back(file, catalogue_columns(r.overdense), r.overdense.nBasins, digits, tag + " overdense");
+      reads_back(file, catalogue_columns(r.overdense, field), r.overdense.nBasins, digits, tag + " overdense");
       keywords_are(file, expected_keywords("overdense_basins", r, "NBASINS", r.overdense.nBasins),
                    tag + " overdense");
       std::remove(file.c_str());
 
       file = temporary(stem + "_divergence" + format);
       io::writeDivergence(file, r);
-      reads_back(file, divergence_columns(*r.divergence), r.divergence->nCells, 17, tag + " divergence");
+      reads_back(file, divergence_columns(*r.divergence, field), r.divergence->nCells, 17, tag + " divergence");
       keywords_are(file, expected_keywords("divergence", r, "NCELLS", r.divergence->nCells), tag + " divergence");
       std::remove(file.c_str());
+
+      if (field) continue;
 
       file = temporary(stem + "_galaxies" + format);
       io::writeGalaxies(file, r);
@@ -693,6 +712,81 @@ int main ()
     check(io::fileName(io::Product::Overdense, "", "r", true) == "overdense_basins_zspace_r", "overdense zspace");
     check(io::fileName(io::Product::Divergence, "d/", "r", true) == "d/divergence_zspace_r", "divergence zspace");
     check(io::fileName(io::Product::Galaxies, "/", "r", true) == "/galaxies_zspace_r", "galaxies zspace, root");
+  }
+
+  group("a field result, without and with mps: catalogues with fieldCentre and without deltaAv, delta2Mps, "
+        "nTracers; divergence without nDispl, nTracers; no NREC, NRECMEAN; CELLSIZE and MPS only with mps");
+  {
+    const fixtures::LatticeField lf;
+    Config c;
+    c.log = nullptr;
+    c.keepDivergence = true;
+    c.keepUnsmoothedDivergence = true;
+    c.smoothing.unit = LengthUnit::Coordinate;
+    c.smoothing.sigma = 1.5;
+    const Result f = findVoidsBoxFromField(lf.centres, lf.values, c, lf.weights);
+    check(f.nTracers == 0 && f.voids.nBasins > 0 && f.overdense.nBasins > 0 && std::isnan(f.mps),
+          "the field result: both kinds of basin, no mps");
+    round_trip(f, "field", "field, no mps");
+    const Result m = findVoidsBoxFromField(lf.centres, lf.values, c, lf.weights, 3.);
+    round_trip(m, "field_mps", "field, mps 3");
+    c.keepUnsmoothedDivergence = false;
+    round_trip(findVoidsBoxFromField(lf.centres, lf.values, c, lf.weights), "field_plain",
+               "field, no divergenceUnsmoothed");
+
+    const char* const product[3] = {"voids", "overdense", "divergence"};
+    int p = 0;
+    for (auto write : {write_voids, write_overdense, write_divergence}) {
+      const std::string fits = temporary("field_descriptions.fits"), ascii = temporary("field_descriptions.txt");
+      write(fits, f);
+      write(ascii, f);
+      const std::vector<std::string> d = descriptions_of(fits), a = descriptions_of(ascii);
+      const std::vector<std::string> names = names_of(fits);
+      bool described = a.size() == names.size() && d == a;
+      for (const std::string& text : a) described = described && !text.empty();
+      check(described, std::string("field ") + product[p] + ": every column described, FITS equal to ASCII");
+      std::remove(fits.c_str());
+      std::remove(ascii.c_str());
+      ++p;
+    }
+  }
+
+  group("errors on a field result: writeGalaxies refused (WR11); its grid checks (WR12); its columns and "
+        "records (WR13); fieldCentre in a finder's result refused");
+  {
+    const fixtures::LatticeField lf;
+    Config c;
+    c.log = nullptr;
+    c.keepDivergence = true;
+    c.smoothing.unit = LengthUnit::Coordinate;
+    c.smoothing.sigma = 1.5;
+    const Result f = findVoidsBoxFromField(lf.centres, lf.values, c, lf.weights);
+    const Result m = findVoidsBoxFromField(lf.centres, lf.values, c, lf.weights, 3.);
+    refused(write_galaxies, f, "the result is a search on a field (findVoidsBoxFromField), which has no tracers",
+            "WR11");
+
+    auto changed = [] (const Result& base, auto&& change) {
+      Result bad = base;
+      change(bad);
+      return bad;
+    };
+    refused(write_divergence, changed(f, [] (Result& b) { b.divergence->cellSize = -1.; }),
+            "cannot write the divergence: the grid has a cell size of", "WR12 cell side");
+    refused(write_divergence, changed(f, [] (Result& b) {
+              b.divergence->upper[1] = std::numeric_limits<double>::infinity(); }),
+            "cannot write the divergence: the grid has a bound that is not finite on axis y", "WR12 bound");
+    refused(write_divergence, changed(f, [] (Result& b) { b.divergence->nCellsAxis[2] += 1; }),
+            "cells for (", "WR12 counts");
+    refused(write_voids, changed(f, [] (Result& b) { b.voids.deltaAv.assign(b.voids.nBasins, 0.); }),
+            "cannot write voids.deltaAv", "WR13 deltaAv");
+    refused(write_overdense, changed(f, [] (Result& b) { b.overdense.nTracers.assign(b.overdense.nBasins, 1); }),
+            "cannot write overdense.nTracers", "WR13 nTracers");
+    refused(write_voids, changed(f, [] (Result& b) { b.voids.fieldCentre.pop_back(); }),
+            "cannot write voids.fieldCentre", "WR13 fieldCentre short");
+    refused(write_voids, changed(m, [] (Result& b) { b.config.divergenceCellSize.reset(); }),
+            "it records no divergence cell size", "WR13 with mps, no cell size");
+    refused(write_voids, changed(r, [] (Result& b) { b.voids.fieldCentre.assign(b.voids.nBasins, 0.); }),
+            "where 0 are expected", "fieldCentre in a finder's result");
   }
 
   group("the same bytes with 1 and 4 threads, in both formats");

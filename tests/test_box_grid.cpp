@@ -21,14 +21,15 @@
 /**
  *  @file tests/test_box_grid.cpp
  *
- *  @brief The box grid as DivergenceGrid describes it, and its
- *  independence of the number of threads.
+ *  @brief The box grid as DivergenceGrid describes it, boxGrid, and
+ *  their independence of the number of threads.
  */
 
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <random>
 #include <string>
@@ -38,8 +39,12 @@
 #include <omp.h>
 #endif
 
+#include "otswap/Maths.h"
+#include "otswap/OT.h"
+
 #include "internal.h"
 #include "check.h"
+#include "fixtures.h"
 
 using namespace bitvf;
 
@@ -252,6 +257,115 @@ int main ()
     if (one != kRecordedHash)
       std::cerr << "grid hash: 0x" << std::hex << one << std::dec << std::endl;
     check(one == kRecordedHash, "the hash equals the recorded one");
+  }
+
+  group("boxGrid on limits: the grid of a search with the same limits, mps and cell size, bit for bit; only "
+        "the fields that define the cells set");
+  const fixtures::Translated tr;
+  for (const double cell : {1., 0.7}) {
+    Config c = tr.config;
+    c.divergenceCellSize = cell;
+    const Result r = tr.run(c);
+    const DivergenceGrid& d = *r.divergence;
+    const DivergenceGrid g = boxGrid(*tr.limits, fixtures::Translated::kMps, cell);
+    const std::string what = "cell " + std::to_string(cell) + " mps: ";
+    check(g.geometry == otswap::Geometry::Box && g.lower == d.lower && g.upper == d.upper &&
+          g.nCellsAxis == d.nCellsAxis && g.nCells == d.nCells && g.cellSize == d.cellSize &&
+          g.cellSizeMps == d.cellSizeMps && g.mps == d.mps, what + "the defining fields");
+    check(!g.limits && g.nRealizations == 0 && g.nRealizationsMean == 0 && g.divergence.empty() &&
+          g.weight.empty() && g.nTracers.empty() && g.nDisplacements.empty() && g.voidIndex.empty() &&
+          g.centre.empty() && g.volume.empty(), what + "no record, no per-cell field");
+  }
+
+  group("boxGrid from a reconstruction: the grid findVoidsBox builds on it, with the default and a given cell "
+        "size; the default min(1, cbrt(20 / nRealizations))");
+  otswap::Config ot;
+  ot.nRealizations = 3;
+  ot.seed = 1;
+  ot.log = nullptr;
+  std::vector<double> few(tr.tracers.begin(), tr.tracers.begin() + 3 * 400);
+  otswap::BoxLimits limits;
+  limits.lower = {-2., -2., -2.};
+  limits.upper = {102., 102., 102.};
+  const otswap::Result rec = otswap::reconstructBox(few, {}, ot, limits);
+  {
+    Config c = tr.config;
+    c.keepAssignment = false;
+    c.nRealizationsMean = 1;
+    for (const std::optional<double> cell : {std::optional<double>(), std::optional<double>(0.8)}) {
+      c.divergenceCellSize = cell;
+      const Result searched = findVoidsBox(rec, c);
+      const DivergenceGrid& d = *searched.divergence;
+      const DivergenceGrid g = boxGrid(rec, cell);
+      check(g.lower == d.lower && g.upper == d.upper && g.nCellsAxis == d.nCellsAxis && g.nCells == d.nCells &&
+            g.cellSize == d.cellSize && g.cellSizeMps == d.cellSizeMps && g.mps == d.mps && g.mps == rec.mps &&
+            g.divergence.empty() && !g.limits,
+            cell ? "cell 0.8 mps" : "default cell, 3 realizations: 1 mps");
+    }
+    otswap::Result many = rec;
+    many.nRealizations = 40;
+    const DivergenceGrid g = boxGrid(many);
+    const DivergenceGrid h = boxGrid(*rec.box, rec.mps, otswap::maths::cbrt(20. / 40.));
+    check(g.cellSizeMps == otswap::maths::cbrt(0.5) && g.cellSize == h.cellSize && g.lower == h.lower &&
+          g.nCellsAxis == h.nCellsAxis, "40 realizations: cbrt(20 / 40) mps, the limits form's grid");
+  }
+
+  group("reuse: a grid from boxGrid passes the reuse checks, and the searches reusing it give the catalogues of "
+        "the searches that built their own, both kinds of basin");
+  {
+    const Result own = tr.run();
+    const DivergenceGrid g = boxGrid(*tr.limits, fixtures::Translated::kMps, *own.config.divergenceCellSize);
+    const Result reused = tr.run(&g);
+    check(own.overdense.nBasins > 0 && fixtures::same_catalog(reused.voids, own.voids) &&
+          fixtures::same_catalog(reused.overdense, own.overdense), "arrays with limits");
+    Config c = tr.config;
+    c.keepAssignment = false;
+    c.nRealizationsMean = 1;
+    const DivergenceGrid gr = boxGrid(rec);
+    const Result a = findVoidsBox(rec, c);
+    const Result b = findVoidsBox(rec, c, &gr);
+    check(fixtures::same_catalog(a.voids, b.voids) && fixtures::same_catalog(a.overdense, b.overdense),
+          "a reconstruction");
+  }
+
+  group("errors GB1-GB9");
+  {
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    otswap::BoxLimits bad = limits;
+    bad.lower[1] = nan;
+    throws_naming([&] { boxGrid(bad, 1., 1.); }, "the box limits hold a bound of", "GB1 not finite");
+    bad = limits;
+    bad.upper[2] = bad.lower[2];
+    throws_naming([&] { boxGrid(bad, 1., 1.); }, "the box limits are [", "GB1 lower not below upper");
+    throws_naming([&] { boxGrid(limits, -1., 1.); }, "mps is ", "GB2");
+    throws_naming([&] { boxGrid(limits, 1., 0.); }, "the divergence cell size is ", "GB3");
+    auto from = [&rec] (auto&& change) {
+      otswap::Result r = rec;
+      change(r);
+      return r;
+    };
+    throws_naming([&] { boxGrid(from([] (otswap::Result& r) { r.geometry = otswap::Geometry::Lightcone; })); },
+                  "the reconstruction is not a box result", "GB4");
+    throws_naming([&] { boxGrid(from([] (otswap::Result& r) { r.nRealizations = 0; })); },
+                  "it holds no realizations", "GB5");
+    throws_naming([&] { boxGrid(from([] (otswap::Result& r) { r.box.reset(); })); },
+                  "it holds no box", "GB6 no box");
+    throws_naming([&] { boxGrid(from([&nan] (otswap::Result& r) { r.box->upper[0] = nan; })); },
+                  "has a bound of", "GB6 not finite");
+    throws_naming([&] { boxGrid(from([] (otswap::Result& r) { r.box->lower[2] = r.box->upper[2] + 1.;
+                                                               r.selection.boxLimits.reset(); })); },
+                  "the lower bound must not be above the upper one", "GB6 lower above upper");
+    throws_naming([&] { boxGrid(from([] (otswap::Result& r) { r.box->upper[1] += 1.; })); },
+                  "differs from its box limits", "GB6 differs from the limits");
+    throws_naming([&] { boxGrid(from([&nan] (otswap::Result& r) { r.mps = nan; })); },
+                  "the reconstruction's mps is ", "GB7");
+    throws_naming([&] { boxGrid(rec, -2.); }, "the divergence cell size is ", "GB8");
+    otswap::BoxLimits huge;
+    huge.lower = {0., 0., 0.};
+    huge.upper = {1e7, 1., 1.};
+    throws_naming([&] { boxGrid(huge, 1., 1.); }, "the grid would need ", "GB9, limits form");
+    throws_naming([&] { boxGrid(from([] (otswap::Result& r) { r.mps = 1e-6; })); },
+                  "the grid would need ", "GB9, reconstruction form");
   }
 
   return report("test_box_grid");

@@ -348,3 +348,31 @@ bitvf::DivergenceGrid bitvf::io::readDivergence (const std::string& file)
 
   return grid;
 }
+
+
+// ============================================================================
+
+
+bitvf::io::Field bitvf::io::readField (const std::string& file, const std::array<std::string, 3>& centreColumns,
+                                       const std::string& valueColumn, const std::string& weightColumn)
+{
+  std::vector<std::string> columns = {centreColumns[0], centreColumns[1], centreColumns[2], valueColumn};
+  const bool weighted = !weightColumn.empty();
+  if (weighted) columns.push_back(weightColumn);
+  const otswap::io::Table t = call_otswap([&] { return otswap::io::read(file, columns); });
+
+  const std::size_t n = t.nRows;
+  const std::size_t nc = columns.size();
+  Field f;
+  f.centres.resize(3 * n);
+  f.values.resize(n);
+  if (weighted) f.weights.resize(n);
+  for (std::size_t c = 0; c < n; ++c) {
+    const double* v = &t.values[nc*c];
+    for (std::size_t a = 0; a < 3; ++a) f.centres[3*c+a] = v[a];
+    f.values[c] = v[3];
+    if (weighted) f.weights[c] = v[4];
+  }
+
+  return f;
+}

@@ -49,6 +49,7 @@
 
 #include "bitvf/io.h"
 #include "check.h"
+#include "fixtures.h"
 
 using namespace bitvf;
 
@@ -668,6 +669,57 @@ int main ()
       refused(t, read_mean, ": row 1 has nValidRec 3, outside 0..2", "RD10, above NREC");
       t.column("nValidRec").data[1] = -1.;
       refused(t, read_mean, ": row 1 has nValidRec -1, outside 0..2", "RD10, negative");
+    }
+  }
+
+  group("readField: centres, values and weights in row order, FITS and ASCII, by name and by ASCII index; no "
+        "weight column gives no weights");
+  for (const char* format : kFormats) {
+    const std::string file = temporary(std::string("field") + format);
+    io::writeDivergence(file, r);
+    const DivergenceGrid& g = *r.divergence;
+    const io::Field f = io::readField(file, {"cellX", "cellY", "cellZ"}, "divergenceUnsmoothed", "weight");
+    check(fixtures::same_bits(f.centres, g.centre) && fixtures::same_bits(f.values, g.divergenceUnsmoothed) &&
+          fixtures::same_bits(f.weights, g.weight), std::string("by name, bit for bit ") + format);
+    const io::Field n = io::readField(file, {"cellX", "cellY", "cellZ"}, "divergence");
+    check(fixtures::same_bits(n.values, g.divergence) && n.weights.empty(), std::string("no weights ") + format);
+    if (std::string(format) == ".txt") {
+      const io::Field i = io::readField(file, {"1", "2", "3"}, "5", "7");
+      check(fixtures::same_bits(i.centres, f.centres) && fixtures::same_bits(i.values, f.values) &&
+            fixtures::same_bits(i.weights, f.weights), "ASCII by 0-based index");
+    }
+    otswap_nested([&] { io::readField(file, {"cellX", "cellY", "nope"}, "divergence"); },
+                  std::string("RF1, a missing column ") + format);
+    otswap_nested([&] { io::readField(file, {"cellX", "cellX", "cellZ"}, "divergence"); },
+                  std::string("RF1, a column named twice ") + format);
+    std::remove(file.c_str());
+    otswap_nested([&] { io::readField(file, {"cellX", "cellY", "cellZ"}, "divergence"); },
+                  std::string("RF1, no file ") + format);
+  }
+
+  group("the divergence file of a field result: readField reads it back, readDivergence refuses it");
+  {
+    const fixtures::LatticeField lf;
+    Config c;
+    c.log = nullptr;
+    c.keepDivergence = true;
+    c.keepUnsmoothedDivergence = true;
+    c.smoothing.unit = LengthUnit::Coordinate;
+    c.smoothing.sigma = 1.5;
+    const Result fr = findVoidsBoxFromField(lf.centres, lf.values, c, lf.weights);
+    for (const char* format : kFormats) {
+      const std::string file = temporary(std::string("field_result") + format);
+      io::writeDivergence(file, fr);
+      const io::Field f = io::readField(file, {"cellX", "cellY", "cellZ"}, "divergenceUnsmoothed", "weight");
+      const Result back = findVoidsBoxFromField(f.centres, f.values, c, f.weights);
+      check(fixtures::same_bits(f.centres, fr.divergence->centre) &&
+            fixtures::same_bits(f.values, fr.divergence->divergenceUnsmoothed) &&
+            back.divergence->voidIndex == fr.divergence->voidIndex &&
+            back.divergence->overdenseIndex == fr.divergence->overdenseIndex,
+            std::string("read back, the same partition ") + format);
+      throws_naming([&] { io::readDivergence(file); }, "keyword NREC is missing",
+                    std::string("readDivergence refuses it ") + format);
+      std::remove(file.c_str());
     }
   }
 

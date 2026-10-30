@@ -22,15 +22,19 @@
  *  @file src/Watershed.cpp
  *
  *  @brief The watershed of the divergence of a box search into voids and
- *  overdense basins.
+ *  overdense basins, and of a user field (watershedBox).
  *
  *  @author Simone Sartori <simone.sartori@inaf.it>
  */
 
 #include <algorithm>
+#include <cmath>
 #include <initializer_list>
+#include <limits>
 #include <memory>
+#include <string>
 #include <type_traits>
+#include <utility>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -248,4 +252,54 @@ void bitvf::internal::box_watershed (DivergenceGrid& grid, BoxBasins& basins)
       }
       offset += (std::size_t)m;
     }
+}
+
+
+// ============================================================================
+
+
+bitvf::Partition bitvf::watershedBox (const std::vector<double>& field, const std::array<std::size_t, 3>& nCellsAxis,
+                                      otswap::Verbosity, std::ostream*)
+{
+  const std::array<std::size_t, 3>& n = nCellsAxis;
+  const std::string shape = "(" + std::to_string(n[0]) + ", " + std::to_string(n[1]) + ", " +
+    std::to_string(n[2]) + ")";
+
+  if (n[0] == 0 || n[1] == 0 || n[2] == 0)
+    throw Error("nCellsAxis is " + shape + "; every count must be at least 1");
+
+  std::size_t expected = 1;
+  bool fits = true;
+  for (const std::size_t count : n) {
+    if (count > std::numeric_limits<std::size_t>::max() / expected) fits = false;
+    else expected *= count;
+  }
+  if (!fits || field.size() != expected)
+    throw Error("field holds " + std::to_string(field.size()) + " entries for " + shape +
+                " cells; it must hold nx * ny * nz entries, one per cell");
+
+  for (std::size_t c = 0; c < field.size(); ++c)
+    if (!std::isfinite(field[c]))
+      throw Error("field holds a non-finite value at entry " + std::to_string(c));
+
+  DivergenceGrid grid;
+  grid.nCellsAxis = n;
+  grid.nCells = expected;
+  grid.divergence = field;
+
+  internal::BoxBasins basins;
+  internal::box_watershed(grid, basins);
+
+  Partition result;
+  result.nVoids = basins.voids.seed.size();
+  result.nOverdense = basins.overdense.seed.size();
+  result.voidIndex = std::move(grid.voidIndex);
+  result.overdenseIndex = std::move(grid.overdenseIndex);
+  result.voidSeed = std::move(basins.voids.seed);
+  result.overdenseSeed = std::move(basins.overdense.seed);
+  result.voidCells = std::move(basins.voids.nCells);
+  result.voidCoreCells = std::move(basins.voids.nCoreCells);
+  result.overdenseCells = std::move(basins.overdense.nCells);
+  result.overdenseCoreCells = std::move(basins.overdense.nCoreCells);
+  return result;
 }

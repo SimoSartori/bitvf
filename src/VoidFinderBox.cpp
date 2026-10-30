@@ -37,8 +37,54 @@
 namespace {
 
   /**
-   *  @brief The search shared by both overloads, once the arguments are
-   *  checked: the grid, then the steps of the search, then the result.
+   *  @brief The steps of a box search from the smoothing on: smoothing,
+   *  watershed, catalogues, then the fields of the result.
+   *  @param cells the grid with the divergence before smoothing, weight
+   *  and the records of the search set; moved into Result::divergence
+   *  when kept
+   *  @param result the result, with config set
+   *  @param start the time the public call began, for
+   *  Result::elapsedSeconds
+   */
+  void finish_box (const bitvf::internal::BoxSearch& search, const bitvf::internal::BoxDivergence& div,
+                   bitvf::DivergenceGrid& cells, bitvf::Result& result,
+                   const std::chrono::steady_clock::time_point start)
+  {
+    const bitvf::Config& config = result.config;
+
+    bitvf::internal::box_smooth(cells, search.sigmaLength,
+                                config.keepUnsmoothedDivergence ? &cells.divergenceUnsmoothed : nullptr);
+    bitvf::internal::BoxBasins basins;
+    bitvf::internal::box_watershed(cells, basins);
+    if (basins.voids.seed.empty())
+      throw bitvf::Error("no void found: the divergence is 0 or positive in every cell");
+    bitvf::internal::box_basins(&search, &div, cells, basins, result.voids, result.overdense);
+
+    result.nTracers = search.nTracers;
+    result.geometry = otswap::Geometry::Box;
+    result.ids = *search.ids;
+    result.outsideGrid = search.outsideGrid;
+    result.limits = search.limits;
+    result.mps = search.mps;
+    result.counts = search.counts;
+    result.counts.tracersUsed = div.nUsed;
+
+    if (config.keepAssignment)
+      result.assignment = bitvf::internal::box_assignment(search, div, cells, result.voids, result.overdense);
+
+    if (config.keepDivergence) {
+      bitvf::internal::box_centres(cells);
+      cells.volume.assign(cells.nCells, cells.cellSize * cells.cellSize * cells.cellSize);
+      result.divergence = std::move(cells);
+    }
+
+    result.elapsedSeconds =
+      std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+  }
+
+  /**
+   *  @brief The search shared by both overloads of findVoidsBox, once the
+   *  arguments are checked: the grid, the divergence, then finish_box.
    *  @param grid the grid to reuse, or null to build one
    *  @param start the time the public call began, for
    *  Result::elapsedSeconds
@@ -74,40 +120,12 @@ namespace {
     cells.nRealizationsMean = config.nRealizationsMean;
 
     const bitvf::internal::BoxDivergence div = bitvf::internal::box_divergence(search, cells);
-    bitvf::internal::box_smooth(cells, search.sigmaLength,
-                                config.keepUnsmoothedDivergence ? &cells.divergenceUnsmoothed : nullptr);
-    bitvf::internal::BoxBasins basins;
-    bitvf::internal::box_watershed(cells, basins);
-    if (basins.voids.seed.empty())
-      throw bitvf::Error("no void found: the divergence is 0 or positive in every cell");
-    bitvf::internal::box_basins(&search, &div, cells, basins, result.voids, result.overdense);
-
-    result.nTracers = search.nTracers;
     result.nRealizations = search.nRealizations;
-    result.geometry = otswap::Geometry::Box;
-    result.ids = *search.ids;
-    result.outsideGrid = search.outsideGrid;
-    result.limits = search.limits;
-    result.mps = search.mps;
-    result.counts = search.counts;
-    result.counts.tracersUsed = div.nUsed;
-
-    if (config.keepAssignment)
-      result.assignment = bitvf::internal::box_assignment(search, div, cells, result.voids, result.overdense);
-
-    if (config.keepDivergence) {
-      bitvf::internal::box_centres(cells);
-      cells.volume.assign(cells.nCells, cells.cellSize * cells.cellSize * cells.cellSize);
-      result.divergence = std::move(cells);
-    }
-
-    result.elapsedSeconds =
-      std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    finish_box(search, div, cells, result, start);
     return result;
   }
 
 }
-
 
 // ============================================================================
 
@@ -138,4 +156,50 @@ bitvf::Result bitvf::findVoidsBox (const otswap::Result& reconstruction,
   const auto start = std::chrono::steady_clock::now();
   const internal::BoxSearch search = internal::check_box(reconstruction, config, grid);
   return search_box(search, config, grid, start);
+}
+
+
+// ============================================================================
+
+
+bitvf::Result bitvf::findVoidsBoxFromDivergence (const DivergenceGrid& divergence,
+                                                 const std::vector<double>& tracers,
+                                                 const Config& config,
+                                                 const std::vector<std::int64_t>& ids)
+{
+  const auto start = std::chrono::steady_clock::now();
+  const internal::BoxSearch search = internal::check_box_from_divergence(divergence, tracers, config, ids);
+
+  Result result;
+  result.config = config;
+  result.config.divergenceCellSize = divergence.cellSizeMps;
+  result.config.nRealizationsMean = divergence.nRealizationsMean;
+  result.nRealizations = divergence.nRealizations;
+
+  DivergenceGrid cells;
+  cells.geometry = divergence.geometry;
+  cells.mps = divergence.mps;
+  cells.cellSize = divergence.cellSize;
+  cells.cellSizeMps = divergence.cellSizeMps;
+  cells.lower = divergence.lower;
+  cells.upper = divergence.upper;
+  cells.nCellsAxis = divergence.nCellsAxis;
+  cells.nCells = divergence.nCells;
+  cells.limits = divergence.limits;
+  cells.nRealizations = divergence.nRealizations;
+  cells.nRealizationsMean = divergence.nRealizationsMean;
+  cells.divergence = divergence.divergenceUnsmoothed;
+  cells.weight = divergence.weight;
+  cells.nDisplacements = divergence.nDisplacements;
+
+  const internal::BoxDivergence div = internal::box_tracer_cells(search, cells);
+  if (!divergence.nTracers.empty())
+    for (std::size_t c = 0; c < cells.nCells; ++c)
+      if (cells.nTracers[c] != divergence.nTracers[c])
+        throw Error("the tracers do not match the divergence: cell " + std::to_string(c) + " holds " +
+                    std::to_string(cells.nTracers[c]) + " of the tracers read, but the grid's nTracers is " +
+                    std::to_string(divergence.nTracers[c]) + "; pass the tracers of the search that produced the field");
+
+  finish_box(search, div, cells, result, start);
+  return result;
 }

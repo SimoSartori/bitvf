@@ -24,8 +24,8 @@
  *  @brief The watershed of a box search: the flow and its tie rule, seeds
  *  and their sign, the faces cut, the numbering, the counts, the error
  *  when there is no void, walks longer than the path buffer, agreement
- *  with a serial reference walk, and independence of the number of
- *  threads.
+ *  with a serial reference walk, independence of the number of
+ *  threads, and watershedBox.
  */
 
 #include <algorithm>
@@ -45,6 +45,7 @@
 
 #include "internal.h"
 #include "check.h"
+#include "fixtures.h"
 
 using namespace bitvf;
 
@@ -590,6 +591,85 @@ int main ()
         std::cerr << what << "hash 0x" << std::hex << one << std::dec << std::endl;
       check(one == recorded, what + "the hash equals the recorded one");
     }
+  }
+
+  group("watershedBox: equal to the serial reference walk with 1 and 4 threads, on cubic and non-cubic grids, "
+        "axes of 1 cell included; seeds, labels and cell counts");
+  for (const std::array<std::size_t, 3> n : {std::array<std::size_t, 3>{16, 16, 16}, {5, 9, 13}, {2, 3, 4},
+                                             {1, 7, 11}, {7, 11, 1}, {1, 1, 40}, {1, 1, 1}})
+    for (const bool ties : {false, true}) {
+      DivergenceGrid g = box(n, 0.);
+      const double levels[] = {-2., -1., -0., 0., 1., 2.};
+      for (std::size_t c = 0; c < g.nCells; ++c) g.divergence[c] = ties ? levels[rng() % 6] : uniform(-1., 1.);
+      const Reference ref = reference(g);
+      bool ok = true;
+      for (const int t : {1, 4}) {
+        threads(t);
+        const Partition p = watershedBox(g.divergence, n);
+        ok = ok && p.nVoids == ref.basins.voids.seed.size() && p.nOverdense == ref.basins.overdense.seed.size() &&
+             p.voidIndex == ref.voidIndex && p.overdenseIndex == ref.overdenseIndex &&
+             p.voidSeed == ref.basins.voids.seed && p.overdenseSeed == ref.basins.overdense.seed &&
+             p.voidCells == ref.basins.voids.nCells && p.voidCoreCells == ref.basins.voids.nCoreCells &&
+             p.overdenseCells == ref.basins.overdense.nCells &&
+             p.overdenseCoreCells == ref.basins.overdense.nCoreCells;
+      }
+      threads(4);
+      check(ok, "(" + std::to_string(n[0]) + ", " + std::to_string(n[1]) + ", " + std::to_string(n[2]) + ")" +
+            (ties ? ", ties" : ", continuous"));
+    }
+
+  group("watershedBox on a search's smoothed divergence: the search's labels, seeds and basin cell counts, "
+        "both kinds of basin");
+  {
+    const fixtures::Translated in;
+    const Result r = in.run();
+    const DivergenceGrid& d = *r.divergence;
+    const Partition p = watershedBox(d.divergence, d.nCellsAxis);
+    check(r.overdense.nBasins > 0 && p.nVoids == r.voids.nBasins && p.nOverdense == r.overdense.nBasins,
+          "basin counts");
+    check(p.voidIndex == d.voidIndex && p.overdenseIndex == d.overdenseIndex, "labels");
+    std::vector<std::uint64_t> voidCells(p.nVoids, 0), voidCore(p.nVoids, 0);
+    std::vector<std::uint64_t> overdenseCells(p.nOverdense, 0);
+    for (std::size_t c = 0; c < d.nCells; ++c) {
+      if (d.voidIndex[c] >= 0) {
+        ++voidCells[(std::size_t)d.voidIndex[c]];
+        if (d.divergence[c] < 0.) ++voidCore[(std::size_t)d.voidIndex[c]];
+      }
+      else ++overdenseCells[(std::size_t)d.overdenseIndex[c]];
+    }
+    bool seeds = true;
+    for (std::size_t b = 0; b < p.nVoids; ++b)
+      seeds = seeds && d.voidIndex[(std::size_t)p.voidSeed[b]] == (std::int64_t)b &&
+              (b == 0 || p.voidSeed[b - 1] < p.voidSeed[b]);
+    for (std::size_t b = 0; b < p.nOverdense; ++b)
+      seeds = seeds && d.overdenseIndex[(std::size_t)p.overdenseSeed[b]] == (std::int64_t)b &&
+              d.divergence[(std::size_t)p.overdenseSeed[b]] >= 0.;
+    check(seeds, "seeds ascending, in their basins, overdense seeds at or above 0");
+    check(p.voidCells == voidCells && p.voidCoreCells == voidCore && p.overdenseCells == overdenseCells &&
+          p.overdenseCoreCells == overdenseCells, "cell counts");
+  }
+
+  group("watershedBox: no cell below 0 gives no void and no error");
+  {
+    std::vector<double> field(2 * 3 * 4);
+    for (double& v : field) v = uniform(0., 1.);
+    field[5] = -0.;
+    const Partition p = watershedBox(field, {2, 3, 4});
+    check(p.nVoids == 0 && p.voidSeed.empty() && p.voidCells.empty() && p.nOverdense > 0 &&
+          p.voidIndex == std::vector<std::int64_t>(field.size(), -1), "no void, every cell overdense");
+  }
+
+  group("watershedBox errors WS1-WS3");
+  {
+    const std::vector<double> field(2 * 3 * 4, -1.);
+    throws_naming([&] { watershedBox(field, {2, 0, 4}); }, "nCellsAxis is (2, 0, 4); every count must be at least 1",
+                  "WS1");
+    throws_naming([&] { watershedBox(field, {2, 3, 5}); }, "field holds 24 entries for (2, 3, 5) cells", "WS2");
+    throws_naming([&] { watershedBox(field, {(std::size_t)1 << 40, (std::size_t)1 << 40, 1}); }, "field holds 24",
+                  "WS2, a product that overflows");
+    std::vector<double> bad = field;
+    bad[9] = std::numeric_limits<double>::infinity();
+    throws_naming([&] { watershedBox(bad, {2, 3, 4}); }, "field holds a non-finite value at entry 9", "WS3");
   }
 
   return report("test_watershed");

@@ -91,25 +91,6 @@ namespace {
   }
 
   /**
-   *  @brief Check box limits.
-   *  @param name the name of the limits in the messages
-   */
-  void check_limits (const otswap::BoxLimits& limits, const std::string& name)
-  {
-    for (std::size_t k = 0; k < 3; ++k)
-      for (const double bound : {limits.lower[k], limits.upper[k]})
-        if (!std::isfinite(bound))
-          throw bitvf::Error(name + " hold a bound of " + std::to_string(bound) + " on axis " +
-                             kAxes[k] + "; every bound must be finite");
-
-    for (std::size_t k = 0; k < 3; ++k)
-      if (!(limits.lower[k] < limits.upper[k]))
-        throw bitvf::Error(name + " are [" + std::to_string(limits.lower[k]) + ", " +
-                           std::to_string(limits.upper[k]) + "] on axis " + kAxes[k] +
-                           "; the lower bound must be below the upper one");
-  }
-
-  /**
    *  @brief Check the IDs of the tracers: one per tracer, or none, and no
    *  value twice.
    *  @param name the name of the IDs in the messages
@@ -140,6 +121,52 @@ namespace {
   }
 
   /**
+   *  @brief The smoothing sigma in coordinate units: sigma, times mps in
+   *  Mps.
+   *  @exception Error if sigma is positive and (2 sigmaLength) sigmaLength
+   *  is 0 or not finite, too small or too large to build the kernel
+   */
+  double sigma_length (const bitvf::Smoothing& smoothing, const double mps)
+  {
+    const bool inMps = smoothing.unit == bitvf::LengthUnit::Mps;
+    const double sigmaLength = inMps ? smoothing.sigma * mps : smoothing.sigma;
+    const double twoSigmaSq = 2 * sigmaLength * sigmaLength;
+    if (smoothing.sigma > 0. && (twoSigmaSq == 0. || !std::isfinite(twoSigmaSq)))
+      throw bitvf::Error("the smoothing sigma is " + exact(smoothing.sigma) +
+                         (inMps ? " mps (" : " in coordinate units (") + exact(sigmaLength) +
+                         " in coordinate units), too " + (twoSigmaSq == 0. ? "small" : "large") +
+                         " to build the kernel; use 0 to disable the smoothing");
+    return sigmaLength;
+  }
+
+  /**
+   *  @brief With a grid, flag and count the tracers inside the limits but
+   *  outside every cell; then check the number of tracers read.
+   *  @param search the search, with inBox and counts.tracersOutsideBox set
+   *  @param grid the grid the tracers are read in, or null for none
+   *  @exception Error if the search reads more tracers than the count of
+   *  delta2Mps supports
+   */
+  void select_tracers (bitvf::internal::BoxSearch& search, const bitvf::DivergenceGrid* grid)
+  {
+    const std::size_t N = search.nTracers;
+    if (grid != nullptr) {
+      search.outsideGrid.assign(N, 0);
+      for (std::size_t i = 0; i < N; ++i)
+        if (search.inBox[i] && bitvf::internal::box_cell(*grid, &(*search.tracers)[3*i]) < 0) {
+          search.outsideGrid[i] = 1;
+          ++search.counts.tracersOutsideGrid;
+        }
+    }
+
+    const std::size_t nTracersRead = N - search.counts.tracersOutsideBox - search.counts.tracersOutsideGrid;
+    if (nTracersRead > std::numeric_limits<unsigned>::max())
+      throw bitvf::Error("tracers: the search reads " + std::to_string(nTracersRead) + " tracers, more than " +
+                         std::to_string(std::numeric_limits<unsigned>::max()) +
+                         ", the most the count within 2 mps of a centre (delta2Mps) supports");
+  }
+
+  /**
    *  @brief The checks and the selection shared by both overloads, once
    *  the arrays, mps, the limits and the IDs are checked and the tracers
    *  outside the limits are known.
@@ -157,33 +184,11 @@ namespace {
     bitvf::internal::check_config(config, grid != nullptr);
     if (grid != nullptr) bitvf::internal::check_box_grid(*grid, search.mps, mpsMustMatch);
 
-    const bitvf::Smoothing& smoothing = config.smoothing;
-    const bool inMps = smoothing.unit == bitvf::LengthUnit::Mps;
-    search.sigmaLength = inMps ? smoothing.sigma * search.mps : smoothing.sigma;
-    const double twoSigmaSq = 2 * search.sigmaLength * search.sigmaLength;
-    if (smoothing.sigma > 0. && (twoSigmaSq == 0. || !std::isfinite(twoSigmaSq)))
-      throw bitvf::Error("the smoothing sigma is " + exact(smoothing.sigma) +
-                         (inMps ? " mps (" : " in coordinate units (") + exact(search.sigmaLength) +
-                         " in coordinate units), too " + (twoSigmaSq == 0. ? "small" : "large") +
-                         " to build the kernel; use 0 to disable the smoothing");
+    search.sigmaLength = sigma_length(config.smoothing, search.mps);
+
+    select_tracers(search, grid);
 
     const std::size_t N = search.nTracers;
-
-    if (grid != nullptr) {
-      search.outsideGrid.assign(N, 0);
-      for (std::size_t i = 0; i < N; ++i)
-        if (search.inBox[i] && bitvf::internal::box_cell(*grid, &(*search.tracers)[3*i]) < 0) {
-          search.outsideGrid[i] = 1;
-          ++search.counts.tracersOutsideGrid;
-        }
-    }
-
-    const std::size_t nTracersRead = N - search.counts.tracersOutsideBox - search.counts.tracersOutsideGrid;
-    if (nTracersRead > std::numeric_limits<unsigned>::max())
-      throw bitvf::Error("tracers: the search reads " + std::to_string(nTracersRead) + " tracers, more than " +
-                         std::to_string(std::numeric_limits<unsigned>::max()) +
-                         ", the most the count within 2 mps of a centre (delta2Mps) supports");
-
     const std::vector<double>& displacement = *search.displacement;
     const std::vector<std::uint8_t>& valid = *search.valid;
     const std::size_t rows = (std::size_t)search.nRealizations * N;
@@ -226,6 +231,51 @@ namespace {
                          " outside the grid)");
   }
 
+}
+
+
+// ============================================================================
+
+
+void bitvf::internal::check_limits (const otswap::BoxLimits& limits, const std::string& name)
+{
+  for (std::size_t k = 0; k < 3; ++k)
+    for (const double bound : {limits.lower[k], limits.upper[k]})
+      if (!std::isfinite(bound))
+        throw Error(name + " hold a bound of " + std::to_string(bound) + " on axis " +
+                    kAxes[k] + "; every bound must be finite");
+
+  for (std::size_t k = 0; k < 3; ++k)
+    if (!(limits.lower[k] < limits.upper[k]))
+      throw Error(name + " are [" + std::to_string(limits.lower[k]) + ", " +
+                  std::to_string(limits.upper[k]) + "] on axis " + kAxes[k] +
+                  "; the lower bound must be below the upper one");
+}
+
+
+// ============================================================================
+
+
+void bitvf::internal::check_reconstruction_box (const otswap::Result& rec)
+{
+  const std::string malformed = "the reconstruction is malformed: ";
+
+  if (!rec.box) throw Error(malformed + "it holds no box (otswap::Result::box)");
+  const otswap::BoxLimits& box = *rec.box;
+  for (std::size_t k = 0; k < 3; ++k) {
+    if (!std::isfinite(box.lower[k]) || !std::isfinite(box.upper[k]))
+      throw Error(malformed + "its box (otswap::Result::box) has a bound of " +
+                  std::to_string(std::isfinite(box.lower[k]) ? box.upper[k] : box.lower[k]) +
+                  " on axis " + kAxes[k] + "; every bound must be finite");
+    if (box.lower[k] > box.upper[k])
+      throw Error(malformed + "its box (otswap::Result::box) spans [" + exact(box.lower[k]) + ", " +
+                  exact(box.upper[k]) + "] on axis " + kAxes[k] +
+                  "; the lower bound must not be above the upper one");
+  }
+  if (rec.selection.boxLimits && (rec.selection.boxLimits->lower != box.lower ||
+                                  rec.selection.boxLimits->upper != box.upper))
+    throw Error(malformed + "its box (otswap::Result::box) differs from its box limits "
+                "(otswap::SelectionCounts::boxLimits); a reconstruction with limits uses them as its box");
 }
 
 
@@ -360,22 +410,8 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const otswap::Result& rec
 
   if (rec.selection.boxLimits) check_limits(*rec.selection.boxLimits, "the reconstruction's box limits");
 
-  if (!rec.box) throw Error(malformed + "it holds no box (otswap::Result::box)");
+  check_reconstruction_box(rec);
   const otswap::BoxLimits& box = *rec.box;
-  for (std::size_t k = 0; k < 3; ++k) {
-    if (!std::isfinite(box.lower[k]) || !std::isfinite(box.upper[k]))
-      throw Error(malformed + "its box (otswap::Result::box) has a bound of " +
-                  std::to_string(std::isfinite(box.lower[k]) ? box.upper[k] : box.lower[k]) +
-                  " on axis " + kAxes[k] + "; every bound must be finite");
-    if (box.lower[k] > box.upper[k])
-      throw Error(malformed + "its box (otswap::Result::box) spans [" + exact(box.lower[k]) + ", " +
-                  exact(box.upper[k]) + "] on axis " + kAxes[k] +
-                  "; the lower bound must not be above the upper one");
-  }
-  if (rec.selection.boxLimits && (rec.selection.boxLimits->lower != box.lower ||
-                                  rec.selection.boxLimits->upper != box.upper))
-    throw Error(malformed + "its box (otswap::Result::box) differs from its box limits "
-                "(otswap::SelectionCounts::boxLimits); a reconstruction with limits uses them as its box");
 
   for (std::size_t i = 0; i < N; ++i)
     if (search.inBox[i])
@@ -425,9 +461,9 @@ void bitvf::internal::check_config (const Config& config, const bool gridGiven)
 
 
 void bitvf::internal::check_box_grid (const DivergenceGrid& grid, const double mps,
-                                      const bool mpsMustMatch)
+                                      const bool mpsMustMatch, const std::string& name)
 {
-  const std::string bad = "the grid to reuse ";
+  const std::string bad = name + " ";
 
   if (grid.geometry != otswap::Geometry::Box)
     throw Error(bad + "is not a box grid");
@@ -481,6 +517,127 @@ void bitvf::internal::check_box_grid (const DivergenceGrid& grid, const double m
     throw Error(bad + "is a box grid with a field of a lightcone grid set");
 
   if (mpsMustMatch && mps != grid.mps)
-    throw Error("mps is " + exact(mps) + " in coordinate units, but the grid to reuse was built with " +
+    throw Error("mps is " + exact(mps) + " in coordinate units, but " + name + " was built with " +
                 exact(grid.mps) + "; they must be equal");
+}
+
+
+// ============================================================================
+
+
+bitvf::internal::BoxSearch bitvf::internal::check_box_from_divergence (const DivergenceGrid& grid,
+                                                                       const std::vector<double>& tracers,
+                                                                       const Config& config,
+                                                                       const std::vector<std::int64_t>& ids)
+{
+  const std::size_t N = check_coordinates(tracers, "tracers", false);
+  check_ids(ids, N, "ids");
+
+  check_config(config, false);
+  if (config.divergenceCellSize)
+    throw Error("the divergence cell size is set for a search from a divergence; leave it empty, "
+                "the cells are the grid's");
+
+  check_box_grid(grid, grid.mps, false, "the divergence grid");
+  if (grid.limits) check_limits(*grid.limits, "the grid's box limits");
+
+  const std::size_t C = grid.nCells;
+  const std::pair<const std::vector<double>*, const char*> fields[2] = {
+    {&grid.divergenceUnsmoothed, "divergenceUnsmoothed"}, {&grid.weight, "weight"}};
+  for (const auto& field : fields) {
+    if (field.first->size() != C)
+      throw Error("the grid's " + std::string(field.second) + " holds " + std::to_string(field.first->size()) +
+                  " entries for " + std::to_string(C) + " cells; a search from a divergence needs one per cell"
+                  " (keep it with Config::keepUnsmoothedDivergence, or read it from a divergence file)");
+    for (std::size_t c = 0; c < C; ++c)
+      if (!std::isfinite((*field.first)[c]))
+        throw Error("the grid's " + std::string(field.second) + " holds a non-finite value at cell " +
+                    std::to_string(c));
+  }
+  if (!grid.nTracers.empty() && grid.nTracers.size() != C)
+    throw Error("the grid's nTracers holds " + std::to_string(grid.nTracers.size()) + " entries for " +
+                std::to_string(C) + " cells; give one per cell, or none");
+
+  BoxSearch search;
+  search.nTracers = N;
+  search.nRealizations = grid.nRealizations;
+  search.tracers = &tracers;
+  search.ids = &ids;
+  search.mps = grid.mps;
+  search.limits = grid.limits;
+  search.counts.tracers = N;
+  search.sigmaLength = sigma_length(config.smoothing, grid.mps);
+
+  search.inBox.assign(N, 1);
+  if (grid.limits)
+    for (std::size_t i = 0; i < N; ++i)
+      for (std::size_t k = 0; k < 3; ++k)
+        if (!(tracers[3*i+k] >= grid.limits->lower[k] && tracers[3*i+k] <= grid.limits->upper[k])) {
+          search.inBox[i] = 0;
+          ++search.counts.tracersOutsideBox;
+          break;
+        }
+
+  select_tracers(search, &grid);
+
+  if (search.counts.tracersOutsideBox + search.counts.tracersOutsideGrid == N)
+    throw Error("no tracer is left to read: of " + std::to_string(N) + " tracers, " +
+                std::to_string(search.counts.tracersOutsideBox) + " lie outside the grid's box limits and " +
+                std::to_string(search.counts.tracersOutsideGrid) + " outside the grid");
+
+  return search;
+}
+
+
+// ============================================================================
+
+
+double bitvf::internal::check_box_from_field (const std::vector<double>& centres,
+                                              const std::vector<double>& values,
+                                              const Config& config,
+                                              const std::vector<double>& weights,
+                                              const std::optional<double>& mps)
+{
+  const std::size_t N = check_coordinates(centres, "centres", false);
+
+  if (values.size() != N)
+    throw Error("values holds " + std::to_string(values.size()) + " entries for " + std::to_string(N) +
+                " centres; it must hold one per centre");
+  for (std::size_t c = 0; c < N; ++c)
+    if (!std::isfinite(values[c]))
+      throw Error("values holds a non-finite value at entry " + std::to_string(c));
+
+  if (!weights.empty() && weights.size() != N)
+    throw Error("weights holds " + std::to_string(weights.size()) + " entries for " + std::to_string(N) +
+                " centres; it must hold one per centre, or none");
+  for (std::size_t c = 0; c < weights.size(); ++c)
+    if (!std::isfinite(weights[c]) || weights[c] < 0.)
+      throw Error("weights holds " + exact(weights[c]) + " at entry " + std::to_string(c) +
+                  "; every weight must be finite and non-negative");
+
+  if (mps && (!std::isfinite(*mps) || *mps <= 0.))
+    throw Error("mps is " + std::to_string(*mps) + " in coordinate units; it must be finite and positive");
+
+  check_config(config, false);
+  if (config.divergenceCellSize)
+    throw Error("the divergence cell size is set for a search on a field; leave it empty, "
+                "the cells are the lattice's");
+  if (config.keepAssignment)
+    throw Error("keepAssignment is set for a search on a field, which has no tracers; leave it unset");
+  if (config.nRealizationsMean != 1)
+    throw Error("the number of realizations averaged is " + std::to_string(config.nRealizationsMean) +
+                " for a search on a field, which has no realizations; leave it 1");
+
+  if (!mps && config.smoothing.unit == LengthUnit::Mps && config.smoothing.sigma > 0.)
+    throw Error("the smoothing sigma is in mps, but no mps is given; give the mps, or the sigma in "
+                "coordinate units (LengthUnit::Coordinate)");
+
+  const double sigmaLength = sigma_length(config.smoothing, mps ? *mps : 1.);
+
+  if (config.smoothing.sigma > 0. && !weights.empty() &&
+      std::all_of(weights.begin(), weights.end(), [] (const double w) { return w == 0.; }))
+    throw Error("every weight is 0, so no cell can be smoothed; give a positive weight, or set "
+                "the smoothing sigma to 0");
+
+  return sigmaLength;
 }

@@ -21,16 +21,19 @@
 /**
  *  @file src/BoxGrid.cpp
  *
- *  @brief The box grid: its construction, the cell of a point, the cell
- *  centres.
+ *  @brief The box grid: its construction, boxGrid, the cell of a point,
+ *  the cell centres.
  *
  *  @author Simone Sartori <simone.sartori@inaf.it>
  */
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <limits>
 #include <string>
+
+#include "otswap/Maths.h"
 
 #include "internal.h"
 
@@ -141,4 +144,61 @@ void bitvf::internal::box_centres (DivergenceGrid& grid)
         grid.centre[3*c+1] = grid.lower[1] + s * (j + 0.5);
         grid.centre[3*c+2] = grid.lower[2] + s * (k + 0.5);
       }
+}
+
+
+// ============================================================================
+
+
+bitvf::DivergenceGrid bitvf::boxGrid (const otswap::BoxLimits& box, const double mps,
+                                      const double divergenceCellSize)
+{
+  internal::check_limits(box, "the box limits");
+
+  if (!std::isfinite(mps) || mps <= 0.)
+    throw Error("mps is " + std::to_string(mps) + " in coordinate units; it must be finite and positive");
+
+  if (!std::isfinite(divergenceCellSize) || divergenceCellSize <= 0.)
+    throw Error("the divergence cell size is " + std::to_string(divergenceCellSize) +
+                " mean particle separations; it must be finite and positive");
+
+  internal::BoxSearch search;
+  search.box = box;
+  search.mps = mps;
+  return internal::box_grid(search, divergenceCellSize);
+}
+
+
+// ============================================================================
+
+
+bitvf::DivergenceGrid bitvf::boxGrid (const otswap::Result& reconstruction,
+                                      const std::optional<double> divergenceCellSize)
+{
+  const otswap::Result& rec = reconstruction;
+
+  if (rec.geometry != otswap::Geometry::Box)
+    throw Error("the reconstruction is not a box result; use the lightcone grid builder");
+
+  if (rec.nRealizations == 0)
+    throw Error("the reconstruction is malformed: it holds no realizations");
+
+  internal::check_reconstruction_box(rec);
+
+  if (!std::isfinite(rec.mps) || rec.mps <= 0.)
+    throw Error("the reconstruction's mps is " + std::to_string(rec.mps) +
+                " in coordinate units; it must be finite and positive");
+
+  if (divergenceCellSize && (!std::isfinite(*divergenceCellSize) || *divergenceCellSize <= 0.))
+    throw Error("the divergence cell size is " + std::to_string(*divergenceCellSize) +
+                " mean particle separations; it must be finite and positive");
+
+  const double cellSizeMps = divergenceCellSize
+    ? *divergenceCellSize
+    : std::min(1., otswap::maths::cbrt(20. / rec.nRealizations));
+
+  internal::BoxSearch search;
+  search.box = *rec.box;
+  search.mps = rec.mps;
+  return internal::box_grid(search, cellSizeMps);
 }

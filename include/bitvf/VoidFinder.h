@@ -318,6 +318,14 @@ namespace bitvf {
     /// Tracers starting in the cells of the core: the count behind
     /// deltaAv.
     std::vector<std::size_t> nTracers;
+
+    /// findVoidsBoxFromField only, empty otherwise: the field the
+    /// watershed split, smoothed when a smoothing was applied, at centre,
+    /// interpolated trilinearly between the eight nearest cell centres.
+    /// The point is first clamped, per axis, to the range of the cell
+    /// centres; an axis with one cell takes that cell's value. At a cell
+    /// centre it is that cell's value.
+    std::vector<double> fieldCentre;
   };
 
   /**
@@ -378,7 +386,10 @@ namespace bitvf {
     std::size_t nCells = 0;
 
     /// Box, defines the cells: cell side, in coordinate units,
-    /// cellSizeMps times mps. NaN in a lightcone.
+    /// cellSizeMps times mps. In a result of findVoidsBoxFromField, the
+    /// spacing (max - min) / (n - 1) of the centres along the axis with the
+    /// most nodes, x before y before z on a tie, with cellSizeMps that
+    /// spacing divided by mps. NaN in a lightcone.
     double cellSize = std::numeric_limits<double>::quiet_NaN();
 
     /// Box, defines the cells: x, y, z of the lower grid face, in
@@ -396,7 +407,8 @@ namespace bitvf {
                                    std::numeric_limits<double>::quiet_NaN()};
 
     /// Box, defines the cells: cells along x, y, z, the same count on the
-    /// three axes. 0 in a lightcone.
+    /// three axes but in a result of findVoidsBoxFromField, where they may
+    /// differ. 0 in a lightcone.
     std::array<std::size_t, 3> nCellsAxis = {0, 0, 0};
 
     /// Box: the box limits of the search that filled the grid; the tracers
@@ -407,11 +419,12 @@ namespace bitvf {
 
     /// Box: the realizations of the search that filled the grid (keyword
     /// NREC). A record: a search reusing the grid does not read it. 0 in a
-    /// lightcone.
+    /// lightcone and in a result of findVoidsBoxFromField.
     unsigned nRealizations = 0;
 
     /// Box: Config::nRealizationsMean of the search that filled the grid
-    /// (keyword NRECMEAN). A record, as nRealizations. 0 in a lightcone.
+    /// (keyword NRECMEAN). A record, as nRealizations. 0 in a lightcone and
+    /// in a result of findVoidsBoxFromField.
     unsigned nRealizationsMean = 0;
 
     /// Lightcone, defines the cells: comoving distance range of the
@@ -439,7 +452,8 @@ namespace bitvf {
 
     /// Box: the mean particle separation the grid was built with, in
     /// coordinate units; the smoothing in mps and the delta2Mps radius of
-    /// a search that reuses the grid follow it. NaN in a lightcone.
+    /// a search that reuses the grid follow it. NaN in a lightcone, and in
+    /// a result of findVoidsBoxFromField given no mps (cellSizeMps too).
     double mps = std::numeric_limits<double>::quiet_NaN();
 
     /// Lightcone: the mps(z) profile the grid was built with; the shells,
@@ -546,7 +560,8 @@ namespace bitvf {
     std::vector<std::uint8_t> inBox;
 
     /// 1 when at least one valid displacement of the tracer entered the
-    /// divergence.
+    /// divergence. Empty after findVoidsBoxFromDivergence, which reads no
+    /// displacement.
     std::vector<std::uint8_t> used;
   };
 
@@ -590,6 +605,12 @@ namespace bitvf {
    *
    *  Given the same inputs, every field but elapsedSeconds is the same bit
    *  for bit whatever the number of threads.
+   *
+   *  A result of findVoidsBoxFromField, a field result, holds no tracer:
+   *  nTracers and nRealizations are 0, which tells it from the result of
+   *  every other search, and so are the counts; ids, the per-tracer flags,
+   *  assignment, and the catalogue columns deltaAv, delta2Mps and nTracers
+   *  are empty; limits is empty; mps is NaN when none was given.
    */
   struct Result {
 
@@ -811,6 +832,272 @@ namespace bitvf {
   Result findVoidsBox (const otswap::Result& reconstruction,
                        const Config& config,
                        const DivergenceGrid* grid = nullptr);
+
+  /**
+   *  @brief Find voids and overdense basins in a box from a divergence
+   *  computed earlier, with the tracers given.
+   *
+   *  The field before smoothing (DivergenceGrid::divergenceUnsmoothed) is
+   *  smoothed with config.smoothing, in units of the grid's mps, split into
+   *  basins and catalogued as findVoidsBox does; a different sigma is the
+   *  usual reason for the call. With the tracers of the search that
+   *  produced the grid and the same smoothing, the voids, the overdense
+   *  basins, the smoothed divergence and the assignment but its used flags
+   *  equal that search's bit for bit. A grid kept in memory with
+   *  Config::keepUnsmoothedDivergence serves as well as one read from a
+   *  divergence file (io::readDivergence).
+   *
+   *  The tracers are read as with a reused grid: those outside the grid's
+   *  box limits (DivergenceGrid::limits) are skipped
+   *  (TracerAssignment::inBox, Counts::tracersOutsideBox), those inside
+   *  but outside every cell are excluded (Result::outsideGrid,
+   *  Counts::tracersOutsideGrid). The tracers read in each cell are
+   *  counted; when the grid holds nTracers, every cell's count must equal
+   *  it, or the tracers are not those of the field.
+   *
+   *  No displacement enters this call: TracerAssignment::used is empty,
+   *  Counts::displacements and Counts::tracersUsed are 0. The grid's
+   *  nDisplacements, nRealizations and nRealizationsMean are copied into
+   *  Result::divergence, Result::nRealizations and
+   *  Result::config.nRealizationsMean, so the files written from the result
+   *  record those of the field. Result::limits is the grid's limits,
+   *  Result::mps its mps, Result::config.divergenceCellSize its
+   *  cellSizeMps.
+   *
+   *  @param divergence a box grid holding the fields that define its cells,
+   *  divergenceUnsmoothed and weight, and optionally nTracers, nDisplacements,
+   *  limits, nRealizations and nRealizationsMean; its other per-cell
+   *  fields are not read.
+   *
+   *  @param tracers Cartesian coordinates of the tracers, 3 * nTracers
+   *  entries; at least one.
+   *
+   *  @param config the parameters of the search; divergenceCellSize must
+   *  be empty.
+   *
+   *  @param ids the identity of each tracer, copied into Result::ids: one
+   *  per tracer, no value twice; or empty.
+   *
+   *  @exception Error
+   *  - if tracers is empty, its size is not a multiple of three, or a
+   *    coordinate is not finite; if ids is neither empty nor of size
+   *    nTracers, or holds a value twice;
+   *  - on config as findVoidsBox; if divergenceCellSize is set;
+   *  - on the grid as on a grid to reuse in findVoidsBox (a lightcone grid,
+   *    or nCellsAxis not equal on the three axes, among others); if
+   *    divergenceUnsmoothed or weight does not hold nCells entries, or an
+   *    entry of either is not finite; if nTracers is neither empty nor of
+   *    nCells entries; if a bound of its limits is not finite, or a lower
+   *    bound is not below the upper one;
+   *  - if smoothing.sigma is positive but too small or too large in
+   *    coordinate units to build the kernel, as findVoidsBox;
+   *  - on the tracers: if the search reads more than 4294967295 tracers;
+   *    if none is left to read; if the count of a cell differs from the
+   *    grid's nTracers;
+   *  - if the smoothed divergence is 0 or positive in every cell, so that
+   *    no void can be found.
+   */
+  Result findVoidsBoxFromDivergence (const DivergenceGrid& divergence,
+                                     const std::vector<double>& tracers,
+                                     const Config& config,
+                                     const std::vector<std::int64_t>& ids = {});
+
+  /**
+   *  @brief Find voids and overdense basins in a field given at the
+   *  centres of the cells of a box lattice, without tracers.
+   *
+   *  The lattice is inferred from the centres. On each axis, the
+   *  coordinates are sorted and split into nodes at the gaps larger than
+   *  half the largest gap; with n nodes from min to max, the spacing is
+   *  (max - min) / (n - 1). The spacings of the axes with more than one
+   *  node must agree within 1e-6 relative: the cell side s is the spacing
+   *  of the axis with the most nodes, x before y before z on a tie, and is
+   *  DivergenceGrid::cellSize of the result; the other axes keep their
+   *  own spacing only to place the centres on nodes. Each centre
+   *  must lie within 1e-6 s of its node on every axis, and each node of
+   *  the nx * ny * nz must hold exactly one centre. The grid spans min -
+   *  s / 2 to max + s / 2 on each axis, without padding, with cubic cells
+   *  of side s; nx, ny, nz need not be equal. The cells of the result are
+   *  the rows of the lattice, cell (i, j, k) row (i * ny + j) * nz + k,
+   *  not the rows of the input, and no map back is returned: the order of
+   *  the input does not change the result.
+   *
+   *  The field is smoothed with config.smoothing, as the divergence of
+   *  findVoidsBox, with weights as the tracer weight; split into basins at
+   *  0 as BasinCatalog describes: seeds below 0 start voids, those at or
+   *  above 0 overdense basins. A field with another convention, such as a
+   *  density or a density contrast with voids above 0, must be shifted or
+   *  flipped before the call. The catalogues hold centre, radius,
+   *  radiusExt, edgeFlag and contamination as findVoidsBox computes them,
+   *  on the faces of the inferred grid, and fieldCentre; deltaAv,
+   *  delta2Mps and nTracers, which need tracers, are empty. Result is a
+   *  field result (see Result). With Config::keepDivergence,
+   *  Result::divergence holds the grid, the field after and, with
+   *  keepUnsmoothedDivergence, before smoothing, the weights as divided,
+   *  the basin indices, the cell centres and volumes; nDisplacements and
+   *  nTracers are empty.
+   *
+   *  A bitvf divergence file is valid input, read with io::readField: its
+   *  cell centres, divergenceUnsmoothed and weight with the smoothing of
+   *  the search that wrote it give back that search's basins. The centres
+   *  are kept inside the seed cell from the grid's lower and s, which are
+   *  inferred here from the centres read and may differ from the original
+   *  grid's by rounding: a centre can then differ from that search's by as
+   *  much.
+   *
+   *  @param centres Cartesian coordinates of the cell centres, 3 * nCells
+   *  entries, [cell][xyz], in any order.
+   *
+   *  @param values the field at each centre, nCells entries, in the order
+   *  of centres.
+   *
+   *  @param config the parameters of the search. divergenceCellSize must
+   *  be empty, keepAssignment unset and nRealizationsMean 1: none applies
+   *  without tracers. Without mps, a positive smoothing.sigma must be in
+   *  LengthUnit::Coordinate.
+   *
+   *  @param weights the weight of each cell in the smoothing, as
+   *  DivergenceGrid::weight in findVoidsBox, nCells entries in the order
+   *  of centres; or empty, which gives every cell the weight 1. Given, they
+   *  are divided by the largest of them before the smoothing, so a cell
+   *  whose weights sum to at most 1e-12 of the largest weight takes 0.
+   *
+   *  @param mps a mean particle separation, in coordinate units, or none.
+   *  Given, it is the unit of a sigma in LengthUnit::Mps and is recorded
+   *  in Result::mps, with the cell size in units of it in
+   *  Result::config.divergenceCellSize.
+   *
+   *  @exception Error
+   *  - on the arrays: if centres is empty, its size is not a multiple of
+   *    three, or a coordinate is not finite; if values does not hold one
+   *    entry per centre, or an entry is not finite; if weights is neither
+   *    empty nor of one entry per centre, or an entry is negative or not
+   *    finite;
+   *  - if mps is given and not finite and positive;
+   *  - on config as findVoidsBox; if divergenceCellSize is set,
+   *    keepAssignment is set or nRealizationsMean is not 1; if
+   *    smoothing.sigma is positive in LengthUnit::Mps without mps; if
+   *    smoothing.sigma is positive but too small or too large in
+   *    coordinate units to build the kernel, as findVoidsBox; if
+   *    smoothing.sigma is positive and every weight is 0;
+   *  - on the lattice: if every axis has one node (a single cell has no
+   *    side); if the spacings of two axes differ by more than 1e-6
+   *    relative; if a centre lies farther than 1e-6 s from its node; if a
+   *    node holds two centres, or none;
+   *  - if the field, smoothed when a smoothing is set, is 0 or positive in
+   *    every cell, so that no void can be found.
+   */
+  Result findVoidsBoxFromField (const std::vector<double>& centres,
+                                const std::vector<double>& values,
+                                const Config& config,
+                                const std::vector<double>& weights = {},
+                                std::optional<double> mps = std::nullopt);
+
+  // ==========================================================================
+  // Grid and watershed
+  // ==========================================================================
+
+  /**
+   *  @brief The grid findVoidsBox builds on box limits, with this mps and
+   *  cell size, bit for bit.
+   *
+   *  Only the fields that define the cells are set: geometry, lower, upper,
+   *  nCellsAxis, nCells, cellSize, cellSizeMps and mps. limits,
+   *  nRealizations, nRealizationsMean and every per-cell field are left
+   *  empty or 0: records of a search, which a reuse ignores. The grid
+   *  passes the checks of a grid to reuse, so that several searches can
+   *  share it.
+   *
+   *  @param box the box limits the grid is built on, as the limits of
+   *  findVoidsBox; each bound finite, with lower[k] < upper[k].
+   *
+   *  @param mps mean particle separation, in coordinate units; finite and
+   *  positive.
+   *
+   *  @param divergenceCellSize the cell side in units of mps, as
+   *  Config::divergenceCellSize; finite and positive.
+   *
+   *  @exception Error if a bound of box is not finite or a lower bound is
+   *  not below the upper one; if mps or divergenceCellSize is not finite
+   *  and positive; if the grid would hold more cells than an int64 index
+   *  can address.
+   */
+  DivergenceGrid boxGrid (const otswap::BoxLimits& box, double mps, double divergenceCellSize);
+
+  /**
+   *  @brief The grid findVoidsBox builds from this reconstruction, bit for
+   *  bit: on otswap::Result::box, with otswap::Result::mps.
+   *
+   *  As the overload above. Without divergenceCellSize, the cell side is
+   *  the default for the reconstruction's realizations,
+   *  min(1, (20 / nRealizations)^(1/3)) mps.
+   *
+   *  @exception Error if the reconstruction is not a box result; if its
+   *  nRealizations is 0; if its box is missing, has a bound not finite or
+   *  a lower bound above the upper one, or differs from
+   *  selection.boxLimits when those are set; if its mps is not finite and
+   *  positive; if divergenceCellSize is set and not finite and positive;
+   *  if the grid would hold more cells than an int64 index can address.
+   */
+  DivergenceGrid boxGrid (const otswap::Result& reconstruction,
+                          std::optional<double> divergenceCellSize = std::nullopt);
+
+  /// The basins of a field on a box grid, as watershedBox finds them,
+  /// with no catalogue.
+  struct Partition {
+
+    std::size_t nVoids = 0;
+    std::size_t nOverdense = 0;
+
+    /// [cell]: row of the cell's void, -1 none.
+    std::vector<std::int64_t> voidIndex;
+
+    /// [cell]: row of the cell's overdense basin, -1 none.
+    std::vector<std::int64_t> overdenseIndex;
+
+    /// [void]: row of its seed cell, ascending.
+    std::vector<std::int64_t> voidSeed;
+
+    /// [overdense basin]: row of its seed cell, ascending.
+    std::vector<std::int64_t> overdenseSeed;
+
+    /// [void]: cells of the extended void, and of its core (field below 0).
+    std::vector<std::uint64_t> voidCells, voidCoreCells;
+
+    /// [overdense basin]: cells of the basin, and of its core (field at or
+    /// above 0).
+    std::vector<std::uint64_t> overdenseCells, overdenseCoreCells;
+  };
+
+  /**
+   *  @brief Split a field on a box grid into basins by steepest descent.
+   *
+   *  The descent is that of the void finder (BasinCatalog): each cell
+   *  flows to the neighbour, among the 26 cut at the faces of the grid,
+   *  where the field drops the most, ties to the lowest row; a cell with
+   *  no strictly smaller neighbour is a seed. Seeds below 0 start voids,
+   *  seeds at or above 0 overdense basins; each kind is numbered by
+   *  ascending seed row. A field with another convention, such as a
+   *  density or a density contrast with voids above 0, must be shifted or
+   *  flipped before the call. No smoothing, no fill and no centres: the
+   *  field is used as given. A field with no cell below 0 gives no void,
+   *  and no error. The result does not depend on the number of threads.
+   *
+   *  @param field the value of each cell, nx * ny * nz entries; cell
+   *  (i, j, k) is row (i * ny + j) * nz + k.
+   *
+   *  @param nCellsAxis the cells along x, y, z, (nx, ny, nz), each at
+   *  least 1; they need not be equal.
+   *
+   *  @param verbosity,log what the call reports and where, as
+   *  Config::verbosity and Config::log.
+   *
+   *  @exception Error if a count of nCellsAxis is 0; if field does not
+   *  hold nx * ny * nz entries; if an entry of field is not finite.
+   */
+  Partition watershedBox (const std::vector<double>& field, const std::array<std::size_t, 3>& nCellsAxis,
+                          otswap::Verbosity verbosity = otswap::Verbosity::Normal,
+                          std::ostream* log = &std::clog);
 
 }
 

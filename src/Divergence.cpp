@@ -326,3 +326,29 @@ unsigned bitvf::internal::box_fill (DivergenceGrid& grid)
 
   return passes;
 }
+
+
+// ============================================================================
+
+
+bitvf::internal::BoxDivergence bitvf::internal::box_tracer_cells (const BoxSearch& search, DivergenceGrid& grid)
+{
+  const std::size_t N = search.nTracers;
+  const std::vector<double>& tracers = *search.tracers;
+
+  grid.nTracers.assign(grid.nCells, 0);
+
+  BoxDivergence result;
+  result.cell.assign(N, -1);
+
+#pragma omp parallel for schedule(static)
+  for (std::size_t i = 0; i < N; ++i) {
+    if (!search.inBox[i] || (!search.outsideGrid.empty() && search.outsideGrid[i])) continue;
+    const std::int64_t c = bitvf::internal::box_cell(grid, &tracers[3*i]);
+    result.cell[i] = c;
+#pragma omp atomic
+    grid.nTracers[c] += 1;
+  }
+
+  return result;
+}

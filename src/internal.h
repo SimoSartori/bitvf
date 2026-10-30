@@ -34,6 +34,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "bitvf/VoidFinder.h"
@@ -144,6 +145,59 @@ namespace bitvf {
                          const DivergenceGrid* grid);
 
     /**
+     *  @brief Check the arguments of findVoidsBoxFromDivergence and select
+     *  the tracers it reads.
+     *
+     *  The checks run in a fixed order: the tracers, ids, the
+     *  configuration, the grid's defining fields and limits, its per-cell
+     *  fields, the smoothing sigma in coordinate units, then the tracers
+     *  read. The tracers outside grid.limits are skipped (inBox 0), those
+     *  inside but outside every cell flagged in outsideGrid. displacement
+     *  and valid are left null; nRealizations is the grid's.
+     *
+     *  @exception Error on every case listed by findVoidsBoxFromDivergence
+     *  but those of the tracer counts and of the watershed
+     */
+    BoxSearch check_box_from_divergence (const DivergenceGrid& grid,
+                                         const std::vector<double>& tracers,
+                                         const Config& config,
+                                         const std::vector<std::int64_t>& ids);
+
+    /**
+     *  @brief Check the arguments of findVoidsBoxFromField but the
+     *  lattice.
+     *
+     *  The checks run in a fixed order: centres, values, weights, mps, the
+     *  configuration, the unit of the smoothing, the smoothing sigma in
+     *  coordinate units, then the weights against the smoothing.
+     *
+     *  @return the smoothing sigma in coordinate units, 0 for no smoothing
+     *  @exception Error on every case listed by findVoidsBoxFromField but
+     *  those of the lattice and of the watershed
+     */
+    double check_box_from_field (const std::vector<double>& centres,
+                                 const std::vector<double>& values,
+                                 const Config& config,
+                                 const std::vector<double>& weights,
+                                 const std::optional<double>& mps);
+
+    /**
+     *  @brief Check box limits: every bound finite, each lower bound below
+     *  the upper one.
+     *  @param name the name of the limits in the messages, plural
+     *  @exception Error on the first bound that fails
+     */
+    void check_limits (const otswap::BoxLimits& limits, const std::string& name);
+
+    /**
+     *  @brief Check the box of a box reconstruction (otswap::Result::box):
+     *  present, every bound finite, no lower bound above the upper one,
+     *  and equal to otswap::SelectionCounts::boxLimits when those are set.
+     *  @exception Error, as a malformed reconstruction
+     */
+    void check_reconstruction_box (const otswap::Result& reconstruction);
+
+    /**
      *  @brief Check the configuration of a search.
      *  @param gridGiven whether a grid is reused, with which
      *  Config::divergenceCellSize must be empty
@@ -157,10 +211,12 @@ namespace bitvf {
      *  before it is written.
      *  @param mps the mps of the search
      *  @param mpsMustMatch whether mps must equal grid.mps, bit for bit
+     *  @param name the name of the grid that starts the messages
      *  @exception Error on an inconsistent field, or on a different mps
      *  when it must match
      */
-    void check_box_grid (const DivergenceGrid& grid, double mps, bool mpsMustMatch);
+    void check_box_grid (const DivergenceGrid& grid, double mps, bool mpsMustMatch,
+                         const std::string& name = "the grid to reuse");
 
     //==========================================================================
 
@@ -199,6 +255,22 @@ namespace bitvf {
 
     /// Fill DivergenceGrid::centre of a box grid from its defining fields.
     void box_centres (DivergenceGrid& grid);
+
+    /**
+     *  @brief A field on a box grid at a point, as BasinCatalog::fieldCentre
+     *  describes: trilinear between the cell centres, the point first
+     *  clamped per axis to the range of the cell centres.
+     *
+     *  The cell centres are those of box_centres. On an axis with more
+     *  than one cell, the point falls between centres i and i + 1, with
+     *  weights 1 - f and f, f = (x - centre_i) / cellSize, and f = 1 at the
+     *  last centre, so that at a cell centre the result is that cell's
+     *  value exactly. The eight terms are summed in ascending row order.
+     *
+     *  @param field nCells values, [cell]
+     *  @param x the point, x, y, z
+     */
+    double box_field_at (const DivergenceGrid& grid, const std::vector<double>& field, const double* x);
 
     //==========================================================================
 
@@ -287,6 +359,21 @@ namespace bitvf {
      *  @exception Error if a pass fills no cell while some are empty
      */
     unsigned box_fill (DivergenceGrid& grid);
+
+    /**
+     *  @brief The cells of the tracers a box search reads, without
+     *  displacements: what box_divergence finds of them.
+     *
+     *  Sets DivergenceGrid::nTracers, counted in integers so that the
+     *  result does not depend on the number of threads, and the cell of
+     *  each tracer read, -1 for the others. used is left empty, nUsed 0;
+     *  scaleExponent and fillPasses are 0. Reads only the fields of grid
+     *  that define the cells.
+     *
+     *  @param search a checked search whose tracers read all lie inside a
+     *  cell of grid (check_box_from_divergence)
+     */
+    BoxDivergence box_tracer_cells (const BoxSearch& search, DivergenceGrid& grid);
 
     //==========================================================================
 
@@ -404,7 +491,7 @@ namespace bitvf {
      *  A tracer read gets its cell, the void or the overdense basin of that
      *  cell, and its distance from the centre of that basin; a tracer not
      *  read gets -1, -1 and NaN. inMask is all 1, inBox and used are those
-     *  of search and div.
+     *  of search and div; used is empty when div.used is.
      */
     TracerAssignment box_assignment (const BoxSearch& search, const BoxDivergence& div, const DivergenceGrid& grid,
                                      const BasinCatalog& voids, const BasinCatalog& overdense);
