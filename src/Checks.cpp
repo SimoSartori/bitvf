@@ -52,33 +52,6 @@ namespace {
   }
 
   /**
-   *  @brief Check a flat array of Cartesian coordinates, every entry.
-   *  @param name the name of the array in the messages
-   *  @param allowEmpty whether an empty array is accepted
-   *  @return the number of rows
-   */
-  std::size_t check_coordinates (const std::vector<double>& a, const std::string& name,
-                                 const bool allowEmpty)
-  {
-    if (a.empty()) {
-      if (allowEmpty) return 0;
-      throw bitvf::Error(name + " is empty");
-    }
-
-    if (a.size() % 3 != 0)
-      throw bitvf::Error(name + " holds " + std::to_string(a.size()) +
-                         " entries, which is not a multiple of three");
-
-    for (std::size_t i = 0; i < a.size(); ++i)
-      if (!std::isfinite(a[i]))
-        throw bitvf::Error(name + " holds a non-finite value at entry " + std::to_string(i) +
-                           " (object " + std::to_string(i/3) + ", component " +
-                           std::to_string(i%3) + ")");
-
-    return a.size() / 3;
-  }
-
-  /**
    *  @brief Check that every entry of a validity array is 0 or 1.
    *  @param name the name of the array in the messages
    */
@@ -88,36 +61,6 @@ namespace {
       if (valid[i] > 1)
         throw bitvf::Error(name + " holds " + std::to_string(valid[i]) + " at entry " +
                            std::to_string(i) + "; each entry must be 0 or 1");
-  }
-
-  /**
-   *  @brief Check the IDs of the tracers: one per tracer, or none, and no
-   *  value twice.
-   *  @param name the name of the IDs in the messages
-   */
-  void check_ids (const std::vector<std::int64_t>& ids, const std::size_t nTracers,
-                  const std::string& name)
-  {
-    if (ids.empty()) return;
-    if (ids.size() != nTracers)
-      throw bitvf::Error(name + " holds " + std::to_string(ids.size()) + " entries for " +
-                         std::to_string(nTracers) + " tracers; give one per tracer, or none");
-
-    std::vector<std::pair<std::int64_t, std::size_t>> sorted(ids.size());
-    for (std::size_t i = 0; i < ids.size(); ++i) sorted[i] = {ids[i], i};
-    std::sort(sorted.begin(), sorted.end());
-    std::size_t start = 0, first = 0, second = ids.size();
-    for (std::size_t k = 1; k < sorted.size(); ++k) {
-      if (sorted[k].first != sorted[k-1].first) start = k;
-      else if (k == start + 1 && sorted[k].second < second) {
-        first = sorted[start].second;
-        second = sorted[k].second;
-      }
-    }
-    if (second < ids.size())
-      throw bitvf::Error(name + " holds " + std::to_string(ids[first]) + " twice, at entries " +
-                         std::to_string(first) + " and " + std::to_string(second) +
-                         "; each tracer needs its own ID");
   }
 
   /**
@@ -250,6 +193,60 @@ void bitvf::internal::check_limits (const otswap::BoxLimits& limits, const std::
       throw Error(name + " are [" + std::to_string(limits.lower[k]) + ", " +
                   std::to_string(limits.upper[k]) + "] on axis " + kAxes[k] +
                   "; the lower bound must be below the upper one");
+}
+
+
+// ============================================================================
+
+
+std::size_t bitvf::internal::check_coordinates (const std::vector<double>& a, const std::string& name,
+                                                const bool allowEmpty)
+{
+  if (a.empty()) {
+    if (allowEmpty) return 0;
+    throw Error(name + " is empty");
+  }
+
+  if (a.size() % 3 != 0)
+    throw Error(name + " holds " + std::to_string(a.size()) +
+                " entries, which is not a multiple of three");
+
+  for (std::size_t i = 0; i < a.size(); ++i)
+    if (!std::isfinite(a[i]))
+      throw Error(name + " holds a non-finite value at entry " + std::to_string(i) +
+                  " (object " + std::to_string(i/3) + ", component " +
+                  std::to_string(i%3) + ")");
+
+  return a.size() / 3;
+}
+
+
+// ============================================================================
+
+
+void bitvf::internal::check_ids (const std::vector<std::int64_t>& ids, const std::size_t nTracers,
+                                 const std::string& name)
+{
+  if (ids.empty()) return;
+  if (ids.size() != nTracers)
+    throw Error(name + " holds " + std::to_string(ids.size()) + " entries for " +
+                std::to_string(nTracers) + " tracers; give one per tracer, or none");
+
+  std::vector<std::pair<std::int64_t, std::size_t>> sorted(ids.size());
+  for (std::size_t i = 0; i < ids.size(); ++i) sorted[i] = {ids[i], i};
+  std::sort(sorted.begin(), sorted.end());
+  std::size_t start = 0, first = 0, second = ids.size();
+  for (std::size_t k = 1; k < sorted.size(); ++k) {
+    if (sorted[k].first != sorted[k-1].first) start = k;
+    else if (k == start + 1 && sorted[k].second < second) {
+      first = sorted[start].second;
+      second = sorted[k].second;
+    }
+  }
+  if (second < ids.size())
+    throw Error(name + " holds " + std::to_string(ids[first]) + " twice, at entries " +
+                std::to_string(first) + " and " + std::to_string(second) +
+                "; each tracer needs its own ID");
 }
 
 

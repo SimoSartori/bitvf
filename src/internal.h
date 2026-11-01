@@ -34,6 +34,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <optional>
 #include <ostream>
 #include <sstream>
@@ -50,6 +51,21 @@ namespace bitvf {
      *  writers record in the files they write.
      */
     extern const char* const version;
+
+    /**
+     *  @brief Call otswap, rethrowing an otswap::Error as an Error
+     *  prefixed "otswap: ", the original nested.
+     */
+    template <typename F>
+    auto call_otswap (F&& f)
+    {
+      try {
+        return f();
+      }
+      catch (const otswap::Error& e) {
+        std::throw_with_nested(Error(std::string("otswap: ") + e.what()));
+      }
+    }
 
     //==========================================================================
 
@@ -254,6 +270,24 @@ namespace bitvf {
      *  @exception Error on the first bound that fails
      */
     void check_limits (const otswap::BoxLimits& limits, const std::string& name);
+
+    /**
+     *  @brief Check a flat array of Cartesian coordinates, every entry.
+     *  @param name the name of the array in the messages
+     *  @param allowEmpty whether an empty array is accepted
+     *  @return the number of rows
+     *  @exception Error if the array is empty and may not be, if its size
+     *  is not a multiple of three, or on the first entry not finite
+     */
+    std::size_t check_coordinates (const std::vector<double>& a, const std::string& name, bool allowEmpty);
+
+    /**
+     *  @brief Check the IDs of the tracers: one per tracer, or none, and no
+     *  value twice.
+     *  @param name the name of the IDs in the messages
+     *  @exception Error on a wrong size, or on the first value held twice
+     */
+    void check_ids (const std::vector<std::int64_t>& ids, std::size_t nTracers, const std::string& name);
 
     /**
      *  @brief Check the box of a box reconstruction (otswap::Result::box):

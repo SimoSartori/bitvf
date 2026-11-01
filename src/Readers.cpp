@@ -57,21 +57,6 @@ namespace {
   const char* const kBoxKeywords[6] = {"BOXXLO", "BOXXHI", "BOXYLO", "BOXYHI", "BOXZLO", "BOXZHI"};
   const char* const kAxis[3] = {"X", "Y", "Z"};
 
-  /**
-   *  @brief Call otswap, rethrowing an otswap::Error as an Error
-   *  prefixed "otswap: ", the original nested.
-   */
-  template <typename F>
-  auto call_otswap (F&& f)
-  {
-    try {
-      return f();
-    }
-    catch (const otswap::Error& e) {
-      std::throw_with_nested(Error(std::string("otswap: ") + e.what()));
-    }
-  }
-
   std::string lower_case (std::string s)
   {
     std::transform(s.begin(), s.end(), s.begin(), [] (unsigned char c) { return (char)std::tolower(c); });
@@ -226,7 +211,7 @@ namespace {
 
 bitvf::io::DisplacementMean bitvf::io::readDisplacementMean (const std::string& file)
 {
-  const Header h {file, call_otswap([&file] { return otswap::io::readKeywords(file); })};
+  const Header h {file, internal::call_otswap([&file] { return otswap::io::readKeywords(file); })};
   h.product("displacements", "mean displacement", "an otswap mean displacement");
   h.box_geometry("mean displacement");
 
@@ -239,7 +224,7 @@ bitvf::io::DisplacementMean bitvf::io::readDisplacementMean (const std::string& 
   const bool hasId = h.has_column("id");
   std::vector<std::string> integerColumns = {"nValidRec"};
   if (hasId) integerColumns.push_back("id");
-  const otswap::io::Table t = call_otswap([&] {
+  const otswap::io::Table t = internal::call_otswap([&] {
     return otswap::io::read(file, {"tracX", "tracY", "tracZ", "displX", "displY", "displZ"}, integerColumns);
   });
 
@@ -271,7 +256,7 @@ bitvf::io::DisplacementMean bitvf::io::readDisplacementMean (const std::string& 
 
 bitvf::DivergenceGrid bitvf::io::readDivergence (const std::string& file)
 {
-  const Header h {file, call_otswap([&file] { return otswap::io::readKeywords(file); })};
+  const Header h {file, internal::call_otswap([&file] { return otswap::io::readKeywords(file); })};
   h.product("divergence", "divergence", "a bitvf divergence");
   h.box_geometry("divergence");
 
@@ -304,7 +289,7 @@ bitvf::DivergenceGrid bitvf::io::readDivergence (const std::string& file)
   if (unsmoothed) columns.push_back("divergenceUnsmoothed");
   columns.push_back("volume");
   columns.push_back("weight");
-  const otswap::io::Table t = call_otswap([&] {
+  const otswap::io::Table t = internal::call_otswap([&] {
     return otswap::io::read(file, columns, {"index", "nDispl", "nTracers", "voidIndex", "overdenseIndex"});
   });
 
@@ -359,7 +344,7 @@ bitvf::io::Field bitvf::io::readField (const std::string& file, const std::array
   std::vector<std::string> columns = {centreColumns[0], centreColumns[1], centreColumns[2], valueColumn};
   const bool weighted = !weightColumn.empty();
   if (weighted) columns.push_back(weightColumn);
-  const otswap::io::Table t = call_otswap([&] { return otswap::io::read(file, columns); });
+  const otswap::io::Table t = internal::call_otswap([&] { return otswap::io::read(file, columns); });
 
   const std::size_t n = t.nRows;
   const std::size_t nc = columns.size();
