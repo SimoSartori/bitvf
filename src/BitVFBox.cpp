@@ -136,8 +136,8 @@ namespace {
     for (std::size_t j = 0; j < randoms.size(); ++j) {
       const std::uint64_t a = (std::uint64_t)(rng() >> 5);
       const std::uint64_t b = (std::uint64_t)(rng() >> 6);
-      const double u = (double)((a << 26) + b) / 9007199254740992.;
-      randoms[j] = box.lower[j%3] + u * (box.upper[j%3] - box.lower[j%3]);
+      randoms[j] = bitvf::internal::box_random(box.lower[j%3], box.upper[j%3],
+                                               (double)((a << 26) + b) / 9007199254740992.);
     }
     return randoms;
   }
@@ -315,6 +315,16 @@ namespace {
   }
 
 }
+
+// ============================================================================
+
+
+double bitvf::internal::box_random (const double lo, const double hi, const double u)
+{
+  const double x = lo + u * (hi - lo);
+  return x >= hi ? std::nextafter(hi, lo) : x;
+}
+
 
 // ============================================================================
 

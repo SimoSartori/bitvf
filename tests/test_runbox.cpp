@@ -35,6 +35,7 @@
 #include <regex>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "otswap/RSD.h"
@@ -119,6 +120,7 @@ namespace {
       const std::uint64_t c = rng() >> 6;
       const double u = (double)(a * 67108864ull + c) / 9007199254740992.;
       r[j] = b.lower[j%3] + u * (b.upper[j%3] - b.lower[j%3]);
+      if (r[j] >= b.upper[j%3]) r[j] = std::nextafter(b.upper[j%3], b.lower[j%3]);
     }
     return r;
   }
@@ -274,6 +276,21 @@ int main ()
     lrec.ids = in.ids;
     check(result_hash(l.voids) == result_hash(findVoidsBox(lrec, limited.voids)) && l.voids.mps == 7.5 &&
           l.voids.counts.tracersOutsideBox == Pipeline::kOutside, "given limits, randoms and mps: equal by hand");
+  }
+
+  group("the draw: a coordinate that rounds to the upper bound is moved just below it, no other changed");
+  {
+    const double u = 1. - 0x1p-53;
+    bool reaches = true, below = true;
+    for (const std::pair<double, double>& b : {std::make_pair(-0.3, 0.7), std::make_pair(-3.3, 10.)}) {
+      reaches = reaches && b.first + u * (b.second - b.first) >= b.second;
+      below = below && bitvf::internal::box_random(b.first, b.second, u) == std::nextafter(b.second, b.first);
+    }
+    check(reaches, "the boxes make lo + u (hi - lo) reach hi");
+    check(below, "nextafter(hi, lo) instead");
+    check(bitvf::internal::box_random(0., 100., u) == 0. + u * 100. &&
+          bitvf::internal::box_random(-3.3, 10., 0.5) == -3.3 + 0.5 * (10. - -3.3) &&
+          bitvf::internal::box_random(-3.3, 10., 0.) == -3.3, "a value below hi unchanged");
   }
 
   group("ot.seed 0: one seed drawn for both reconstructions and the randoms");

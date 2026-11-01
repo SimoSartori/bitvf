@@ -67,6 +67,13 @@ namespace bitvf {
       }
     }
 
+    /**
+     *  @brief One coordinate of a random runBox draws: lo + u (hi - lo),
+     *  or, when that rounds to hi or above, the largest double below hi.
+     *  @param u in [0, 1)
+     */
+    double box_random (double lo, double hi, double u);
+
     //==========================================================================
 
     /**

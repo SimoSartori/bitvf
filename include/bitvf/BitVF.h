@@ -191,7 +191,10 @@ namespace bitvf {
    *  of bitvf's files. One std::mt19937 seeded with s draws, for each
    *  random in turn, x, y and z, each as lo + u (hi - lo) over the box's
    *  range on that axis, with u = (a 2^26 + b) / 2^53, a the first output
-   *  shifted right by 5 bits and b the second shifted right by 6. s alone
+   *  shifted right by 5 bits and b the second shifted right by 6; a value
+   *  that rounds to hi or above is replaced by the largest double below
+   *  hi, std::nextafter(hi, lo), with no further draw, so every random lies
+   *  inside the box and the sequence of outputs is unchanged. s alone
    *  reproduces the randoms. They are given to otswap as given randoms;
    *  otswap's displacement files record config.ot.seed in SEED.
    *
