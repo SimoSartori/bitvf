@@ -31,9 +31,12 @@
 #define BITVF_INTERNAL_H
 
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <ostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -47,6 +50,69 @@ namespace bitvf {
      *  writers record in the files they write.
      */
     extern const char* const version;
+
+    //==========================================================================
+
+    /**
+     *  @brief The report of one public call, as Config::verbosity
+     *  describes, with the clock of its steps.
+     *
+     *  Built at the start of the call. Lines are written only from the
+     *  calling thread, outside parallel regions, each as one insertion
+     *  followed by a flush. The static members compose the parts of the
+     *  text shared by several lines, in the stream returned by line().
+     */
+    class Report {
+    public:
+
+      /// @param verbosity,log the level and the stream of the call; a null
+      /// log writes nothing, as Silent
+      Report (otswap::Verbosity verbosity, std::ostream* log);
+
+      /// Whether the Normal lines are written: Normal or Detailed, with a
+      /// log.
+      bool normal () const { return m_log != nullptr && m_verbosity != otswap::Verbosity::Silent; }
+
+      /// Whether the Detailed lines are written.
+      bool detailed () const { return m_log != nullptr && m_verbosity == otswap::Verbosity::Detailed; }
+
+      /// Write "bitvf: ", text and '\n', then flush; nothing when not
+      /// normal().
+      void write (const std::string& text) const;
+
+      /// Seconds since the previous lap, or since the start for the first.
+      double lap ();
+
+      /// Seconds since the start.
+      double elapsed () const;
+
+      /// Append " in <t> s" to out, with t the lap() just taken, and write
+      /// the line: the line of a step that has finished.
+      void step (std::ostringstream& out);
+
+      /// An empty stream for one line, in the classic locale, at the
+      /// default precision of 6 significant digits.
+      static std::ostringstream line ();
+
+      /// "in <t> s", t fixed with 2 decimals; out's format is restored.
+      static void time (std::ostream& out, double t);
+
+      /// "[x0, x1] x [y0, y1] x [z0, z1]", as otswap writes a box.
+      static void box (std::ostream& out, const std::array<double, 3>& lower, const std::array<double, 3>& upper);
+
+      /// "<nx> x <ny> x <nz> cells".
+      static void shape (std::ostream& out, const std::array<std::size_t, 3>& n);
+
+      /// "<V> voids and <O> overdense basins", singular for 1.
+      static void basins (std::ostream& out, std::size_t nVoids, std::size_t nOverdense);
+
+    private:
+
+      otswap::Verbosity m_verbosity;
+      std::ostream* m_log;
+      std::chrono::steady_clock::time_point m_start;
+      std::chrono::steady_clock::time_point m_last;
+    };
 
     //==========================================================================
 

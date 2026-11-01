@@ -26,6 +26,114 @@
  *  @author Simone Sartori <simone.sartori@inaf.it>
  */
 
+#include <iomanip>
+#include <locale>
+
 #include "internal.h"
 
 const char* const bitvf::internal::version = BITVF_VERSION;
+
+
+// ============================================================================
+
+
+bitvf::internal::Report::Report (const otswap::Verbosity verbosity, std::ostream* log)
+  : m_verbosity(verbosity), m_log(log), m_start(std::chrono::steady_clock::now()), m_last(m_start)
+{}
+
+
+// ============================================================================
+
+
+void bitvf::internal::Report::write (const std::string& text) const
+{
+  if (!normal()) return;
+  *m_log << ("bitvf: " + text + "\n") << std::flush;
+}
+
+
+// ============================================================================
+
+
+double bitvf::internal::Report::lap ()
+{
+  const auto now = std::chrono::steady_clock::now();
+  const double seconds = std::chrono::duration<double>(now - m_last).count();
+  m_last = now;
+  return seconds;
+}
+
+
+// ============================================================================
+
+
+double bitvf::internal::Report::elapsed () const
+{
+  return std::chrono::duration<double>(std::chrono::steady_clock::now() - m_start).count();
+}
+
+
+// ============================================================================
+
+
+void bitvf::internal::Report::step (std::ostringstream& out)
+{
+  const double seconds = lap();
+  out << ' ';
+  time(out, seconds);
+  write(out.str());
+}
+
+
+// ============================================================================
+
+
+std::ostringstream bitvf::internal::Report::line ()
+{
+  std::ostringstream out;
+  out.imbue(std::locale::classic());
+  return out;
+}
+
+
+// ============================================================================
+
+
+void bitvf::internal::Report::time (std::ostream& out, const double t)
+{
+  const std::ios_base::fmtflags flags = out.flags();
+  const std::streamsize precision = out.precision();
+  out << "in " << std::fixed << std::setprecision(2) << t << " s";
+  out.flags(flags);
+  out.precision(precision);
+}
+
+
+// ============================================================================
+
+
+void bitvf::internal::Report::box (std::ostream& out, const std::array<double, 3>& lower,
+                                   const std::array<double, 3>& upper)
+{
+  for (std::size_t k = 0; k < 3; ++k)
+    out << (k ? " x [" : "[") << lower[k] << ", " << upper[k] << "]";
+}
+
+
+// ============================================================================
+
+
+void bitvf::internal::Report::shape (std::ostream& out, const std::array<std::size_t, 3>& n)
+{
+  out << n[0] << " x " << n[1] << " x " << n[2] << " cells";
+}
+
+
+// ============================================================================
+
+
+void bitvf::internal::Report::basins (std::ostream& out, const std::size_t nVoids, const std::size_t nOverdense)
+{
+  out << nVoids << (nVoids == 1 ? " void and " : " voids and ") << nOverdense
+      << (nOverdense == 1 ? " overdense basin" : " overdense basins");
+}

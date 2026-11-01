@@ -29,9 +29,9 @@
 
 #include <algorithm>
 #include <array>
-#include <chrono>
 #include <cmath>
 #include <limits>
+#include <sstream>
 #include <string>
 #include <utility>
 
@@ -203,7 +203,7 @@ bitvf::Result bitvf::findVoidsBoxFromField (const std::vector<double>& centres,
                                             const std::vector<double>& weights,
                                             const std::optional<double> mps)
 {
-  const auto start = std::chrono::steady_clock::now();
+  internal::Report report(config.verbosity, config.log);
   const double sigmaLength = internal::check_box_from_field(centres, values, config, weights, mps);
   const Lattice lattice = infer_lattice(centres);
   const std::int64_t C = (std::int64_t)values.size();
@@ -240,10 +240,42 @@ bitvf::Result bitvf::findVoidsBoxFromField (const std::vector<double>& centres,
     cells.divergence[(std::size_t)c] = values[r];
     cells.weight[(std::size_t)c] = weights.empty() ? 1. : weights[r] / divisor;
   }
+  if (report.detailed()) {
+    std::ostringstream out = internal::Report::line();
+    out << "lattice inferred: ";
+    internal::Report::shape(out, cells.nCellsAxis);
+    out << " of side " << s << " in coordinate units on ";
+    internal::Report::box(out, cells.lower, cells.upper);
+    report.step(out);
+
+    std::ostringstream given = internal::Report::line();
+    if (mps) given << "mean particle separation " << *mps << " in coordinate units (given)";
+    else given << "no mean particle separation given";
+    report.write(given.str());
+  }
 
   internal::box_smooth(cells, sigmaLength, config.keepUnsmoothedDivergence ? &cells.divergenceUnsmoothed : nullptr);
+  if (report.detailed()) {
+    std::ostringstream out = internal::Report::line();
+    if (sigmaLength > 0.) {
+      out << "smoothed with sigma " << sigmaLength << " in coordinate units";
+      if (mps) out << " (" << sigmaLength / *mps << " mps)";
+      report.step(out);
+    }
+    else {
+      report.lap();
+      report.write("not smoothed (sigma 0)");
+    }
+  }
+
   internal::BoxBasins basins;
   internal::box_watershed(cells, basins);
+  if (report.detailed()) {
+    std::ostringstream out = internal::Report::line();
+    out << "watershed into ";
+    internal::Report::basins(out, basins.voids.seed.size(), basins.overdense.seed.size());
+    report.step(out);
+  }
   if (basins.voids.seed.empty())
     throw Error("no void found: the field is 0 or positive in every cell");
   internal::box_basins(nullptr, nullptr, cells, basins, result.voids, result.overdense);
@@ -256,14 +288,34 @@ bitvf::Result bitvf::findVoidsBoxFromField (const std::vector<double>& centres,
       cat->fieldCentre[(std::size_t)b] =
         internal::box_field_at(cells, cells.divergence, &cat->centre[3 * (std::size_t)b]);
   }
+  if (report.detailed()) {
+    std::ostringstream out = internal::Report::line();
+    out << "catalogues of the basins";
+    report.step(out);
+  }
 
+  const std::array<std::size_t, 3> shape = cells.nCellsAxis;
   if (config.keepDivergence) {
     internal::box_centres(cells);
     cells.volume.assign(cells.nCells, s * s * s);
     result.divergence = std::move(cells);
+    if (report.detailed()) {
+      std::ostringstream out = internal::Report::line();
+      out << "kept the divergence grid";
+      report.step(out);
+    }
   }
 
-  result.elapsedSeconds =
-    std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+  result.elapsedSeconds = report.elapsed();
+  if (report.normal()) {
+    std::ostringstream out = internal::Report::line();
+    out << "findVoidsBoxFromField: ";
+    internal::Report::basins(out, result.voids.nBasins, result.overdense.nBasins);
+    out << " on ";
+    internal::Report::shape(out, shape);
+    out << ' ';
+    internal::Report::time(out, result.elapsedSeconds);
+    report.write(out.str());
+  }
   return result;
 }

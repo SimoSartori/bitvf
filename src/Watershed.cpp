@@ -32,6 +32,7 @@
 #include <initializer_list>
 #include <limits>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -259,8 +260,9 @@ void bitvf::internal::box_watershed (DivergenceGrid& grid, BoxBasins& basins)
 
 
 bitvf::Partition bitvf::watershedBox (const std::vector<double>& field, const std::array<std::size_t, 3>& nCellsAxis,
-                                      otswap::Verbosity, std::ostream*)
+                                      const otswap::Verbosity verbosity, std::ostream* log)
 {
+  internal::Report report(verbosity, log);
   const std::array<std::size_t, 3>& n = nCellsAxis;
   const std::string shape = "(" + std::to_string(n[0]) + ", " + std::to_string(n[1]) + ", " +
     std::to_string(n[2]) + ")";
@@ -301,5 +303,27 @@ bitvf::Partition bitvf::watershedBox (const std::vector<double>& field, const st
   result.voidCoreCells = std::move(basins.voids.nCoreCells);
   result.overdenseCells = std::move(basins.overdense.nCells);
   result.overdenseCoreCells = std::move(basins.overdense.nCoreCells);
+
+  if (report.detailed()) {
+    std::uint64_t sums[4] = {0, 0, 0, 0};
+    const std::vector<std::uint64_t>* counts[4] = {&result.voidCells, &result.voidCoreCells,
+                                                    &result.overdenseCells, &result.overdenseCoreCells};
+    for (std::size_t k = 0; k < 4; ++k)
+      for (const std::uint64_t count : *counts[k]) sums[k] += count;
+    std::ostringstream out = internal::Report::line();
+    out << sums[0] << (sums[0] == 1 ? " cell" : " cells") << " in voids, " << sums[1]
+        << " of them below 0; " << sums[2] << " in overdense basins, " << sums[3] << " of them at or above 0";
+    report.write(out.str());
+  }
+  if (report.normal()) {
+    std::ostringstream out = internal::Report::line();
+    out << "watershedBox: ";
+    internal::Report::basins(out, result.nVoids, result.nOverdense);
+    out << " on ";
+    internal::Report::shape(out, n);
+    out << ' ';
+    internal::Report::time(out, report.elapsed());
+    report.write(out.str());
+  }
   return result;
 }

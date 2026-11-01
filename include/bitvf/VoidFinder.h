@@ -230,8 +230,37 @@ namespace bitvf {
     unsigned nRealizationsMean = 1;
 
     /// What the call reports, at otswap's levels; each line starts with
-    /// "bitvf: " and ends in '\n'. Every number reported is also in
-    /// Result::counts.
+    /// "bitvf: " and ends in '\n'.
+    ///
+    /// - Silent: nothing.
+    /// - Normal: the selection, then one line per call with its time:
+    ///
+    ///       bitvf: kept <k> of <N> tracers: <b> outside the box [<x0>, <x1>] x [<y0>, <y1>] x [<z0>, <z1>]
+    ///       bitvf: kept <k'> of <k> tracers: <g> outside the reused grid
+    ///       bitvf: findVoidsBox: <V> voids and <O> overdense basins from <N> tracers in <T> s; <W> without a valid displacement
+    ///       bitvf: findVoidsBoxFromDivergence: <V> voids and <O> overdense basins from <N> tracers in <T> s
+    ///       bitvf: findVoidsBoxFromField: <V> voids and <O> overdense basins on <nx> x <ny> x <nz> cells in <T> s
+    ///
+    ///   The box line is written when the search has box limits: those
+    ///   given, the reconstruction's (otswap::SelectionCounts::boxLimits)
+    ///   or the grid's (DivergenceGrid::limits); the grid line whenever a
+    ///   grid is reused, even with no tracer outside it, and by
+    ///   findVoidsBoxFromDivergence, as "outside the divergence grid". <W>
+    ///   counts the tracers read without a valid displacement. A count of 1
+    ///   takes the singular.
+    /// - Detailed: as Normal, with one line per step of the search in the
+    ///   order it runs, each with its time, and the values that describe
+    ///   it: the mean particle separation and its source, the grid, its
+    ///   cell side and the box it covers, the smoothing sigma, the basins
+    ///   found by the watershed.
+    ///
+    /// Each line is written as soon as its step finishes, by the calling
+    /// thread, never inside a parallel region. A call that throws leaves
+    /// the lines of the steps it finished, and never writes its call line.
+    /// Every count printed can be read from the object returned
+    /// (Result::counts, the catalogues' nBasins); step times and
+    /// descriptive values (mps, cell side, box, sigma) appear only in the
+    /// lines. Times have two decimals.
     otswap::Verbosity verbosity = otswap::Verbosity::Normal;
 
     /// Where the report is written; null writes nothing, as Silent.
@@ -568,7 +597,8 @@ namespace bitvf {
     std::vector<std::uint8_t> used;
   };
 
-  /// What the void finder counted. Every number it reports is here.
+  /// What the void finder counted: the counts its report prints, with the
+  /// catalogues' nBasins (Config::verbosity).
   struct Counts {
 
     std::size_t tracers = 0;             ///< tracers given
@@ -710,7 +740,7 @@ namespace bitvf {
    *  cubic cells (DivergenceGrid), smoothed (Config::smoothing) and
    *  divided by a watershed into basins around its local minima: the
    *  voids, below 0, and the overdense basins, at or above 0
-   *  (BasinCatalog).
+   *  (BasinCatalog). Reports as Config::verbosity describes.
    *
    *  @param tracers Cartesian coordinates of the tracers, the start of
    *  their displacements, 3 * nTracers entries.
@@ -810,7 +840,8 @@ namespace bitvf {
    *  randoms were drawn). Every endpoint otswap computes lies inside it.
    *  The tracers flagged in otswap::Result::outsideBox are skipped without
    *  being read. Given the same arrays and otswap::Result::box as the
-   *  limits, the result equals that of the overload above.
+   *  limits, the result equals that of the overload above. Reports as
+   *  Config::verbosity describes.
    *
    *  @param reconstruction a box result of otswap::reconstructBox.
    *
@@ -848,7 +879,8 @@ namespace bitvf {
    *  basins, the smoothed divergence and the assignment but its used flags
    *  equal that search's bit for bit. A grid kept in memory with
    *  Config::keepUnsmoothedDivergence serves as well as one read from a
-   *  divergence file (io::readDivergence).
+   *  divergence file (io::readDivergence). Reports as Config::verbosity
+   *  describes.
    *
    *  The tracers are read as with a reused grid: those outside the grid's
    *  box limits (DivergenceGrid::limits) are skipped
@@ -923,7 +955,8 @@ namespace bitvf {
    *  of side s; nx, ny, nz need not be equal. The cells of the result are
    *  the rows of the lattice, cell (i, j, k) row (i * ny + j) * nz + k,
    *  not the rows of the input, and no map back is returned: the order of
-   *  the input does not change the result.
+   *  the input does not change the result. Reports as Config::verbosity
+   *  describes.
    *
    *  The field is smoothed with config.smoothing, as the divergence of
    *  findVoidsBox, with weights as the tracer weight; split into basins at
@@ -1094,7 +1127,12 @@ namespace bitvf {
    *  least 1; they need not be equal.
    *
    *  @param verbosity,log what the call reports and where, as
-   *  Config::verbosity and Config::log.
+   *  Config::verbosity and Config::log: at Normal, one line with its time,
+   *
+   *      bitvf: watershedBox: <V> voids and <O> overdense basins on <nx> x <ny> x <nz> cells in <T> s
+   *
+   *  and at Detailed, before it, the cells in voids and in overdense
+   *  basins, and how many of each lie in the cores.
    *
    *  @exception Error if a count of nCellsAxis is 0; if field does not
    *  hold nx * ny * nz entries; if an entry of field is not finite.
