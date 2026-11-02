@@ -242,7 +242,7 @@ bitvf::io::DisplacementMean bitvf::io::readDisplacementMean (const std::string& 
     }
     const std::int64_t nValid = t.integers[ni*i];
     if (nValid < 0 || nValid > (std::int64_t)m.nRealizationsAveraged)
-      throw Error(file + ": row " + std::to_string(i) + " has nValidRec " + std::to_string(nValid) +
+      throw Error(file + ": data row " + std::to_string(i+1) + " has nValidRec " + std::to_string(nValid) +
                   ", outside 0.." + std::to_string(m.nRealizationsAveraged));
     m.valid[i] = nValid > 0 ? 1 : 0;
     if (hasId) m.ids[i] = t.integers[ni*i+1];
@@ -313,13 +313,13 @@ bitvf::DivergenceGrid bitvf::io::readDivergence (const std::string& file)
     const double* v = &t.values[nc*c];
     const std::int64_t* k = &t.integers[5*c];
     if (k[0] != (std::int64_t)c)
-      throw Error(file + ": row " + std::to_string(c) + " has index " + std::to_string(k[0]) +
+      throw Error(file + ": data row " + std::to_string(c+1) + " has index " + std::to_string(k[0]) +
                   "; the rows must hold the cells 0 to NCELLS - 1 in order");
     if (k[1] < 0 || k[2] < 0)
-      throw Error(file + ": row " + std::to_string(c) + " has a negative count (nDispl " +
+      throw Error(file + ": data row " + std::to_string(c+1) + " has a negative count (nDispl " +
                   std::to_string(k[1]) + ", nTracers " + std::to_string(k[2]) + ")");
     if (k[3] < -1 || k[4] < -1)
-      throw Error(file + ": row " + std::to_string(c) + " has a basin index below -1 (voidIndex " +
+      throw Error(file + ": data row " + std::to_string(c+1) + " has a basin index below -1 (voidIndex " +
                   std::to_string(k[3]) + ", overdenseIndex " + std::to_string(k[4]) + ")");
     for (std::size_t a = 0; a < 3; ++a) grid.centre[3*c+a] = v[a];
     grid.divergence[c] = v[3];
@@ -353,8 +353,8 @@ bitvf::io::Field bitvf::io::readField (const std::string& file, const std::array
   for (std::size_t i = 0; i < nc * n; ++i)
     if (!std::isfinite(t.values[i])) {
       const double v = t.values[i];
-      throw Error(file + ": row " + std::to_string(i / nc) + " has " + (v != v ? "nan" : v > 0. ? "inf" : "-inf") +
-                  " in column " + columns[i % nc] + "; every value must be finite");
+      throw Error(file + ": data row " + std::to_string(i / nc + 1) + " has " +
+                  (v != v ? "nan" : v > 0. ? "inf" : "-inf") + " in column " + columns[i % nc] + "; every value must be finite");
     }
   Field f;
   f.centres.resize(3 * n);

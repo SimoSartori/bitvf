@@ -637,20 +637,20 @@ int main ()
               std::to_string(r.divergence->nCells), "RD8, rows");
       d = div;
       std::swap(d.column("index").integers[3], d.column("index").integers[4]);
-      refused(d, read_divergence, ": row 3 has index 4; the rows must hold the cells 0 to NCELLS - 1 in order",
+      refused(d, read_divergence, ": data row 4 has index 4; the rows must hold the cells 0 to NCELLS - 1 in order",
               "RD8, index");
       d = div;
       d.column("nTracers").integers[5] = -1;
-      refused(d, read_divergence, ": row 5 has a negative count (nDispl ", "RD8, nTracers negative");
+      refused(d, read_divergence, ": data row 6 has a negative count (nDispl ", "RD8, nTracers negative");
       d = div;
       d.column("nDispl").integers[0] = -3;
-      refused(d, read_divergence, ": row 0 has a negative count (nDispl -3", "RD8, nDispl negative");
+      refused(d, read_divergence, ": data row 1 has a negative count (nDispl -3", "RD8, nDispl negative");
       d = div;
       d.column("overdenseIndex").integers[7] = -2;
-      refused(d, read_divergence, ": row 7 has a basin index below -1 (voidIndex ", "RD8, overdenseIndex");
+      refused(d, read_divergence, ": data row 8 has a basin index below -1 (voidIndex ", "RD8, overdenseIndex");
       d = div;
       d.column("voidIndex").integers[2] = -5;
-      refused(d, read_divergence, ": row 2 has a basin index below -1 (voidIndex -5", "RD8, voidIndex");
+      refused(d, read_divergence, ": data row 3 has a basin index below -1 (voidIndex -5", "RD8, voidIndex");
     }
     {
       std::ostringstream side;
@@ -666,9 +666,9 @@ int main ()
     {
       Table t = mean;
       t.column("nValidRec").data[1] = 3.;
-      refused(t, read_mean, ": row 1 has nValidRec 3, outside 0..2", "RD10, above NREC");
+      refused(t, read_mean, ": data row 2 has nValidRec 3, outside 0..2", "RD10, above NREC");
       t.column("nValidRec").data[1] = -1.;
-      refused(t, read_mean, ": row 1 has nValidRec -1, outside 0..2", "RD10, negative");
+      refused(t, read_mean, ": data row 2 has nValidRec -1, outside 0..2", "RD10, negative");
     }
   }
 
@@ -737,7 +737,8 @@ int main ()
     std::remove(comma.c_str());
   }
 
-  group("readField refuses a value that is not finite, naming the file, the row from 0 and the column as selected");
+  group("readField refuses a value that is not finite, naming the file, the data row from 1 and the column as "
+        "selected");
   {
     const std::string file = temporary("field_not_finite.txt");
     const struct { const char* row; const char* column; const char* word; const char* selector; } cases[] = {
@@ -754,7 +755,7 @@ int main ()
       throws_naming([&] {
         if (byIndex) io::readField(file, {"0", "1", "2"}, "3", "4");
         else io::readField(file, {"x", "y", "z"}, "value", "weight");
-      }, file + ": row 2 has " + c.word + " in column " + c.column + "; every value must be finite",
+      }, file + ": data row 3 has " + c.word + " in column " + c.column + "; every value must be finite",
       std::string(c.word) + " in " + c.selector + (byIndex ? ", by index" : ""));
     }
     std::remove(file.c_str());
