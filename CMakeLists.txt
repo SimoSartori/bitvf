@@ -224,6 +224,15 @@ if (BITVF_BUILD_TESTS)
     add_test(NAME ${test_name} COMMAND ${test_name})
   endforeach()
 
+  # Runs the library on raw input files for the Python tests, which compare
+  # its outputs and its report with those of the bindings; not a test by
+  # itself. tests/test_bitvf.py finds it through BITVF_PYTHON_REFERENCE.
+  add_executable(python_reference tests/python_reference.cpp)
+  target_link_libraries(python_reference PRIVATE bitvf)
+  if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    target_compile_options(python_reference PRIVATE -Wall -Wextra)
+  endif()
+
   # The executables: one test per parameter file of tests/executable/cases,
   # run by run_case.cmake in a fresh directory of its own, which checks
   # what the file's "#!" lines expect. executable_reference first writes,
