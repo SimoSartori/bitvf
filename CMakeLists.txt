@@ -35,6 +35,15 @@ option(BITVF_BUILD_PYTHON "Build the Python bindings" OFF)
 option(BITVF_BUILD_TESTS "Build the C++ test suite" ${BITVF_IS_TOP_LEVEL})
 option(BITVF_INSTALL "Generate the C++ install rules" ${BITVF_INSTALL_DEFAULT})
 
+# The executables bitvf and bitvf-field: built by a standalone build, not by
+# the wheel nor as a subproject.
+if (BITVF_IS_TOP_LEVEL AND NOT DEFINED SKBUILD)
+  set(BITVF_BUILD_EXECUTABLE_DEFAULT ON)
+else()
+  set(BITVF_BUILD_EXECUTABLE_DEFAULT OFF)
+endif()
+option(BITVF_BUILD_EXECUTABLE "Build the bitvf and bitvf-field executables" ${BITVF_BUILD_EXECUTABLE_DEFAULT})
+
 include(GNUInstallDirs)
 
 # ---------------------------------------------------------------------------
@@ -170,6 +179,27 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
 endif()
 
 # ---------------------------------------------------------------------------
+# The executables
+#
+# app/bitvf.cpp and app/bitvf_field.cpp, on the public headers only, with
+# app/common.h. The targets are bitvf_app and bitvf_field_app, since bitvf
+# is the library's; the files they build are bitvf and bitvf-field.
+# ---------------------------------------------------------------------------
+
+if (BITVF_BUILD_EXECUTABLE)
+  foreach (app bitvf bitvf_field)
+    add_executable(${app}_app app/${app}.cpp)
+    target_compile_definitions(${app}_app PRIVATE BITVF_VERSION="${PROJECT_VERSION}")
+    target_link_libraries(${app}_app PRIVATE bitvf)
+    if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+      target_compile_options(${app}_app PRIVATE -Wall -Wextra)
+    endif()
+  endforeach()
+  set_target_properties(bitvf_app PROPERTIES OUTPUT_NAME bitvf)
+  set_target_properties(bitvf_field_app PROPERTIES OUTPUT_NAME bitvf-field)
+endif()
+
+# ---------------------------------------------------------------------------
 # Tests
 #
 # One executable per file of tests/, each a CTest test. They include src/
@@ -193,6 +223,46 @@ if (BITVF_BUILD_TESTS)
     endif()
     add_test(NAME ${test_name} COMMAND ${test_name})
   endforeach()
+
+  # The executables: one test per parameter file of tests/executable/cases,
+  # run by run_case.cmake in a fresh directory of its own, which checks
+  # what the file's "#!" lines expect. executable_reference first writes,
+  # with the library calls of each kind of run, the files the runs must
+  # reproduce byte for byte. The two shipped parameter files run from the
+  # source directory, as their comments say.
+  if (BITVF_BUILD_EXECUTABLE)
+    set(BITVF_EXECUTABLE_REFERENCE ${CMAKE_CURRENT_BINARY_DIR}/executable/reference)
+    add_executable(executable_reference tests/executable/reference.cpp)
+    target_link_libraries(executable_reference PRIVATE bitvf)
+    if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+      target_compile_options(executable_reference PRIVATE -Wall -Wextra)
+    endif()
+    add_test(NAME executable_reference
+      COMMAND executable_reference ${CMAKE_CURRENT_SOURCE_DIR}/tests/executable/data ${BITVF_EXECUTABLE_REFERENCE})
+    set_tests_properties(executable_reference PROPERTIES FIXTURES_SETUP executable_reference)
+
+    file(GLOB bitvf_executable_cases CONFIGURE_DEPENDS
+         ${CMAKE_CURRENT_SOURCE_DIR}/tests/executable/cases/*.ini)
+    foreach (case_file ${bitvf_executable_cases})
+      get_filename_component(case_name ${case_file} NAME_WE)
+      add_test(NAME executable_${case_name}
+        COMMAND ${CMAKE_COMMAND}
+          -DBITVF=$<TARGET_FILE:bitvf_app>
+          -DBITVF_FIELD=$<TARGET_FILE:bitvf_field_app>
+          -DCASE=${case_file}
+          -DWORK=${CMAKE_CURRENT_BINARY_DIR}/executable/${case_name}
+          -DTEST_DATA=${CMAKE_CURRENT_SOURCE_DIR}/tests/executable/data
+          -DREFERENCE=${BITVF_EXECUTABLE_REFERENCE}
+          -DPROJECT_VERSION=${PROJECT_VERSION}
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/executable/run_case.cmake)
+      set_tests_properties(executable_${case_name} PROPERTIES FIXTURES_REQUIRED executable_reference)
+    endforeach()
+
+    add_test(NAME executable_example_box COMMAND bitvf_app tests/executable/example_box.ini
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME executable_example_field COMMAND bitvf_field_app tests/executable/example_field.ini
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+  endif()
 endif()
 
 # ---------------------------------------------------------------------------
@@ -235,6 +305,9 @@ if (BITVF_INSTALL)
   install(TARGETS bitvf EXPORT bitvfTargets
           ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
   install(DIRECTORY include/bitvf DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+  if (BITVF_BUILD_EXECUTABLE)
+    install(TARGETS bitvf_app bitvf_field_app RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+  endif()
 
   install(EXPORT bitvfTargets
           NAMESPACE bitvf::

@@ -697,6 +697,69 @@ int main ()
                   std::string("RF1, no file ") + format);
   }
 
+  group("readField with a delimiter and a comment character: a comma-separated file with % comments, its columns in "
+        "another order, reads as its space-separated twin; without the delimiter its names are not found, without "
+        "the comment character a comment line of numbers is read as a data row");
+  {
+    const fixtures::LatticeField lf;
+    const std::size_t commentRow = 7;
+    const std::string spaced = temporary("field_spaced.txt");
+    const std::string comma = temporary("field_comma.txt");
+    {
+      std::FILE* s = std::fopen(spaced.c_str(), "w");
+      std::FILE* c = std::fopen(comma.c_str(), "w");
+      std::fprintf(s, "# 12 x 17 x 9 cells\n### x y z value weight\n");
+      std::fprintf(c, "### weight,z,value,x,y\n");
+      for (std::size_t i = 0; i < lf.values.size(); ++i) {
+        std::fprintf(s, "%.17g %.17g %.17g %.17g %.17g\n", lf.centres[3*i], lf.centres[3*i+1], lf.centres[3*i+2],
+                     lf.values[i], lf.weights[i]);
+        if (i == commentRow) std::fprintf(c, "%% 1,2,3,4,5\n");
+        std::fprintf(c, "%.17g,%.17g,%.17g,%.17g,%.17g\n", lf.weights[i], lf.centres[3*i+2], lf.values[i],
+                     lf.centres[3*i], lf.centres[3*i+1]);
+      }
+      std::fclose(s);
+      std::fclose(c);
+    }
+    const io::Field a = io::readField(spaced, {"x", "y", "z"}, "value", "weight");
+    const io::Field b = io::readField(comma, {"x", "y", "z"}, "value", "weight", ',', '%');
+    check(fixtures::same_bits(a.centres, lf.centres) && fixtures::same_bits(a.values, lf.values) &&
+          fixtures::same_bits(a.weights, lf.weights), "the space-separated file, with the defaults");
+    check(fixtures::same_bits(b.centres, a.centres) && fixtures::same_bits(b.values, a.values) &&
+          fixtures::same_bits(b.weights, a.weights), "the comma-separated twin, bit for bit");
+    otswap_nested([&] { io::readField(comma, {"x", "y", "z"}, "value", "weight"); },
+                  "the default delimiter: the names are not found");
+    const io::Field d = io::readField(comma, {"x", "y", "z"}, "value", "weight", ',');
+    const std::size_t k = commentRow;
+    check(d.values.size() == lf.values.size()+1 && d.weights[k] == 1. && d.centres[3*k+2] == 2. &&
+          d.values[k] == 3. && d.centres[3*k] == 4. && d.centres[3*k+1] == 5. && d.values[k+1] == lf.values[k],
+          "the default comment character: the comment line is read as a data row");
+    std::remove(spaced.c_str());
+    std::remove(comma.c_str());
+  }
+
+  group("readField refuses a value that is not finite, naming the file, the row from 0 and the column as selected");
+  {
+    const std::string file = temporary("field_not_finite.txt");
+    const struct { const char* row; const char* column; const char* word; const char* selector; } cases[] = {
+      {"0.5 1.5 0.5 nan 1", "value", "nan", "value"},
+      {"0.5 1.5 0.5 3 inf", "weight", "inf", "weight"},
+      {"0.5 -inf 0.5 3 1", "y", "-inf", "y"},
+      {"0.5 1.5 0.5 -inf 1", "3", "-inf", "value"},
+    };
+    for (const auto& c : cases) {
+      std::FILE* out = std::fopen(file.c_str(), "w");
+      std::fprintf(out, "### x y z value weight\n0.5 0.5 0.5 1 1\n1.5 0.5 0.5 2 1\n%s\n1.5 1.5 0.5 4 1\n", c.row);
+      std::fclose(out);
+      const bool byIndex = std::string(c.column) == "3";
+      throws_naming([&] {
+        if (byIndex) io::readField(file, {"0", "1", "2"}, "3", "4");
+        else io::readField(file, {"x", "y", "z"}, "value", "weight");
+      }, file + ": row 2 has " + c.word + " in column " + c.column + "; every value must be finite",
+      std::string(c.word) + " in " + c.selector + (byIndex ? ", by index" : ""));
+    }
+    std::remove(file.c_str());
+  }
+
   group("the divergence file of a field result: readField reads it back, readDivergence refuses it");
   {
     const fixtures::LatticeField lf;

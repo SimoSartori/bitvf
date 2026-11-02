@@ -328,8 +328,8 @@ namespace bitvf::io {
    *  The columns are read through otswap::io::read: in FITS by name, from
    *  the table of HDU 2; in ASCII by name, from the last line starting with
    *  "###" before the data, or by 0-based index given as digits alone.
-   *  Nothing is checked beyond reading: findVoidsBoxFromField checks the
-   *  values. A divergence file of bitvf is valid input:
+   *  Every value read must be finite; findVoidsBoxFromField checks the
+   *  rest. A divergence file of bitvf is valid input:
    *
    *      const bitvf::io::Field f = bitvf::io::readField("divergence.fits", {"cellX", "cellY", "cellZ"},
    *                                                      "divergenceUnsmoothed", "weight");
@@ -337,13 +337,19 @@ namespace bitvf::io {
    *  @param centreColumns the columns of x, y and z of the centres.
    *  @param valueColumn the column of the field.
    *  @param weightColumn the column of the weights, or empty for none.
+   *  @param delimiter the separator of the columns of an ASCII file, as
+   *  otswap::io::read; ignored for FITS.
+   *  @param comment the character that starts a comment line of an ASCII
+   *  file, as otswap::io::read; ignored for FITS.
    *
    *  @exception Error if the file cannot be read, a column is missing or
    *  named twice: the message starts with "otswap: ", the otswap::Error
-   *  nested.
+   *  nested; if a value read is not finite: the message names the file,
+   *  the row, from 0 among the data rows, and the column as selected.
    */
   Field readField (const std::string& file, const std::array<std::string, 3>& centreColumns,
-                   const std::string& valueColumn, const std::string& weightColumn = "");
+                   const std::string& valueColumn, const std::string& weightColumn = "",
+                   char delimiter = ' ', char comment = '#');
 
 }
 

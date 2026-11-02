@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <cmath>
 #include <cstdint>
 #include <exception>
 #include <fstream>
@@ -339,15 +340,22 @@ bitvf::DivergenceGrid bitvf::io::readDivergence (const std::string& file)
 
 
 bitvf::io::Field bitvf::io::readField (const std::string& file, const std::array<std::string, 3>& centreColumns,
-                                       const std::string& valueColumn, const std::string& weightColumn)
+                                       const std::string& valueColumn, const std::string& weightColumn,
+                                       const char delimiter, const char comment)
 {
   std::vector<std::string> columns = {centreColumns[0], centreColumns[1], centreColumns[2], valueColumn};
   const bool weighted = !weightColumn.empty();
   if (weighted) columns.push_back(weightColumn);
-  const otswap::io::Table t = internal::call_otswap([&] { return otswap::io::read(file, columns); });
+  const otswap::io::Table t = internal::call_otswap([&] { return otswap::io::read(file, columns, delimiter, comment); });
 
   const std::size_t n = t.nRows;
   const std::size_t nc = columns.size();
+  for (std::size_t i = 0; i < nc * n; ++i)
+    if (!std::isfinite(t.values[i])) {
+      const double v = t.values[i];
+      throw Error(file + ": row " + std::to_string(i / nc) + " has " + (v != v ? "nan" : v > 0. ? "inf" : "-inf") +
+                  " in column " + columns[i % nc] + "; every value must be finite");
+    }
   Field f;
   f.centres.resize(3 * n);
   f.values.resize(n);
