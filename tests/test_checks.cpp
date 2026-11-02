@@ -511,7 +511,7 @@ int main ()
     throws_naming([&] { huge.run(); }, "an int64 cell index can address", "E3");
   }
 
-  group("the divergence: an endpoint outside every cell, no face crossed, a fill that stalls");
+  group("the divergence: an endpoint outside every cell, a fill that stalls");
   {
     DivergenceGrid cells;
     cells.geometry = otswap::Geometry::Box;
@@ -531,8 +531,6 @@ int main ()
     };
     throws_naming([&] { run({1., 1., 0., 2.5, 0., 0.}); },
                   "displacement of tracer 1 in realization 0 ends outside every cell", "E6");
-    throws_naming([&] { run({1., 1., 0., 0.1, 0., 0.}); },
-                  "no face of its cell is crossed by the displacement of tracer 0", "E5");
     throws_naming([&] { run({1., 0., 0., 0.1, 0., 0.}); },
                   "cannot reach 62 empty cells: the last pass filled none", "E4");
   }

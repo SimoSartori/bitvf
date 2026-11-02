@@ -186,8 +186,9 @@ namespace bitvf {
    *  box and so the mps.
    *
    *  @par Randoms drawn
-   *  The seed is s = config.ot.seed + 1299709, modulo 2^32, recorded in
-   *  Result::randomSeed of every pass and written as the keyword RANDSEED
+   *  The seed is s = config.ot.seed + 1299709, modulo 2^32, a seed of 0
+   *  counting as the one drawn to replace it (BoxConfig::ot); s is
+   *  recorded in Result::randomSeed of every pass and written as the keyword RANDSEED
    *  of bitvf's files. One std::mt19937 seeded with s draws, for each
    *  random in turn, x, y and z, each as lo + u (hi - lo) over the box's
    *  range on that axis, with u = (a 2^26 + b) / 2^53, a the first output

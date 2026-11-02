@@ -189,7 +189,7 @@ namespace {
     return out;
   }
 
-  /// The centre CBL computes before any clamp, evaluated directly.
+  /// The unclamped centre, evaluated directly.
   std::array<double, 3> unclamped (const DivergenceGrid& g, const std::int64_t c)
   {
     const std::int64_t n[3] = {(std::int64_t)g.nCellsAxis[0], (std::int64_t)g.nCellsAxis[1],
@@ -259,7 +259,7 @@ namespace {
     return ok;
   }
 
-  /// CBL's delta2Mps for n_t tracers in the sphere.
+  /// The reference delta2Mps for n_t tracers in the sphere.
   double delta2 (const std::size_t nt, const double m)
   {
     return ((double)nt / (4 * kPi * 8 * m * m * m / 3.)) / (1. / (m * m * m)) - 1.;
@@ -409,7 +409,7 @@ int main ()
     return lo + (hi - lo) * (rng() / 4294967296.);
   };
 
-  group("centre: CBL's expression over the neighbours, bit for bit where no clamp binds; faces, edges "
+  group("centre: the unclamped expression over the neighbours, bit for bit where no clamp binds; faces, edges "
         "and corners cut; a zero neighbourhood gives the cell centre; voids and overdense seeds alike");
   {
     const std::size_t n = 5;

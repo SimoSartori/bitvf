@@ -267,10 +267,14 @@ if (BITVF_BUILD_TESTS)
       set_tests_properties(executable_${case_name} PROPERTIES FIXTURES_REQUIRED executable_reference)
     endforeach()
 
-    add_test(NAME executable_example_box COMMAND bitvf_app tests/executable/example_box.ini
+    # The commented parameter files of the documentation, run as shipped:
+    # field.ini reads the divergence file box.ini writes.
+    add_test(NAME executable_example_box COMMAND bitvf_app examples/executable/box.ini
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-    add_test(NAME executable_example_field COMMAND bitvf_field_app tests/executable/example_field.ini
+    set_tests_properties(executable_example_box PROPERTIES FIXTURES_SETUP executable_example_box)
+    add_test(NAME executable_example_field COMMAND bitvf_field_app examples/executable/field.ini
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    set_tests_properties(executable_example_field PROPERTIES FIXTURES_REQUIRED executable_example_box)
   endif()
 endif()
 

@@ -70,7 +70,7 @@
  *  displacements; its voids and overdense basins files carry fieldCentre.
  *  It has no galaxies file.
  *
- *  Only box results are written for now.
+ *  Only box results are written.
  *
  *  @author Simone Sartori <simone.sartori@inaf.it>
  */
@@ -96,16 +96,22 @@ namespace bitvf::io {
   /**
    *  @brief The conventional name of the file of a product.
    *
-   *  <directory>/<stem>_[zspace_]<name>, with the stem of the product. A
+   *  `<directory>/<stem>_[zspace_]<name>`, with the stem of the product. A
    *  '/' is added only when directory is not empty and does not end in
-   *  one; an empty directory gives <stem>_[zspace_]<name>. The extension,
+   *  one; an empty directory gives `<stem>_[zspace_]<name>`. The extension,
    *  which sets the format, is part of name.
    *
+   *  @param product the product, which sets the stem.
+   *  @param directory the folder of the file; empty for none.
+   *  @param name the end of the file name, with the extension that sets
+   *  the format.
    *  @param zspace true only for the redshift-space pass of a run with
    *  redshift-space correction, whose files then do not collide with those
    *  of the real-space pass.
    *
    *  @exception Error if name is empty.
+   *
+   *  @return the path of the file.
    */
   std::string fileName (Product product, const std::string& directory, const std::string& name, bool zspace);
 
@@ -118,6 +124,9 @@ namespace bitvf::io {
    *  delta2Mps and nTracers, and has fieldCentre after contamination.
    *  Keywords as listed in the file description, the row count NBASINS.
    *  ASCII: 9 significant digits.
+   *
+   *  @param file the file to write; its extension sets the format.
+   *  @param result the result of a box search.
    *
    *  @exception Error
    *  - if the result is not a box result;
@@ -137,6 +146,9 @@ namespace bitvf::io {
    *  @brief Write the overdense basins, one row per basin
    *  (Result::overdense), with the columns, keywords and errors of
    *  writeVoids.
+   *
+   *  @param file the file to write, as writeVoids.
+   *  @param result the result of a box search.
    */
   void writeOverdense (const std::string& file, const Result& result);
 
@@ -157,6 +169,9 @@ namespace bitvf::io {
    *  NCELLZ. With MPS and CELLSIZE, they hold every field that defines the
    *  cells at 17 significant digits, so the grid read back is the same bit
    *  for bit.
+   *
+   *  @param file the file to write, as writeVoids.
+   *  @param result the result of a box search, with its divergence grid.
    *
    *  @exception Error
    *  - if the result is not a box result, or holds no divergence grid
@@ -190,6 +205,10 @@ namespace bitvf::io {
    *  Result::outsideGrid is not empty.
    *  Keywords as listed in the file description, the row count NOBJECTS.
    *  ASCII: 9 significant digits.
+   *
+   *  @param file the file to write, as writeVoids.
+   *  @param result the result of a box search on tracers, with its tracer
+   *  assignment.
    *
    *  @exception Error
    *  - if the result is not a box result, is a field result, or holds no
@@ -264,6 +283,9 @@ namespace bitvf::io {
    *
    *  Reading a lightcone mean displacement file is not implemented.
    *
+   *  @param file the file, FITS or ASCII by its extension, as written by
+   *  otswap::io::writeDisplacementMean.
+   *
    *  @exception Error
    *  - if the file cannot be read, or lacks a column, or an integer column
    *    holds anything but an integer: the message starts with "otswap: ",
@@ -274,6 +296,9 @@ namespace bitvf::io {
    *    anything but 1, or BOXLIM = 1 comes without the six box keywords;
    *  - if nValidRec lies outside 0 to NREC in a row: the message names the
    *    data row, from 1.
+   *
+   *  @return the tracers, their mean displacement, its validity, the mps,
+   *  the box limits and the IDs when the file holds them, and NREC.
    */
   DisplacementMean readDisplacementMean (const std::string& file);
 
@@ -289,6 +314,8 @@ namespace bitvf::io {
    *  search reusing the grid does not read.
    *
    *  Reading a lightcone divergence file is not implemented.
+   *
+   *  @param file the file, FITS or ASCII by its extension.
    *
    *  @exception Error
    *  - if the file cannot be read, or lacks a column, as
@@ -306,6 +333,8 @@ namespace bitvf::io {
    *
    *  The divergence file of a field result has no NREC and is refused;
    *  read it with readField.
+   *
+   *  @return the grid, with every field the file holds.
    */
   DivergenceGrid readDivergence (const std::string& file);
 
@@ -336,6 +365,7 @@ namespace bitvf::io {
    *      const bitvf::io::Field f = bitvf::io::readField("divergence.fits", {"cellX", "cellY", "cellZ"},
    *                                                      "divergenceUnsmoothed", "weight");
    *
+   *  @param file the table, FITS or ASCII by its extension.
    *  @param centreColumns the columns of x, y and z of the centres.
    *  @param valueColumn the column of the field.
    *  @param weightColumn the column of the weights, or empty for none.
@@ -348,6 +378,9 @@ namespace bitvf::io {
    *  named twice: the message starts with "otswap: ", the otswap::Error
    *  nested; if a value read is not finite: the message names the file,
    *  the data row, from 1, and the column as selected.
+   *
+   *  @return the centres, the values and the weights, one per row in the
+   *  order of the rows; the weights empty without weightColumn.
    */
   Field readField (const std::string& file, const std::array<std::string, 3>& centreColumns,
                    const std::string& valueColumn, const std::string& weightColumn = "",

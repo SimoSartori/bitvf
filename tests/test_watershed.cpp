@@ -107,7 +107,7 @@ namespace {
     return r;
   }
 
-  /// The serial reference: CBL's flow loop and CBL's walk, which labels
+  /// The serial reference: the reference flow loop and walk, which labels
   /// only the cell it starts from, with the seeds numbered by ascending row.
   struct Reference {
     std::vector<std::int64_t> flow, voidIndex, overdenseIndex;

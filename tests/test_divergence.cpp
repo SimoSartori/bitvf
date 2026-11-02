@@ -320,6 +320,95 @@ int main ()
     check(b.scaleExponent == 61 - e - 20, "q = 61 - e - 20, B = maxDisplacement / s < 2^e");
   }
 
+  group("faces: a tracer or an end on a face, edge or vertex, or a displacement along a face, gives "
+        "the cells and terms of the same tracer moved one ulp into its cell");
+  {
+    struct Face {
+      const char* what;
+      Vec x, d;
+      std::array<bool, 3> move;
+    };
+    const Face faces[] = {
+      {"start on a face, leaving through it", {2.5, 2.5, 2.}, {0.3, -0.2, -0.7}, {false, false, true}},
+      {"start on a face, leaving through another", {2.5, 2.5, 2.}, {0.9, 0.1, 0.4}, {false, false, true}},
+      {"start on an edge, y faster", {2.5, 2., 2.}, {0.1, -0.9, -0.3}, {false, true, true}},
+      {"start on an edge, z faster", {2.5, 2., 2.}, {0.1, -0.3, -0.9}, {false, true, true}},
+      {"start on a vertex, x fastest", {2., 2., 2.}, {-0.9, -0.3, -0.1}, {true, true, true}},
+      {"start on a vertex, z fastest", {2., 2., 2.}, {-0.1, -0.3, -0.9}, {true, true, true}},
+      {"start on a vertex, y into the cell", {2., 2., 2.}, {-0.9, 0.3, -0.1}, {true, true, true}},
+      {"start on a face, along it", {2.5, 2.5, 2.}, {0.9, 0., 0.}, {false, false, true}},
+      {"start on an edge, along it", {2.5, 2., 2.}, {0.9, 0., 0.}, {false, true, true}},
+      {"start on an edge, along one face", {2.5, 2., 2.}, {0.9, -0.6, 0.}, {false, true, true}},
+      {"end on a face", {4.5, 4.5, 4.5}, {1.5, 0.2, 0.1}, {true, false, false}},
+      {"end on an edge", {5.5, 4.5, 4.5}, {0.5, 1.5, 0.1}, {true, true, false}},
+    };
+    const Vec stay = {0.01, 0., 0.};
+    auto run = [&] (const Vec& x, const Vec& d, DivergenceGrid& g) {
+      Case c(8, 1.);
+      for (std::size_t i = 0; i < 8; ++i)
+        for (std::size_t j = 0; j < 8; ++j)
+          for (std::size_t k = 0; k < 8; ++k) c.add({i + 0.5, j + 0.5, k + 0.5}, {stay});
+      c.add(x, {d});
+      return c.run(g);
+    };
+    for (const Face& f : faces) {
+      Vec moved = f.x;
+      for (std::size_t a = 0; a < 3; ++a)
+        if (f.move[a]) moved[a] = std::nextafter(moved[a], std::numeric_limits<double>::infinity());
+      DivergenceGrid g, h;
+      const internal::BoxDivergence b = run(f.x, f.d, g);
+      const internal::BoxDivergence m = run(moved, f.d, h);
+      check(g.nDisplacements == h.nDisplacements && g.nTracers == h.nTracers &&
+            g.divergence == h.divergence && g.weight == h.weight && b.cell == m.cell &&
+            b.used == m.used && b.scaleExponent == m.scaleExponent,
+            std::string(f.what) + ": as the tracer moved one ulp into its cell");
+    }
+
+    DivergenceGrid g;
+    run({2.5, 2.5, 2.5}, {1., 1., 0.1}, g);
+    std::uint64_t total = 0;
+    for (const std::uint64_t n : g.nDisplacements) total += n;
+    check(total == 2 * 513 && g.nDisplacements[row(g, 2, 2, 2)] == 3 &&
+          g.nDisplacements[row(g, 3, 3, 2)] == 3 && g.divergence[row(g, 2, 2, 2)] == 1. / 3. &&
+          g.divergence[row(g, 3, 3, 2)] == -1. / 3.,
+          "a segment through an edge: one face of each cell, the lower axis on equal t and d");
+
+    struct Tiny {
+      const char* what;
+      Vec x, d;
+      std::array<std::size_t, 3> from, to;
+      int exit, entry;
+    };
+    for (const double t : {1e-10, 1e-12}) {
+      const double in = 3. - 0.5 * t;
+      const Tiny tiny[] = {
+        {"on a face", {3., 2.5, 2.5}, {-t, 0.2 * t, 0.3 * t}, {3, 2, 2}, {2, 2, 2}, 0, 0},
+        {"inside, across a face", {in, 2.5, 2.5}, {t, 0.2 * t, -0.3 * t}, {2, 2, 2}, {3, 2, 2}, 0, 0},
+        {"on an edge", {3., 3., 2.5}, {-t, -2. * t, 0.3 * t}, {3, 3, 2}, {2, 2, 2}, 1, 0},
+        {"inside, across an edge", {in, in, 2.5}, {t, 1.5 * t, 0.3 * t}, {2, 2, 2}, {3, 3, 2}, 1, 0},
+        {"on a vertex", {3., 3., 3.}, {-t, -2. * t, -3. * t}, {3, 3, 3}, {2, 2, 2}, 2, 0},
+        {"inside, across a vertex", {in, in, in}, {t, 2. * t, 3. * t}, {2, 2, 2}, {3, 3, 3}, 2, 0},
+      };
+      for (const Tiny& c : tiny) {
+        DivergenceGrid h;
+        const internal::BoxDivergence b = run(c.x, c.d, h);
+        const std::size_t from = row(h, c.from[0], c.from[1], c.from[2]);
+        const std::size_t to = row(h, c.to[0], c.to[1], c.to[2]);
+        auto term = [&] (const int a) {
+          return std::ldexp((double)std::llrint(std::ldexp(std::abs(c.d[a]), b.scaleExponent)),
+                            -b.scaleExponent) / 3.;
+        };
+        std::uint64_t sum = 0;
+        for (const std::uint64_t n : h.nDisplacements) sum += n;
+        check(b.cell[512] == (std::int64_t)from && sum == 2 * 513 && h.nDisplacements[from] == 3 &&
+              h.nDisplacements[to] == 3 && h.divergence[from] == term(c.exit) &&
+              h.divergence[to] == -term(c.entry),
+              "|d| = " + std::to_string(t) + ", " + c.what +
+              ": one exit from the start cell, one entry into the end cell, each through one face");
+      }
+    }
+  }
+
   group("weight: nDisplacements / R, with R = 3");
   {
     Case c(4, 1., 3);
@@ -434,7 +523,7 @@ int main ()
           "a neighbour fills from the three counted cells in its 3x3x3 window");
   }
 
-  group("errors: E6 before E5, each naming the first case in tracer-major order; E4");
+  group("errors: E6, naming the first case in tracer-major order; E4");
   {
     const Vec stay = {0.1, 0., 0.};
     Case outside(4, 1., 2);
@@ -444,14 +533,6 @@ int main ()
     throws_naming([&] { DivergenceGrid g; outside.run(g); },
                   "the valid displacement of tracer 1 in realization 1 ends outside every cell",
                   "E6, on the last face of the grid, the first in tracer-major order");
-
-    Case corner(4, 1., 2);
-    corner.add({0.5, 0.5, 0.5}, {stay, {1., 1., 0.}});
-    corner.add({1.5, 0.5, 0.5}, {stay, stay});
-    corner.add({2.5, 0.5, 0.5}, {{1., 0., 1.}, stay});
-    throws_naming([&] { DivergenceGrid g; corner.run(g); },
-                  "no face of its cell is crossed by the displacement of tracer 0 in realization 1",
-                  "E5, a segment through a cell edge");
 
     Case two(4, 1.);
     two.add({0.5, 0.5, 0.5}, {{1., 0., 0.}});

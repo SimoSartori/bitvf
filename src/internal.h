@@ -413,12 +413,28 @@ namespace bitvf {
      *  segment meets its plane at 0 < t < 1 (x + t d) strictly inside the
      *  face; the first face crossed is returned.
      *
+     *  When none is, because x or x + d lies on a face, edge or vertex of
+     *  the cell, the segment runs along a face, or no component of d
+     *  exceeds 1e-9, the face follows the cells of box_cell, [lower, upper)
+     *  on each axis: among the axes whose component of d is not zero, the
+     *  plane of the cell the segment reaches along each, t = (plane - x) /
+     *  d; the start cell is left through the plane of smallest t, the end
+     *  cell entered through the plane of largest t. Equal t are decided as
+     *  for x moved by an equal, vanishing step along +x, +y and +z: by the
+     *  smaller -1 / d for the start cell, the larger for the end cell, then
+     *  the lower axis. So a tracer on a face gives the cells and the terms
+     *  of the same tracer moved one ulp into its cell, and every segment
+     *  that leaves its cell has a face in each of its two cells. Axis -1
+     *  only when d is zero.
+     *
      *  @param cell the cell, (i, j, k)
      *  @param x the start of the segment, x, y, z
      *  @param d the displacement, x, y, z
+     *  @param start true for the cell of x, which the segment leaves;
+     *  false for the cell of x + d, which it enters
      */
     BoxFace box_face (const DivergenceGrid& grid, const std::array<std::size_t, 3>& cell,
-                      const double* x, const double* d);
+                      const double* x, const double* d, bool start);
 
     /**
      *  @brief The divergence of the displacement field on a box grid,
@@ -444,7 +460,8 @@ namespace bitvf {
      *  arrays other than these four are left unchanged
      *  @exception Error if a valid displacement read ends outside every
      *  cell; then if no face of a cell is found for a displacement leaving
-     *  it; then if the fill cannot reach every empty cell
+     *  it, an internal error that box_face rules out; then if the fill
+     *  cannot reach every empty cell
      */
     BoxDivergence box_divergence (const BoxSearch& search, DivergenceGrid& grid);
 

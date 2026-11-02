@@ -77,14 +77,15 @@ namespace bitvf {
                     int line = __builtin_LINE())
       : std::runtime_error(what), m_file(file), m_function(function), m_line(line) {}
 
-    /// Source file in which the Error was constructed, as the compiler
-    /// named it.
+    /// @return the source file in which the Error was constructed, as the
+    /// compiler named it.
     const char* file () const noexcept { return m_file; }
 
-    /// Name of the function in which the Error was constructed.
+    /// @return the name of the function in which the Error was
+    /// constructed.
     const char* function () const noexcept { return m_function; }
 
-    /// Line at which the Error was constructed.
+    /// @return the line at which the Error was constructed.
     int line () const noexcept { return m_line; }
 
   private:
@@ -245,7 +246,7 @@ namespace bitvf {
     ///   given, the reconstruction's (otswap::SelectionCounts::boxLimits)
     ///   or the grid's (DivergenceGrid::limits); the grid line whenever a
     ///   grid is reused, even with no tracer outside it, and by
-    ///   findVoidsBoxFromDivergence, as "outside the divergence grid". <W>
+    ///   findVoidsBoxFromDivergence, as "outside the divergence grid". \<W\>
     ///   counts the tracers read without a valid displacement. A count of 1
     ///   takes the singular.
     /// - Detailed: as Normal, with one line per step of the search in the
@@ -543,8 +544,11 @@ namespace bitvf {
     /// Displacement ends counted in each cell, before the fill: a valid
     /// displacement that leaves its tracer's cell counts 1 in that cell and
     /// 1 in the cell it ends in; one that ends in its tracer's cell counts 2
-    /// there. In a lightcone, displacements rejected by the mask count
-    /// nowhere (Counts::displacementsRejected).
+    /// there. In a box, a point on a face between two cells belongs to the
+    /// upper one, and a displacement that starts or ends on a face, an edge
+    /// or a vertex, or runs along a face, is counted as that of the same
+    /// tracer moved one ulp into its cell. In a lightcone, displacements
+    /// rejected by the mask count nowhere (Counts::displacementsRejected).
     std::vector<std::uint64_t> nDisplacements;
 
     /// Tracers starting in each cell.
@@ -862,6 +866,9 @@ namespace bitvf {
    *  the mps of the grid, which wins over the reconstruction's. A positive
    *  smoothing.sigma in Mps is checked against the mps of the search: the
    *  grid's when given, otherwise the reconstruction's.
+   *
+   *  @return the voids and overdense basins, with Result::mps the mps of
+   *  the search: the grid's when given, otherwise the reconstruction's.
    */
   Result findVoidsBox (const otswap::Result& reconstruction,
                        const Config& config,
@@ -931,6 +938,9 @@ namespace bitvf {
    *    grid's nTracers;
    *  - if the smoothed divergence is 0 or positive in every cell, so that
    *    no void can be found.
+   *
+   *  @return the voids and overdense basins of the divergence smoothed
+   *  with config.smoothing, with Result::mps the grid's mps.
    */
   Result findVoidsBoxFromDivergence (const DivergenceGrid& divergence,
                                      const std::vector<double>& tracers,
@@ -1023,6 +1033,10 @@ namespace bitvf {
    *    node holds two centres, or none;
    *  - if the field, smoothed when a smoothing is set, is 0 or positive in
    *    every cell, so that no void can be found.
+   *
+   *  @return the voids and overdense basins of the field, with
+   *  Result::nTracers 0, and Result::mps the mps given, or NaN without
+   *  one.
    */
   Result findVoidsBoxFromField (const std::vector<double>& centres,
                                 const std::vector<double>& values,
@@ -1058,6 +1072,8 @@ namespace bitvf {
    *  not below the upper one; if mps or divergenceCellSize is not finite
    *  and positive; if the grid would hold more cells than an int64 index
    *  can address.
+   *
+   *  @return the grid, with only the fields that define the cells set.
    */
   DivergenceGrid boxGrid (const otswap::BoxLimits& box, double mps, double divergenceCellSize);
 
@@ -1069,12 +1085,20 @@ namespace bitvf {
    *  the default for the reconstruction's realizations,
    *  min(1, (20 / nRealizations)^(1/3)) mps.
    *
+   *  @param reconstruction a box result of otswap::reconstructBox.
+   *
+   *  @param divergenceCellSize the cell side in units of mps, as
+   *  Config::divergenceCellSize; finite and positive. Empty for the
+   *  default.
+   *
    *  @exception Error if the reconstruction is not a box result; if its
    *  nRealizations is 0; if its box is missing, has a bound not finite or
    *  a lower bound above the upper one, or differs from
    *  selection.boxLimits when those are set; if its mps is not finite and
    *  positive; if divergenceCellSize is set and not finite and positive;
    *  if the grid would hold more cells than an int64 index can address.
+   *
+   *  @return the grid, with only the fields that define the cells set.
    */
   DivergenceGrid boxGrid (const otswap::Result& reconstruction,
                           std::optional<double> divergenceCellSize = std::nullopt);
@@ -1136,6 +1160,9 @@ namespace bitvf {
    *
    *  @exception Error if a count of nCellsAxis is 0; if field does not
    *  hold nx * ny * nz entries; if an entry of field is not finite.
+   *
+   *  @return the voids and overdense basins: the basin of each cell, the
+   *  seed and the cells of each basin.
    */
   Partition watershedBox (const std::vector<double>& field, const std::array<std::size_t, 3>& nCellsAxis,
                           otswap::Verbosity verbosity = otswap::Verbosity::Normal,

@@ -129,7 +129,7 @@ namespace {
         for (const std::int64_t c : {c0, c1}) {
           const std::size_t u = (std::size_t)c;
           const bitvf::internal::BoxFace face =
-            bitvf::internal::box_face(grid, {u / (n1 * n2), (u / n2) % n1, u % n2}, x, d);
+            bitvf::internal::box_face(grid, {u / (n1 * n2), (u / n2) % n1, u % n2}, x, d, c == c0);
           if (face.axis < 0) {
             noFace = std::min(noFace, i * R + r);
             continue;
@@ -157,7 +157,8 @@ namespace {
 
 bitvf::internal::BoxFace bitvf::internal::box_face (const DivergenceGrid& grid,
                                                     const std::array<std::size_t, 3>& cell,
-                                                    const double* x, const double* d)
+                                                    const double* x, const double* d,
+                                                    const bool start)
 {
   const std::array<double, 3>& lo = grid.lower;
   const double s = grid.cellSize;
@@ -176,7 +177,24 @@ bitvf::internal::BoxFace bitvf::internal::box_face (const DivergenceGrid& grid,
         return {a, -1 + 2 * (int)fac};
     }
 
-  return {-1, 0};
+  BoxFace best = {-1, 0};
+  double bestT = 0., bestKey = 0.;
+  for (int a = 0; a < 3; ++a) {
+    if (d[a] == 0.) continue;
+    const std::size_t fac = ((d[a] > 0) == start) ? 1 : 0;
+    const double t = (lo[a] + s * (double)(cell[a] + fac) - x[a]) / d[a];
+    const double key = -1. / d[a];
+    const bool better = (best.axis < 0) ||
+                        (start ? (t < bestT || (t == bestT && key < bestKey))
+                               : (t > bestT || (t == bestT && key > bestKey)));
+    if (better) {
+      best = {a, -1 + 2 * (int)fac};
+      bestT = t;
+      bestKey = key;
+    }
+  }
+
+  return best;
 }
 
 
