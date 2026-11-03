@@ -139,19 +139,20 @@ def write_divergence(file: Path, result: Result) -> None:
     """Write the divergence grid, one row per cell (``Result.divergence``).
 
     Columns: index (K); cellX, cellY, cellZ, the cell centre; divergence,
-    after smoothing; divergenceUnsmoothed, only when kept
-    (``Config.keep_unsmoothed_divergence``); volume, in coordinate units
-    cubed; weight; nDispl (K), the displacement ends counted; nTracers (K);
-    voidIndex (K); overdenseIndex (K). Rows in the order of the cells,
-    cell (i, j, k) row (i * ny + j) * nz + k. A field result has no nDispl
-    and nTracers. ASCII: 17 significant digits.
+    before smoothing; divergenceSmoothed, only with sigma > 0
+    (``DivergenceGrid.divergence_smoothed``); volume, in coordinate units
+    cubed; weight; weightSmoothed, only with sigma > 0
+    (``DivergenceGrid.weight_smoothed``); nDispl (K), the displacement ends
+    counted; nTracers (K); voidIndex (K); overdenseIndex (K). Rows in the
+    order of the cells, cell (i, j, k) row (i * ny + j) * nz + k. A field
+    result has no nDispl and nTracers. ASCII: 17 significant digits.
 
     Keywords as in the module description, the row count NCELLS, followed by
     the record of the grid: LOWERX, LOWERY, LOWERZ, UPPERX, UPPERY, UPPERZ,
     CELLSIDE, in coordinate units, and NCELLX, NCELLY, NCELLZ. With MPS and
     CELLSIZE they hold every field that defines the cells, so the grid read
-    back by ``read_divergence`` is the same bit for bit. Write the
-    unsmoothed divergence to search the file again with another smoothing
+    back by ``read_divergence`` is the same bit for bit, and the file can be
+    searched again with another smoothing
     (``find_voids_box_from_divergence``, ``find_voids_box_from_field``).
 
     Parameters
@@ -272,9 +273,10 @@ def read_divergence(file: Path, *, angle_unit: str) -> DivergenceGrid:
     the cells (``lower``, ``upper``, ``cell_size``, ``n_cells_axis``,
     ``n_cells``, ``mps``, ``cell_size_mps``), the box limits,
     ``n_realizations``, ``n_realizations_mean`` and every per-cell column,
-    ``divergence_unsmoothed`` when the file has it. The grid passes the
-    checks of a grid to reuse, so it can be passed to ``find_voids_box`` as
-    ``grid``, or searched again with ``find_voids_box_from_divergence``.
+    ``divergence_smoothed`` and ``weight_smoothed`` when the file has them.
+    The grid passes the checks of a grid to reuse, so it can be passed to
+    ``find_voids_box`` as ``grid``, or searched again with
+    ``find_voids_box_from_divergence``.
 
     Parameters
     ----------
@@ -364,7 +366,7 @@ def read_field(file: Path, *, centres: Sequence[str], value: str, weight: Option
     the rest. A bitvf divergence file is valid input::
 
         f = bitvf.io.read_field("divergence.fits", centres=["cellX", "cellY", "cellZ"],
-                                value="divergenceUnsmoothed", weight="weight")
+                                value="divergence", weight="weight")
 
     Parameters
     ----------

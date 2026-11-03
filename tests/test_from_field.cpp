@@ -50,7 +50,7 @@ namespace {
   // The hash of the search on the default LatticeField, with its weights,
   // sigma 1.5 in coordinate units, recorded once. A different value on
   // some platform means results are not portable there.
-  constexpr std::uint64_t kRecordedHash = 0x34bc2dbd2e21d19bull;
+  constexpr std::uint64_t kRecordedHash = 0x06eb8de77478e0b9ull;
 
   std::string temporary (const std::string& name)
   {
@@ -65,7 +65,6 @@ namespace {
     Config c;
     c.log = nullptr;
     c.keepDivergence = true;
-    c.keepUnsmoothedDivergence = true;
     c.smoothing.sigma = sigma;
     c.smoothing.unit = LengthUnit::Coordinate;
     return c;
@@ -89,21 +88,29 @@ namespace {
     fnv(h, g.lower.data(), sizeof g.lower);
     fnv(h, g.upper.data(), sizeof g.upper);
     fnv(h, g.nCellsAxis.data(), sizeof g.nCellsAxis);
-    fnv_vector(h, g.divergence);
+    fnv_vector(h, g.divergenceSmoothed);
     fnv_vector(h, g.weight);
     fnv_vector(h, g.voidIndex);
     fnv_vector(h, g.overdenseIndex);
     return h;
   }
 
-  bool same_result (const Result& a, const Result& b)
+  /// The catalogues and the grid of two field results equal, but weight
+  /// and weightSmoothed.
+  bool same_search (const Result& a, const Result& b)
   {
     const DivergenceGrid& g = *a.divergence;
     const DivergenceGrid& d = *b.divergence;
     return same_catalog(a.voids, b.voids) && same_catalog(a.overdense, b.overdense) &&
-           same_bits(g.divergence, d.divergence) && same_bits(g.divergenceUnsmoothed, d.divergenceUnsmoothed) &&
-           same_bits(g.weight, d.weight) && g.voidIndex == d.voidIndex && g.overdenseIndex == d.overdenseIndex &&
-           g.cellSize == d.cellSize && g.lower == d.lower && g.upper == d.upper && g.nCellsAxis == d.nCellsAxis;
+           same_bits(g.divergence, d.divergence) && same_bits(g.divergenceSmoothed, d.divergenceSmoothed) &&
+           g.voidIndex == d.voidIndex && g.overdenseIndex == d.overdenseIndex && g.cellSize == d.cellSize &&
+           g.lower == d.lower && g.upper == d.upper && g.nCellsAxis == d.nCellsAxis;
+  }
+
+  bool same_result (const Result& a, const Result& b)
+  {
+    return same_search(a, b) && same_bits(a.divergence->weight, b.divergence->weight) &&
+           same_bits(a.divergence->weightSmoothed, b.divergence->weightSmoothed);
   }
 
   /// The rows of a field in the order of perm.
@@ -150,7 +157,7 @@ int main ()
   for (const char* format : {".fits", ".txt"}) {
     const std::string file = temporary(std::string("divergence") + format);
     io::writeDivergence(file, r);
-    const io::Field f = io::readField(file, {"cellX", "cellY", "cellZ"}, "divergenceUnsmoothed", "weight");
+    const io::Field f = io::readField(file, {"cellX", "cellY", "cellZ"}, "divergence", "weight");
     std::remove(file.c_str());
     Config c = in.config;
     c.keepAssignment = false;
@@ -204,7 +211,7 @@ int main ()
       faces = faces && g.lower[a] == lf.origin[a] - lf.s / 2 && g.upper[a] == max + lf.s / 2;
     }
     check(faces, "lower = min - s / 2, upper = max + s / 2");
-    check(same_bits(g.divergenceUnsmoothed, lf.values), "rows in lattice order: the input's when it is in order");
+    check(same_bits(g.divergence, lf.values), "rows in lattice order: the input's when it is in order");
 
     for (const std::array<std::size_t, 3> n : {std::array<std::size_t, 3>{6, 9, 4}, {9, 6, 4}, {4, 6, 9},
                                                {7, 7, 3}, {3, 7, 7}, {7, 3, 7}}) {
@@ -238,7 +245,7 @@ int main ()
     bool ok = true;
     for (const BasinCatalog* c : {&lr.voids, &lr.overdense})
       for (std::size_t b = 0; b < c->nBasins; ++b)
-        ok = ok && c->fieldCentre[b] == internal::box_field_at(g, g.divergence, &c->centre[3*b]);
+        ok = ok && c->fieldCentre[b] == internal::box_field_at(g, g.divergenceSmoothed, &c->centre[3*b]);
     check(ok, "every basin, smoothed field");
     check(r.voids.fieldCentre.empty() && r.overdense.fieldCentre.empty(), "findVoidsBox: empty");
     const Result rd = findVoidsBoxFromDivergence(d, in.tracers, in.config);
@@ -321,13 +328,14 @@ int main ()
           "with mps 3: sigma 0.5 mps = 1.5, the same result; mps and cell size in mps recorded");
     Config k = coordinate(1.5);
     k.keepDivergence = false;
-    k.keepUnsmoothedDivergence = false;
     const Result nk = findVoidsBoxFromField(lf.centres, lf.values, k, lf.weights);
     check(!nk.divergence && same_catalog(nk.voids, lr.voids), "without keepDivergence: no grid, same catalogues");
-    Config u = coordinate(1.5);
-    u.keepUnsmoothedDivergence = false;
-    check(findVoidsBoxFromField(lf.centres, lf.values, u, lf.weights).divergence->divergenceUnsmoothed.empty(),
-          "without keepUnsmoothedDivergence: divergenceUnsmoothed empty");
+    check(same_bits(g.divergence, lf.values) && g.divergenceSmoothed.size() == g.nCells &&
+          g.weightSmoothed.size() == g.nCells, "sigma > 0: the field as given, its smoothed field and weight");
+    const Result zero = findVoidsBoxFromField(lf.centres, lf.values, coordinate(0.), lf.weights);
+    const DivergenceGrid& z = *zero.divergence;
+    check(same_bits(z.divergence, lf.values) && z.divergenceSmoothed.empty() && z.weightSmoothed.empty(),
+          "sigma 0: the field as given, no smoothed field or weight");
   }
 
   group("without mps: a sigma in mps refused only when positive");
@@ -342,17 +350,23 @@ int main ()
                   "the smoothing sigma is in mps, but no mps is given", "sigma 1 in mps: refused");
   }
 
-  group("weights: divided by their largest; none is weight 1 everywhere; all 0 accepted at sigma 0");
+  group("weights: used as given, a scale by a power of 2 changes neither the search nor the threshold; none is "
+        "weight 1 everywhere; all 0 accepted at sigma 0");
   {
     std::vector<double> scaled = lf.weights;
     for (double& w : scaled) w *= 1024.;
-    check(same_result(findVoidsBoxFromField(lf.centres, lf.values, coordinate(1.5), scaled), lr),
-          "weights times 1024: the same result");
+    const Result sr = findVoidsBoxFromField(lf.centres, lf.values, coordinate(1.5), scaled);
+    bool times = sr.divergence->weightSmoothed.size() == lr.divergence->weightSmoothed.size();
+    for (std::size_t c = 0; times && c < lr.divergence->nCells; ++c)
+      times = sr.divergence->weight[c] == 1024. * lr.divergence->weight[c] &&
+              sr.divergence->weightSmoothed[c] == 1024. * lr.divergence->weightSmoothed[c];
+    check(same_search(sr, lr) && times, "weights times 1024: the same search, weight and weightSmoothed times 1024");
     const Result none = findVoidsBoxFromField(lf.centres, lf.values, coordinate(1.5));
-    const std::vector<double> threes(lf.values.size(), 3.);
-    check(same_result(findVoidsBoxFromField(lf.centres, lf.values, coordinate(1.5), threes), none) &&
-          none.divergence->weight == std::vector<double>(lf.values.size(), 1.),
-          "no weights: the grid's weight 1, as weights all 3");
+    const std::vector<double> fours(lf.values.size(), 4.);
+    const Result fr = findVoidsBoxFromField(lf.centres, lf.values, coordinate(1.5), fours);
+    check(same_search(fr, none) && none.divergence->weight == std::vector<double>(lf.values.size(), 1.) &&
+          fr.divergence->weight == fours,
+          "no weights: the grid's weight 1; weights all 4: kept, the same search");
     const std::vector<double> zeros(lf.values.size(), 0.);
     check(findVoidsBoxFromField(lf.centres, lf.values, coordinate(0.), zeros).voids.nBasins > 0,
           "all 0 at sigma 0: runs");
@@ -367,7 +381,7 @@ int main ()
     permute(perm, centres, values, weights);
     check(same_result(findVoidsBoxFromField(centres, values, coordinate(1.5), weights), lr), "LatticeField");
 
-    const io::Field f = {d.centre, d.divergenceUnsmoothed, d.weight};
+    const io::Field f = {d.centre, d.divergence, d.weight};
     std::vector<std::size_t> rows(d.nCells);
     for (std::size_t i = 0; i < rows.size(); ++i) rows[i] = i;
     for (std::size_t i = rows.size() - 1; i > 0; --i) std::swap(rows[i], rows[rng() % (i + 1)]);

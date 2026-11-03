@@ -68,11 +68,10 @@ int main (int argc, char** argv)
 
     // The columns of the cell centres, in Mpc/h, of the field and of the
     // weight of each cell in the smoothing. Without a weight column every
-    // cell weighs the same. The field is divergenceUnsmoothed, not the
-    // divergence column: the search smooths the field it reads, so the
-    // smoothed divergence would be smoothed twice
-    const bitvf::io::Field field = bitvf::io::readField(input, {"cellX", "cellY", "cellZ"}, "divergenceUnsmoothed",
-                                                        "weight");
+    // cell weighs the same. The field is the divergence column, before
+    // smoothing, not divergenceSmoothed: the search smooths the field it
+    // reads, so the smoothed divergence would be smoothed twice
+    const bitvf::io::Field field = bitvf::io::readField(input, {"cellX", "cellY", "cellZ"}, "divergence", "weight");
 
     std::cout << "Cells: " << field.values.size() << std::endl;
 

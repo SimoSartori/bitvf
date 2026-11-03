@@ -32,7 +32,8 @@ written only by the writers of `bitvf::io` (Python `bitvf.io`).
    counts as that of the same tracer moved one ulp into its cell. The
    divergence of a cell is that sum over the displacement ends counted in
    it, its weight that count over the number of realizations. A cell that
-   no displacement reaches is filled from its neighbours.
+   no displacement reaches takes the divergence of its neighbours and keeps
+   a weight of 0.
 2. **Smoothing.** The divergence is averaged with a Gaussian of width sigma,
    each cell weighted by its tracer weight.
 3. **Watershed.** Each cell flows to the neighbour, among the 26 around it,
@@ -102,9 +103,17 @@ exp(-r² / (2 sigma²)). A larger sigma merges small basins into larger ones;
 sigma = 0 disables the smoothing. 1 mps, the default, is a reasonable
 starting value.
 
+With sigma > 0 the grid keeps, beside the divergence and the weight, the
+smoothed divergence (`divergenceSmoothed`), the field the watershed splits,
+and the smoothed weight (`weightSmoothed`), the mean of the weight over the
+same cells with the Gaussian alone as weight. The smoothed weight shows how
+much of a cell's smoothed divergence comes from displacements: near 0 where
+the cells around were mostly filled from their neighbours. The watershed
+does not read it.
+
 {cpp:func}`bitvf::findVoidsBoxFromDivergence` searches a divergence again
-with another sigma, from a grid kept with `keepUnsmoothedDivergence` or
-read from a divergence file written with it, without the reconstruction.
+with another sigma, from a grid kept with `keepDivergence` or read from a
+divergence file, without the reconstruction.
 
 ## The catalogues
 

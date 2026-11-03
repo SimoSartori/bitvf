@@ -631,7 +631,6 @@ namespace {
     return "Config(smoothing=" + smoothing_repr(c.smoothing) +
       ", divergence_cell_size=" + std::string(optional_repr(c.divergenceCellSize).c_str()) +
       ", keep_divergence=" + (c.keepDivergence ? "True" : "False") +
-      ", keep_unsmoothed_divergence=" + (c.keepUnsmoothedDivergence ? "True" : "False") +
       ", keep_assignment=" + (c.keepAssignment ? "True" : "False") +
       ", n_realizations_mean=" + std::to_string(c.nRealizationsMean) +
       ", verbosity=" + repr_of(verbosity_name(c.verbosity)) + ")";
@@ -653,9 +652,8 @@ namespace {
   bool same_config (const bitvf::Config& a, const bitvf::Config& b)
   {
     return same_smoothing(a.smoothing, b.smoothing) && a.divergenceCellSize == b.divergenceCellSize &&
-      a.keepDivergence == b.keepDivergence && a.keepUnsmoothedDivergence == b.keepUnsmoothedDivergence &&
-      a.keepAssignment == b.keepAssignment && a.nRealizationsMean == b.nRealizationsMean &&
-      a.verbosity == b.verbosity;
+      a.keepDivergence == b.keepDivergence && a.keepAssignment == b.keepAssignment &&
+      a.nRealizationsMean == b.nRealizationsMean && a.verbosity == b.verbosity;
   }
 
   /// Two otswap configurations equal by otswap's own __eq__.
@@ -751,13 +749,11 @@ NB_MODULE(_bitvf, m)
       "reads them, not here.")
     .def("__init__",
         [] (bitvf::Config* self, nb::handle smoothing, nb::handle divergenceCellSize, nb::handle keepDivergence,
-            nb::handle keepUnsmoothedDivergence, nb::handle keepAssignment, nb::handle nRealizationsMean,
-            nb::handle verbosity) {
+            nb::handle keepAssignment, nb::handle nRealizationsMean, nb::handle verbosity) {
           bitvf::Config c;
           c.smoothing = instance<bitvf::Smoothing>(smoothing, "smoothing", "a bitvf.Smoothing");
           c.divergenceCellSize = to_optional_double(divergenceCellSize, "divergence_cell_size");
           c.keepDivergence = to_bool(keepDivergence, "keep_divergence");
-          c.keepUnsmoothedDivergence = to_bool(keepUnsmoothedDivergence, "keep_unsmoothed_divergence");
           c.keepAssignment = to_bool(keepAssignment, "keep_assignment");
           c.nRealizationsMean = to_unsigned(nRealizationsMean, "n_realizations_mean");
           c.verbosity = to_verbosity(verbosity);
@@ -766,7 +762,6 @@ NB_MODULE(_bitvf, m)
         nb::kw_only(), "smoothing"_a.none() = configDefaults.smoothing,
         "divergence_cell_size"_a.none() = nb::none(),
         "keep_divergence"_a.none() = configDefaults.keepDivergence,
-        "keep_unsmoothed_divergence"_a.none() = configDefaults.keepUnsmoothedDivergence,
         "keep_assignment"_a.none() = configDefaults.keepAssignment,
         "n_realizations_mean"_a.none() = configDefaults.nRealizationsMean,
         "verbosity"_a.none() = verbosity_name(configDefaults.verbosity),
@@ -794,13 +789,6 @@ NB_MODULE(_bitvf, m)
         [] (const bitvf::Config& c) { return c.keepDivergence; },
         [] (bitvf::Config& c, nb::handle v) { c.keepDivergence = to_bool(v, "keep_divergence"); },
         nb::for_setter(nb::arg("value").none()), "Fill Result.divergence with the grid and the field.")
-    .def_prop_rw("keep_unsmoothed_divergence",
-        [] (const bitvf::Config& c) { return c.keepUnsmoothedDivergence; },
-        [] (bitvf::Config& c, nb::handle v) {
-          c.keepUnsmoothedDivergence = to_bool(v, "keep_unsmoothed_divergence");
-        },
-        nb::for_setter(nb::arg("value").none()),
-        "Also fill DivergenceGrid.divergence_unsmoothed; requires keep_divergence.")
     .def_prop_rw("keep_assignment",
         [] (const bitvf::Config& c) { return c.keepAssignment; },
         [] (bitvf::Config& c, nb::handle v) { c.keepAssignment = to_bool(v, "keep_assignment"); },
@@ -1043,16 +1031,19 @@ NB_MODULE(_bitvf, m)
       }, "Sky coordinates of each cell centre; shape (0, 3) in a box.")
     .def_prop_ro("divergence", [] (GridHandle self) {
         const auto& g = grid_of(self); return cells<double>(self, g.divergence, g.nCellsAxis);
-      }, "The divergence the watershed ran on, after smoothing.")
-    .def_prop_ro("divergence_unsmoothed", [] (GridHandle self) {
-        const auto& g = grid_of(self); return cells<double>(self, g.divergenceUnsmoothed, g.nCellsAxis);
-      }, "The divergence before smoothing, with keep_unsmoothed_divergence; (0,) otherwise.")
+      }, "The divergence of each cell, before smoothing.")
+    .def_prop_ro("divergence_smoothed", [] (GridHandle self) {
+        const auto& g = grid_of(self); return cells<double>(self, g.divergenceSmoothed, g.nCellsAxis);
+      }, "The divergence after smoothing, the field the watershed splits, with sigma > 0; (0,) otherwise.")
     .def_prop_ro("volume", [] (GridHandle self) {
         const auto& g = grid_of(self); return cells<double>(self, g.volume, g.nCellsAxis);
       }, "Volume of each cell, in coordinate units cubed.")
     .def_prop_ro("weight", [] (GridHandle self) {
         const auto& g = grid_of(self); return cells<double>(self, g.weight, g.nCellsAxis);
       }, "Tracer weight of each cell, the weight of the smoothing.")
+    .def_prop_ro("weight_smoothed", [] (GridHandle self) {
+        const auto& g = grid_of(self); return cells<double>(self, g.weightSmoothed, g.nCellsAxis);
+      }, "Smoothed tracer weight of each cell, with sigma > 0; (0,) otherwise.")
     .def_prop_ro("n_displacements", [] (GridHandle self) {
         const auto& g = grid_of(self); return cells<std::uint64_t>(self, g.nDisplacements, g.nCellsAxis);
       }, "Displacement ends counted in each cell, before the fill.")

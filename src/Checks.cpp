@@ -445,9 +445,6 @@ void bitvf::internal::check_config (const Config& config, const bool gridGiven)
     throw Error("the number of realizations averaged is 0; it must be at least 1 "
                 "(1 for displacements of single realizations)");
 
-  if (config.keepUnsmoothedDivergence && !config.keepDivergence)
-    throw Error("keeping the unsmoothed divergence requires keeping the divergence");
-
   if (gridGiven && config.divergenceCellSize)
     throw Error("the divergence cell size is set together with a grid to reuse; leave it empty, "
                 "the cells are the grid's");
@@ -540,12 +537,12 @@ bitvf::internal::BoxSearch bitvf::internal::check_box_from_divergence (const Div
 
   const std::size_t C = grid.nCells;
   const std::pair<const std::vector<double>*, const char*> fields[2] = {
-    {&grid.divergenceUnsmoothed, "divergenceUnsmoothed"}, {&grid.weight, "weight"}};
+    {&grid.divergence, "divergence"}, {&grid.weight, "weight"}};
   for (const auto& field : fields) {
     if (field.first->size() != C)
       throw Error("the grid's " + std::string(field.second) + " holds " + std::to_string(field.first->size()) +
                   " entries for " + std::to_string(C) + " cells; a search from a divergence needs one per cell"
-                  " (keep it with Config::keepUnsmoothedDivergence, or read it from a divergence file)");
+                  " (keep it with Config::keepDivergence, or read it from a divergence file)");
     for (std::size_t c = 0; c < C; ++c)
       if (!std::isfinite((*field.first)[c]))
         throw Error("the grid's " + std::string(field.second) + " holds a non-finite value at cell " +

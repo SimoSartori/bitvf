@@ -61,8 +61,8 @@ namespace {
     const DivergenceGrid& g = *f.divergence;
     const DivergenceGrid& d = *r.divergence;
     return same_catalog(f.voids, r.voids) && same_catalog(f.overdense, r.overdense) &&
-           same_bits(g.divergence, d.divergence) && same_bits(g.divergenceUnsmoothed, d.divergenceUnsmoothed) &&
-           same_bits(g.weight, d.weight) && g.voidIndex == d.voidIndex && g.overdenseIndex == d.overdenseIndex &&
+           same_bits(g.divergence, d.divergence) && same_bits(g.divergenceSmoothed, d.divergenceSmoothed) &&
+           same_bits(g.weight, d.weight) && same_bits(g.weightSmoothed, d.weightSmoothed) && g.voidIndex == d.voidIndex && g.overdenseIndex == d.overdenseIndex &&
            g.nTracers == d.nTracers && g.nDisplacements == d.nDisplacements && f.assignment && r.assignment &&
            same_assignment(*f.assignment, *r.assignment) && f.ids == r.ids;
   }
@@ -120,13 +120,24 @@ int main ()
           "outsideGrid set, as with a reused grid, none outside");
   }
 
-  group("another sigma: equal to a search with that sigma, sigma 0 included");
+  group("another sigma: equal to a search with that sigma, sigma 0 included; the divergence file of a search "
+        "at sigma 0, searched with the first sigma, equal to the first search");
   for (const double sigma : {0., 1.}) {
     Config c = in.config;
     c.smoothing.sigma = sigma;
     const Result s = in.run(c);
     const Result f = findVoidsBoxFromDivergence(d, in.tracers, c, in.ids);
     check(repeats(f, s) && s.overdense.nBasins > 0, "sigma " + std::to_string(sigma) + " mps");
+  }
+  {
+    Config c = in.config;
+    c.smoothing.sigma = 0.;
+    const std::string file = temporary("sigma0.fits");
+    io::writeDivergence(file, in.run(c));
+    const DivergenceGrid zero = io::readDivergence(file);
+    std::remove(file.c_str());
+    check(zero.divergenceSmoothed.empty() && zero.weightSmoothed.empty() &&
+          repeats(findVoidsBoxFromDivergence(zero, in.tracers, in.config, in.ids), r), "from sigma 0 to the first");
   }
 
   group("the tracers against the grid's nTracers: a tracer moved to another cell or dropped is refused; "
@@ -165,29 +176,19 @@ int main ()
     throws_naming([&] { DivergenceGrid x = d; x.limits->upper[1] = x.limits->lower[1];
                         findVoidsBoxFromDivergence(x, in.tracers, c); },
                   "the grid's box limits are ", "FD4");
-    throws_naming([&] { DivergenceGrid x = d; x.divergenceUnsmoothed.clear();
+    throws_naming([&] { DivergenceGrid x = d; x.divergence.clear();
                         findVoidsBoxFromDivergence(x, in.tracers, c); },
-                  "the grid's divergenceUnsmoothed holds 0 entries", "FD5 no divergenceUnsmoothed");
+                  "the grid's divergence holds 0 entries", "FD5 no divergence");
     throws_naming([&] { DivergenceGrid x = d; x.weight[7] = std::numeric_limits<double>::quiet_NaN();
                         findVoidsBoxFromDivergence(x, in.tracers, c); },
                   "the grid's weight holds a non-finite value at cell 7", "FD5 weight");
-    {
-      Config k = c;
-      k.keepUnsmoothedDivergence = false;
-      const std::string file = temporary("plain.fits");
-      io::writeDivergence(file, in.run(k));
-      const DivergenceGrid plain = io::readDivergence(file);
-      std::remove(file.c_str());
-      throws_naming([&] { findVoidsBoxFromDivergence(plain, in.tracers, c); },
-                    "a search from a divergence needs one per cell", "FD5 a file without divergenceUnsmoothed");
-    }
     throws_naming([&] { DivergenceGrid x = d; x.nTracers.pop_back(); findVoidsBoxFromDivergence(x, in.tracers, c); },
                   "the grid's nTracers holds ", "FD6");
     throws_naming([&] { Config x = c; x.smoothing.sigma = 1e-200; findVoidsBoxFromDivergence(d, in.tracers, x); },
                   "too small to build the kernel", "FD7");
     throws_naming([&] { findVoidsBoxFromDivergence(d, {200., 0., 0., 0., 200., 0.}, c); },
                   "no tracer is left to read: of 2 tracers, 2 lie outside the grid's box limits", "FD9");
-    throws_naming([&] { DivergenceGrid x = d; for (double& v : x.divergenceUnsmoothed) v = 1.;
+    throws_naming([&] { DivergenceGrid x = d; for (double& v : x.divergence) v = 1.;
                         findVoidsBoxFromDivergence(x, in.tracers, c); },
                   "no void found: the divergence is 0 or positive in every cell", "FD11");
   }

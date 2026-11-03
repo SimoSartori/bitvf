@@ -97,6 +97,9 @@ def search_digests(out, key, r):
             out[f"{key}.{kind}.delta_2mps"] = digest(c.delta_2mps)
     if r.divergence is not None:
         out[f"{key}.divergence"] = digest(r.divergence.divergence)
+        if r.divergence.divergence_smoothed.size:
+            out[f"{key}.divergence_smoothed"] = digest(r.divergence.divergence_smoothed)
+            out[f"{key}.weight_smoothed"] = digest(r.divergence.weight_smoothed)
         out[f"{key}.void_index"] = digest(r.divergence.void_index)
     if r.assignment is not None:
         out[f"{key}.assignment.distance"] = digest(r.assignment.distance)
@@ -117,7 +120,7 @@ def compute():
     search_digests(out, "find_voids_box", r)
     again = bitvf.find_voids_box_from_divergence(
         bitvf.find_voids_box(tracers, displacement, mps=7.0,
-                             config=bitvf.Config(keep_unsmoothed_divergence=True, **keep)).divergence,
+                             config=bitvf.Config(**keep)).divergence,
         tracers, config=bitvf.Config(smoothing=bitvf.Smoothing(sigma=1.5), **keep))
     search_digests(out, "find_voids_box_from_divergence", again)
 

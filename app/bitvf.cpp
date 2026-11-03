@@ -73,7 +73,7 @@ namespace {
   enum Kind : unsigned { Pipeline = 1, Complete = 2, Mean = 4, Divergence = 8, Any = 15 };
 
   /// The switch a key needs, within the kinds it applies to.
-  enum class Needs { Nothing, PerformRecons, RandomFile, PrintDiv, NoDivergenceFile };
+  enum class Needs { Nothing, PerformRecons, RandomFile, NoDivergenceFile };
 
   struct Key {
     const char* name;
@@ -135,7 +135,6 @@ namespace {
     {"printDisplComplete",            Pipeline,              Needs::Nothing,          false},
     {"printMps",                      0,                     Needs::Nothing,          false},
     {"printDiv",                      Any,                   Needs::Nothing,          false},
-    {"printDivUnsmoothed",            Any,                   Needs::PrintDiv,         false},
     {"printGal",                      Any,                   Needs::Nothing,          false},
     {"printOverdense",                Any,                   Needs::Nothing,          false},
     {"printRecCat",                   Pipeline,              Needs::PerformRecons,    false},
@@ -151,7 +150,6 @@ namespace {
     bool performRecons = false;
     bool randomFile = false;
     bool divergenceFile = false;
-    bool printDiv = false;
   };
 
   const Key* find_key (const std::string& name)
@@ -180,9 +178,6 @@ namespace {
         break;
       case Needs::RandomFile:
         if (!run.randomFile) return "does not apply to a run without random_file";
-        break;
-      case Needs::PrintDiv:
-        if (!run.printDiv) return "does not apply to a run without printDiv";
         break;
       case Needs::NoDivergenceFile:
         if (run.divergenceFile) return "does not apply to a run with divergence_file";
@@ -224,7 +219,7 @@ namespace {
     bitvf::BoxConfig config;
 
     std::string outputDir, outputName, extension;
-    bool printMean = false, printComplete = false, printDiv = false, printUnsmoothed = false;
+    bool printMean = false, printComplete = false, printDiv = false;
     bool printGal = false, printOverdense = false, printCatalog = false;
   };
 
@@ -344,7 +339,6 @@ namespace {
       run.printComplete = f.get<bool>("printDisplComplete", false);
     }
     run.printDiv = f.get<bool>("printDiv", false);
-    if (run.printDiv) run.printUnsmoothed = f.get<bool>("printDivUnsmoothed", false);
     run.printGal = f.get<bool>("printGal", false);
     run.printOverdense = f.get<bool>("printOverdense", false);
     if (recons) run.printCatalog = f.get<bool>("printRecCat", false);
@@ -352,7 +346,6 @@ namespace {
     c.ot.verbosity = run.verbosity;
     v.verbosity = run.verbosity;
     v.keepDivergence = run.printDiv;
-    v.keepUnsmoothedDivergence = run.printUnsmoothed;
     v.keepAssignment = run.printGal;
     c.keepReconstructions = run.printMean || run.printComplete || run.printCatalog;
 
@@ -417,7 +410,6 @@ namespace {
     }
     if ((switches.kind == Complete || switches.kind == Mean) && parameters.has("divergence_file"))
       switches.divergenceFile = !parameters.get<std::vector<std::string>>("divergence_file").empty();
-    switches.printDiv = parameters.get<bool>("printDiv", false);
 
     if (app::report_errors(kProgram, app::irrelevant_keys(parameters, file, [&switches] (const std::string& key) {
       return box_rule(key, switches);

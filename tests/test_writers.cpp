@@ -130,7 +130,6 @@ namespace {
         ids.push_back(i % 2 == 0 ? (std::int64_t)(1000 + i) : -(std::int64_t)(1000 + i));
       config.log = nullptr;
       config.keepDivergence = true;
-      config.keepUnsmoothedDivergence = true;
       config.keepAssignment = true;
       config.nRealizationsMean = 3;
       config.divergenceCellSize = otswap::maths::cbrt(10.);
@@ -190,10 +189,12 @@ namespace {
       real("cellY", [&g] (std::size_t c) { return g.centre[3*c+1]; }),
       real("cellZ", [&g] (std::size_t c) { return g.centre[3*c+2]; }),
       real("divergence", [&g] (std::size_t c) { return g.divergence[c]; })};
-    if (!g.divergenceUnsmoothed.empty())
-      e.push_back(real("divergenceUnsmoothed", [&g] (std::size_t c) { return g.divergenceUnsmoothed[c]; }));
+    if (!g.divergenceSmoothed.empty())
+      e.push_back(real("divergenceSmoothed", [&g] (std::size_t c) { return g.divergenceSmoothed[c]; }));
     e.push_back(real("volume", [&g] (std::size_t c) { return g.volume[c]; }));
     e.push_back(real("weight", [&g] (std::size_t c) { return g.weight[c]; }));
+    if (!g.weightSmoothed.empty())
+      e.push_back(real("weightSmoothed", [&g] (std::size_t c) { return g.weightSmoothed[c]; }));
     if (!field) {
       e.push_back(integer("nDispl", 'K', [&g] (std::size_t c) { return (std::int64_t)g.nDisplacements[c]; }));
       e.push_back(integer("nTracers", 'K', [&g] (std::size_t c) { return (std::int64_t)g.nTracers[c]; }));
@@ -484,7 +485,8 @@ int main ()
   const Input in;
   const Result r = in.run();
   check(r.voids.nBasins > 0 && r.overdense.nBasins > 0 && r.counts.tracersOutsideBox == kOut &&
-        r.limits && r.divergence && !r.divergence->divergenceUnsmoothed.empty() && r.assignment,
+        r.limits && r.divergence && !r.divergence->divergenceSmoothed.empty() &&
+        !r.divergence->weightSmoothed.empty() && r.assignment,
         "the fixture: basins of both kinds, tracers outside the limits, every output kept");
 
   group("FITS and ASCII round trips of every product: names, order, values; keywords in order");
@@ -506,13 +508,15 @@ int main ()
     round_trip(f, "free", "no limits");
   }
 
-  group("optional columns: divergenceUnsmoothed, inBox, uncorrected, outsideGrid exactly when they apply");
+  group("optional columns: divergenceSmoothed, weightSmoothed, inBox, uncorrected, outsideGrid exactly when they "
+        "apply");
   {
     Input plain = in;
-    plain.config.keepUnsmoothedDivergence = false;
+    plain.config.smoothing.sigma = 0.;
     const Result p = plain.run();
-    check(p.divergence->divergenceUnsmoothed.empty(), "no unsmoothed divergence kept");
-    round_trip(p, "plain", "no divergenceUnsmoothed");
+    check(p.divergence->divergenceSmoothed.empty() && p.divergence->weightSmoothed.empty(),
+          "sigma 0: no smoothed divergence or weight");
+    round_trip(p, "plain", "no divergenceSmoothed, no weightSmoothed");
 
     Result flagged = r;
     flagged.uncorrected.assign(r.nTracers, 0);
@@ -524,7 +528,6 @@ int main ()
     Input reuse = in;
     reuse.grid = &*r.divergence;
     reuse.config.keepDivergence = false;
-    reuse.config.keepUnsmoothedDivergence = false;
     reuse.config.divergenceCellSize.reset();
     reuse.limits.reset();
     const Result g = reuse.run();
@@ -636,8 +639,10 @@ int main ()
               "cannot write divergence.centre", "WR2, grid centre");
     malformed([] (Result& b) { b.divergence->weight.pop_back(); }, write_divergence,
               "cannot write divergence.weight", "WR2, grid weight");
-    malformed([] (Result& b) { b.divergence->divergenceUnsmoothed.pop_back(); }, write_divergence,
-              "cannot write divergence.divergenceUnsmoothed", "WR2, divergenceUnsmoothed");
+    malformed([] (Result& b) { b.divergence->divergenceSmoothed.pop_back(); }, write_divergence,
+              "cannot write divergence.divergenceSmoothed", "WR2, divergenceSmoothed");
+    malformed([] (Result& b) { b.divergence->weightSmoothed.pop_back(); }, write_divergence,
+              "cannot write divergence.weightSmoothed", "WR2, weightSmoothed");
 
     malformed([] (Result& b) { b.divergence.reset(); }, write_divergence,
               "the result holds no divergence grid: set Config::keepDivergence", "WR3");
@@ -721,7 +726,6 @@ int main ()
     Config c;
     c.log = nullptr;
     c.keepDivergence = true;
-    c.keepUnsmoothedDivergence = true;
     c.smoothing.unit = LengthUnit::Coordinate;
     c.smoothing.sigma = 1.5;
     const Result f = findVoidsBoxFromField(lf.centres, lf.values, c, lf.weights);
@@ -730,9 +734,9 @@ int main ()
     round_trip(f, "field", "field, no mps");
     const Result m = findVoidsBoxFromField(lf.centres, lf.values, c, lf.weights, 3.);
     round_trip(m, "field_mps", "field, mps 3");
-    c.keepUnsmoothedDivergence = false;
+    c.smoothing.sigma = 0.;
     round_trip(findVoidsBoxFromField(lf.centres, lf.values, c, lf.weights), "field_plain",
-               "field, no divergenceUnsmoothed");
+               "field, sigma 0, no divergenceSmoothed, no weightSmoothed");
 
     const char* const product[3] = {"voids", "overdense", "divergence"};
     int p = 0;

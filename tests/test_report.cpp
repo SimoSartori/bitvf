@@ -285,7 +285,6 @@ int main ()
     Config plain = in.config;
     plain.keepAssignment = false;
     plain.keepDivergence = false;
-    plain.keepUnsmoothedDivergence = false;
     plain.divergenceCellSize = 1.;
     const std::string t = written([&] (std::ostream* log) {
       findVoidsBox(in.tracers, in.displacement, in.valid, Translated::kMps,
@@ -393,7 +392,7 @@ int main ()
     check(threw && t.empty(), "check error, Detailed: nothing");
 
     DivergenceGrid flat = d;
-    flat.divergenceUnsmoothed.assign(flat.nCells, 1.);
+    flat.divergence.assign(flat.nCells, 1.);
     flat.nTracers.clear();
     const std::string fd = written([&] (std::ostream* log) {
       findVoidsBoxFromDivergence(flat, in.tracers, with(in.config, otswap::Verbosity::Detailed, log), in.ids);

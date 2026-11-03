@@ -95,7 +95,6 @@ int main (int argc, char** argv)
       c.ot.seed = 5;
       c.ot.verbosity = otswap::Verbosity::Silent;
       c.voids = search_config();
-      c.voids.keepUnsmoothedDivergence = true;
       c.keepReconstructions = true;
       const bitvf::BitVFResult r = bitvf::runBox(table.values, {}, c, table.integers);
       otswap::io::writeDisplacementMean(path("pipeline", "displacement_mean_", "fits"), *r.reconstruction);
@@ -168,14 +167,13 @@ int main (int argc, char** argv)
     }
 
     // field.ini: field.dat with its weights, sigma 1 in coordinate units,
-    // the field before smoothing, ASCII.
+    // ASCII.
     {
       const bitvf::io::Field f = bitvf::io::readField(data + "/field.dat", {"x", "y", "z"}, "value", "weight");
       bitvf::Config c;
       c.verbosity = otswap::Verbosity::Silent;
       c.smoothing.unit = bitvf::LengthUnit::Coordinate;
       c.keepDivergence = true;
-      c.keepUnsmoothedDivergence = true;
       write_search("field", bitvf::findVoidsBoxFromField(f.centres, f.values, c, f.weights), "dat");
     }
   }

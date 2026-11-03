@@ -53,8 +53,8 @@ namespace {
   // The hashes of the divergence of the generated input, cells of 1 and 0.5
   // mps, recorded once. A different value on some platform means results
   // are not portable there.
-  constexpr std::uint64_t kRecordedHash1 = 0x562871ab2052e046ull;
-  constexpr std::uint64_t kRecordedHash05 = 0xe535a4e780425c9bull;
+  constexpr std::uint64_t kRecordedHash1 = 0x46a5264e1a0f1162ull;
+  constexpr std::uint64_t kRecordedHash05 = 0xbef77cf3d25dbbf8ull;
 
   void threads (const int n)
   {
@@ -140,18 +140,17 @@ namespace {
 
   const Vec kInvalid = {kNaN, kNaN, kNaN};
 
-  /// The 1 / r^2 means of value and weight over the cells flagged in
-  /// source within h cells of cell c along each axis, in ascending row
-  /// order; false when fewer than three are flagged.
+  /// The 1 / r^2 mean of value over the cells flagged in source within h
+  /// cells of cell c along each axis, in ascending row order; false when
+  /// fewer than three are flagged.
   bool window (const DivergenceGrid& g, const std::vector<double>& value,
-               const std::vector<double>& weight, const std::vector<std::uint8_t>& source,
-               const std::size_t c, const std::int64_t h, double& v, double& w)
+               const std::vector<std::uint8_t>& source, const std::size_t c, const std::int64_t h, double& v)
   {
     const std::int64_t n = (std::int64_t)g.nCellsAxis[0];
     const std::int64_t i = (std::int64_t)c / (n * n), j = ((std::int64_t)c / n) % n,
                        k = (std::int64_t)c % n;
     const double s = g.cellSize;
-    double num = 0., den = 0., wn = 0.;
+    double num = 0., den = 0.;
     unsigned count = 0;
     for (std::int64_t ii = i - h; ii <= i + h; ++ii)
       for (std::int64_t jj = j - h; jj <= j + h; ++jj)
@@ -164,11 +163,9 @@ namespace {
             1. / ((double)((i - ii) * (i - ii) + (j - jj) * (j - jj) + (k - kk) * (k - kk)) * s * s);
           num += value[cc] * inv;
           den += inv;
-          wn += weight[cc] * inv;
         }
     if (count < 3) return false;
     v = num / den;
-    w = wn / den;
     return true;
   }
 
@@ -435,11 +432,13 @@ int main ()
     g.weight[centre] = 0.;
     std::vector<std::uint8_t> source(g.nCells, 1);
     source[centre] = 0;
-    double v = 0., w = 0.;
-    window(g, g.divergence, g.weight, source, centre, 1, v, w);
+    double v = 0.;
+    window(g, g.divergence, source, centre, 1, v);
+    const std::vector<double> weight = g.weight;
     const unsigned passes = internal::box_fill(g);
-    check(passes == 1 && g.divergence[centre] == v && g.weight[centre] == w,
-          "the empty centre takes the 1 / r^2 means of its 26 neighbours");
+    check(passes == 1 && g.divergence[centre] == v,
+          "the empty centre takes the 1 / r^2 mean of its 26 neighbours");
+    check(g.weight == weight && g.weight[centre] == 0., "the weight is unchanged, 0 in the filled centre");
   }
 
   group("fill: the 5x5x5 window when the 3x3x3 one holds fewer than three values");
@@ -454,11 +453,11 @@ int main ()
       source[sources[t]] = 1;
     }
     const std::size_t centre = row(g, 2, 2, 2);
-    double v = 0., w = 0.;
-    window(g, g.divergence, g.weight, source, centre, 2, v, w);
+    double v = 0.;
+    window(g, g.divergence, source, centre, 2, v);
     internal::box_fill(g);
-    check(g.divergence[centre] == v && g.weight[centre] == w,
-          "the centre, with no value within one cell, takes the means over two cells");
+    check(g.divergence[centre] == v && g.weight[centre] == 0.,
+          "the centre, with no value within one cell, takes the mean over two cells, its weight 0");
   }
 
   group("fill: a pass reads only the values of the previous passes");
@@ -476,24 +475,24 @@ int main ()
         plane2[row(g, 2, j, k)] = 1;
       }
 
-    std::vector<double> value = g.divergence, weight = g.weight;
+    std::vector<double> value = g.divergence;
     for (std::size_t j = 0; j < n; ++j)
       for (std::size_t k = 0; k < n; ++k) {
         const std::size_t c = row(g, 2, j, k);
-        window(g, g.divergence, g.weight, plane0, c, 2, value[c], weight[c]);
+        window(g, g.divergence, plane0, c, 2, value[c]);
       }
     const std::size_t target = row(g, 3, 3, 3);
-    double v = 0., w = 0.;
-    window(g, value, weight, plane2, target, 1, v, w);
-    double v1 = 0., w1 = 0.;
-    window(g, g.divergence, g.weight, plane0, row(g, 1, 3, 3), 1, v1, w1);
+    double v = 0.;
+    window(g, value, plane2, target, 1, v);
+    double v1 = 0.;
+    window(g, g.divergence, plane0, row(g, 1, 3, 3), 1, v1);
+    const std::vector<double> weight = g.weight;
 
     const unsigned passes = internal::box_fill(g);
     check(passes == 3, "the planes fill in three passes");
-    check(g.divergence[row(g, 1, 3, 3)] == v1 && g.weight[row(g, 1, 3, 3)] == w1,
-          "pass 1, plane 1: the 3x3x3 window of plane 0");
-    check(g.divergence[target] == v && g.weight[target] == w,
-          "pass 2, plane 3: plane 2's pass-1 values, not plane 4's pass-2 ones");
+    check(g.divergence[row(g, 1, 3, 3)] == v1, "pass 1, plane 1: the 3x3x3 window of plane 0");
+    check(g.divergence[target] == v, "pass 2, plane 3: plane 2's pass-1 values, not plane 4's pass-2 ones");
+    check(g.weight == weight, "the weight is unchanged: 0 in every filled cell");
   }
 
   group("fill: a counted cell whose terms cancel to 0 keeps it and is a source");
@@ -508,19 +507,16 @@ int main ()
           "the cell keeps divergence 0 and weight 2");
 
     std::vector<std::uint8_t> source(g.nCells, 0);
-    std::vector<double> value(g.nCells, 0.), weight(g.nCells, 0.);
+    std::vector<double> value(g.nCells, 0.);
     source[zero] = 1;
-    weight[zero] = 2.;
     source[row(g, 2, 1, 1)] = 1;
     value[row(g, 2, 1, 1)] = -0.75;
-    weight[row(g, 2, 1, 1)] = 1.;
     source[row(g, 1, 0, 1)] = 1;
     value[row(g, 1, 0, 1)] = 0.75;
-    weight[row(g, 1, 0, 1)] = 1.;
-    double v = 0., w = 0.;
-    window(g, value, weight, source, row(g, 2, 1, 2), 1, v, w);
-    check(g.divergence[row(g, 2, 1, 2)] == v && g.weight[row(g, 2, 1, 2)] == w,
-          "a neighbour fills from the three counted cells in its 3x3x3 window");
+    double v = 0.;
+    window(g, value, source, row(g, 2, 1, 2), 1, v);
+    check(g.divergence[row(g, 2, 1, 2)] == v && g.weight[row(g, 2, 1, 2)] == 0.,
+          "a neighbour fills from the three counted cells in its 3x3x3 window, its weight 0");
   }
 
   group("errors: E6, naming the first case in tracer-major order; E4");

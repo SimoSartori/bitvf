@@ -40,7 +40,7 @@ The input keys choose the kind of run; at most one of them is given.
 | pipeline | none | reads the tracers (and the randoms, when given), runs {cpp:func}`bitvf::runBox`: the reconstruction, with `perform_recons = true` the correction of redshift-space distortions and a second reconstruction, then the search |
 | from a reconstruction | `displacement_file` | reads otswap's complete displacement file and searches it, {cpp:func}`bitvf::findVoidsBox` |
 | from mean displacements | `displacement_mean_file` | reads otswap's mean displacement file, {cpp:func}`bitvf::io::readDisplacementMean`, and searches it as one realization |
-| from a divergence | `divergence_input_file` | reads a divergence file written with `printDiv` and `printDivUnsmoothed` and the tracers, and searches it again with the smoothing given, {cpp:func}`bitvf::findVoidsBoxFromDivergence` |
+| from a divergence | `divergence_input_file` | reads a divergence file written with `printDiv` and the tracers, and searches it again with the smoothing given, {cpp:func}`bitvf::findVoidsBoxFromDivergence` |
 
 ## The keys of `bitvf`
 
@@ -69,7 +69,7 @@ lists it; "none" means the library computes or skips the value.
 | `delimiter`, `comment` | one character | `" "`, `"#"` | o | — | — | o |
 | `displacement_file` | otswap's complete displacement file | — | — | R | — | — |
 | `displacement_mean_file` | otswap's mean displacement file | — | — | — | R | — |
-| `divergence_input_file` | a divergence file with `divergenceUnsmoothed` | — | — | — | — | R |
+| `divergence_input_file` | a divergence file written with `printDiv` | — | — | — | — | R |
 | `divergence_file` | a divergence file whose grid is reused | none: the search builds its own | — | o | o | — |
 
 ### Reconstruction
@@ -122,8 +122,7 @@ redshift-space positions; the other keys apply only then.
 | `output_file` | the name in every file name, with no `/` | — | R | R | R | R |
 | `output_format` | `dat` (ASCII) or `fits` | `dat` | o | o | o | o |
 | `printDisplMean`, `printDisplComplete` | otswap's mean and complete displacement files | `false` | o | — | — | — |
-| `printDiv` | the divergence file | `false` | o | o | o | o |
-| `printDivUnsmoothed` | adds the divergence before smoothing; only with `printDiv = true` | `false` | o | o | o | o |
+| `printDiv` | the divergence file: the divergence and the weight, also smoothed with sigma > 0 | `false` | o | o | o | o |
 | `printGal` | the galaxies file | `false` | o | o | o | o |
 | `printOverdense` | the overdense basins file | `false` | o | o | o | o |
 
@@ -147,16 +146,15 @@ The keys of a lightcone run (`units`, `random_recons_mode`,
 | `sigma_unit` | `mps` or `coordinate` | `mps` |
 | `output_dir`, `output_file`, `output_format` | as `bitvf` | |
 | `printOverdense` | the overdense basins file | `false` |
-| `printDiv` | the divergence file: the field after smoothing | `false` |
-| `printDivUnsmoothed` | adds the field before smoothing; only with `printDiv = true` | `false` |
+| `printDiv` | the divergence file: the field and the weight, also smoothed with sigma > 0 | `false` |
 
 The defaults together are an error: sigma is in mps and mps has no value. A
 run sets `mps`, or `sigma_unit = coordinate`, or `sigma = 0`. The field is
 split at 0, voids below it: a density, or a contrast with voids above 0, must
 be shifted or flipped first. A divergence file of `bitvf` is valid input,
-with `cellX cellY cellZ`, `divergenceUnsmoothed` and `weight`: the field
-before smoothing, since the run smooths it, and the smoothed `divergence`
-would be smoothed twice.
+with `cellX cellY cellZ`, `divergence` and `weight`: the field before
+smoothing, since the run smooths it, and `divergenceSmoothed` would be
+smoothed twice.
 
 ## Output files
 

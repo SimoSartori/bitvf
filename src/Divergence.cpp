@@ -286,7 +286,6 @@ unsigned bitvf::internal::box_fill (DivergenceGrid& grid)
     }
 
   std::vector<double> value(empty.size());
-  std::vector<double> weight(empty.size());
 
   unsigned passes = 0;
   while (!empty.empty()) {
@@ -303,7 +302,7 @@ unsigned bitvf::internal::box_fill (DivergenceGrid& grid)
 
       value[e] = std::numeric_limits<double>::quiet_NaN();
       for (std::int64_t h = 1; h <= 2 && std::isnan(value[e]); ++h) {
-        double num = 0., den = 0., w = 0.;
+        double num = 0., den = 0.;
         unsigned counterValues = 0;
         for (std::int64_t ii = std::max<std::int64_t>(0, i - h); ii < std::min(n0, i + h + 1); ++ii)
           for (std::int64_t jj = std::max<std::int64_t>(0, j - h); jj < std::min(n1, j + h + 1); ++jj)
@@ -315,11 +314,9 @@ unsigned bitvf::internal::box_fill (DivergenceGrid& grid)
                 1. / ((double)((i - ii) * (i - ii) + (j - jj) * (j - jj) + (k - kk) * (k - kk)) * s * s);
               num += grid.divergence[cc] * inv_d2;
               den += inv_d2;
-              w += grid.weight[cc] * inv_d2;
             }
         if (!(den == 0 || counterValues < 3)) {
           value[e] = num / den;
-          weight[e] = w / den;
           ++nFilled;
         }
       }
@@ -333,10 +330,8 @@ unsigned bitvf::internal::box_fill (DivergenceGrid& grid)
 
     std::size_t kept = 0;
     for (std::size_t e = 0; e < E; ++e)
-      if (!std::isnan(value[e])) {
+      if (!std::isnan(value[e]))
         grid.divergence[empty[e]] = value[e];
-        grid.weight[empty[e]] = weight[e];
-      }
       else
         empty[kept++] = empty[e];
     empty.resize(kept);

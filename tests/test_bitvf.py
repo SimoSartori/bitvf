@@ -81,9 +81,8 @@ def quiet(**fields):
 
 
 def kept(verbosity="normal", **fields):
-    return bitvf.Config(smoothing=bitvf.Smoothing(sigma=0.5), keep_divergence=True,
-                        keep_unsmoothed_divergence=True, keep_assignment=True, n_realizations_mean=3,
-                        verbosity=verbosity, **fields)
+    return bitvf.Config(smoothing=bitvf.Smoothing(sigma=0.5), keep_divergence=True, keep_assignment=True,
+                        n_realizations_mean=3, verbosity=verbosity, **fields)
 
 
 @pytest.fixture(scope="module")
@@ -143,8 +142,9 @@ def catalog_arrays(c):
 
 
 def grid_arrays(g):
-    return {"centre": g.centre, "divergence": g.divergence, "divergence_unsmoothed": g.divergence_unsmoothed,
-            "volume": g.volume, "weight": g.weight, "n_displacements": g.n_displacements,
+    return {"centre": g.centre, "divergence": g.divergence, "divergence_smoothed": g.divergence_smoothed,
+            "volume": g.volume, "weight": g.weight, "weight_smoothed": g.weight_smoothed,
+            "n_displacements": g.n_displacements,
             "n_tracers": g.n_tracers, "void_index": g.void_index, "overdense_index": g.overdense_index}
 
 
@@ -291,8 +291,7 @@ def test_find_voids_box_from_divergence(tmp_path, capsys, verbosity):
 @pytest.mark.parametrize("verbosity", VERBOSITIES)
 def test_find_voids_box_from_field(tmp_path, capsys, verbosity):
     centres, values, weights = lattice_field()
-    config = bitvf.Config(smoothing=bitvf.Smoothing(sigma=0.8), keep_divergence=True,
-                          keep_unsmoothed_divergence=True, verbosity=verbosity)
+    config = bitvf.Config(smoothing=bitvf.Smoothing(sigma=0.8), keep_divergence=True, verbosity=verbosity)
     r = bitvf.find_voids_box_from_field(centres, values, config=config, weights=weights, mps=1.2)
     printed = capsys.readouterr().out
     out = run_cpp(tmp_path, "field", {"centres": centres, "values": values, "weights": weights}, mps=1.2,
@@ -309,13 +308,12 @@ def test_read_field_and_read_displacement_mean(tmp_path, capsys, reconstruction)
     source = bitvf.find_voids_box(tracers, displacement, mps=7.0, box=box, config=kept("silent"), ids=ids)
     file = tmp_path / "divergence.dat"
     bitvf.io.write_divergence(file, source)
-    f = bitvf.io.read_field(file, centres=("cellX", "cellY", "cellZ"), value="divergenceUnsmoothed",
-                            weight="weight")
+    f = bitvf.io.read_field(file, centres=("cellX", "cellY", "cellZ"), value="divergence", weight="weight")
     config = bitvf.Config(smoothing=bitvf.Smoothing(sigma=3.5, unit=bitvf.LengthUnit.COORDINATE),
-                          keep_divergence=True, keep_unsmoothed_divergence=True)
+                          keep_divergence=True)
     r = bitvf.find_voids_box_from_field(f.centres, f.values, config=config, weights=f.weights)
     out = run_cpp(tmp_path, "read_field", file=file, x="cellX", y="cellY", z="cellZ",
-                  value="divergenceUnsmoothed", weight="weight", name="field", **config_params(config))
+                  value="divergence", weight="weight", name="field", **config_params(config))
     assert_same_result(r, out)
     assert bitvf.io.read_field(file, centres=["cellX", "cellY", "cellZ"], value="divergence").weights is None
 

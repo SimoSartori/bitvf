@@ -144,7 +144,6 @@ namespace {
           displacement.push_back(uniform(-2., 2.) - (tracers[i] - 50.) / 50.);
       config.log = nullptr;
       config.keepDivergence = true;
-      config.keepUnsmoothedDivergence = true;
       config.nRealizationsMean = 3;
       config.divergenceCellSize = otswap::maths::cbrt(10.);
     }
@@ -183,9 +182,10 @@ namespace {
           a.masked.empty() && b.masked.empty(), "the lightcone fields NaN or empty");
     field(same_bits(a.centre, b.centre), "centre");
     field(same_bits(a.divergence, b.divergence), "divergence");
-    field(same_bits(a.divergenceUnsmoothed, b.divergenceUnsmoothed), "divergenceUnsmoothed");
+    field(same_bits(a.divergenceSmoothed, b.divergenceSmoothed), "divergenceSmoothed");
     field(same_bits(a.volume, b.volume), "volume");
     field(same_bits(a.weight, b.weight), "weight");
+    field(same_bits(a.weightSmoothed, b.weightSmoothed), "weightSmoothed");
     field(a.nDisplacements == b.nDisplacements && a.nTracers == b.nTracers, "nDisplacements and nTracers");
     field(a.voidIndex == b.voidIndex && a.overdenseIndex == b.overdenseIndex, "voidIndex and overdenseIndex");
     return equal;
@@ -313,9 +313,10 @@ namespace {
     std::vector<std::int64_t> nTracers(g.nTracers.begin(), g.nTracers.end());
     t.columns = {integer_column("index", index), real_column("cellX", x), real_column("cellY", y),
                  real_column("cellZ", z), real_column("divergence", g.divergence)};
-    if (!g.divergenceUnsmoothed.empty()) t.columns.push_back(real_column("divergenceUnsmoothed", g.divergenceUnsmoothed));
+    if (!g.divergenceSmoothed.empty()) t.columns.push_back(real_column("divergenceSmoothed", g.divergenceSmoothed));
     t.columns.push_back(real_column("volume", g.volume));
     t.columns.push_back(real_column("weight", g.weight));
+    if (!g.weightSmoothed.empty()) t.columns.push_back(real_column("weightSmoothed", g.weightSmoothed));
     t.columns.push_back(integer_column("nDispl", nDispl));
     t.columns.push_back(integer_column("nTracers", nTracers));
     t.columns.push_back(integer_column("voidIndex", g.voidIndex));
@@ -371,19 +372,21 @@ int main ()
   const Input in;
   const Result r = in.run();
   check(r.voids.nBasins > 0 && r.overdense.nBasins > 0 && r.limits && r.divergence &&
-        !r.divergence->divergenceUnsmoothed.empty() && r.divergence->nRealizations == kR &&
-        r.divergence->nRealizationsMean == 3, "the fixture: basins of both kinds, limits, unsmoothed divergence");
+        !r.divergence->divergenceSmoothed.empty() && !r.divergence->weightSmoothed.empty() &&
+        r.divergence->nRealizations == kR && r.divergence->nRealizationsMean == 3,
+        "the fixture: basins of both kinds, limits, smoothed divergence and weight");
 
   Input plain = in;
-  plain.config.keepUnsmoothedDivergence = false;
+  plain.config.smoothing.sigma = 0.;
   plain.limits.reset();
   plain.config.nRealizationsMean = 1;
   const Result p = plain.run();
-  check(!p.limits && p.divergence->divergenceUnsmoothed.empty(), "the fixture: no limits, no unsmoothed divergence");
+  check(!p.limits && p.divergence->divergenceSmoothed.empty() && p.divergence->weightSmoothed.empty(),
+        "the fixture: no limits, sigma 0, no smoothed divergence or weight");
 
   group("divergence round trip, FITS and ASCII: every field bit for bit, with and without the optional parts");
   for (const char* format : kFormats) {
-    same_grid(divergence_read_back(r, format), *r.divergence, std::string("limits and unsmoothed ") + format);
+    same_grid(divergence_read_back(r, format), *r.divergence, std::string("limits and smoothed ") + format);
     same_grid(divergence_read_back(p, format), *p.divergence, std::string("neither ") + format);
   }
 
@@ -397,6 +400,7 @@ int main ()
       const Result s = reuse.run();
       check(same_catalogue(s.voids, written->voids) && same_catalogue(s.overdense, written->overdense) &&
             same_bits(s.divergence->divergence, written->divergence->divergence) &&
+            same_bits(s.divergence->divergenceSmoothed, written->divergence->divergenceSmoothed) &&
             s.divergence->voidIndex == written->divergence->voidIndex,
             std::string(written == &r ? "limits " : "no limits ") + format + ": catalogues and grid equal");
     }
@@ -463,7 +467,6 @@ int main ()
     Input many(nRec);
     many.config.divergenceCellSize.reset();
     many.config.keepDivergence = false;
-    many.config.keepUnsmoothedDivergence = false;
     const Result s = many.run();
     const double expected = nRec <= 20 ? 1. : otswap::maths::cbrt(20. / (double)nRec);
     check(s.nRealizations == nRec && s.config.divergenceCellSize == expected &&
@@ -678,13 +681,14 @@ int main ()
     const std::string file = temporary(std::string("field") + format);
     io::writeDivergence(file, r);
     const DivergenceGrid& g = *r.divergence;
-    const io::Field f = io::readField(file, {"cellX", "cellY", "cellZ"}, "divergenceUnsmoothed", "weight");
-    check(fixtures::same_bits(f.centres, g.centre) && fixtures::same_bits(f.values, g.divergenceUnsmoothed) &&
+    const io::Field f = io::readField(file, {"cellX", "cellY", "cellZ"}, "divergence", "weight");
+    check(fixtures::same_bits(f.centres, g.centre) && fixtures::same_bits(f.values, g.divergence) &&
           fixtures::same_bits(f.weights, g.weight), std::string("by name, bit for bit ") + format);
-    const io::Field n = io::readField(file, {"cellX", "cellY", "cellZ"}, "divergence");
-    check(fixtures::same_bits(n.values, g.divergence) && n.weights.empty(), std::string("no weights ") + format);
+    const io::Field n = io::readField(file, {"cellX", "cellY", "cellZ"}, "divergenceSmoothed");
+    check(fixtures::same_bits(n.values, g.divergenceSmoothed) && n.weights.empty(),
+          std::string("no weights ") + format);
     if (std::string(format) == ".txt") {
-      const io::Field i = io::readField(file, {"1", "2", "3"}, "5", "7");
+      const io::Field i = io::readField(file, {"1", "2", "3"}, "4", "7");
       check(fixtures::same_bits(i.centres, f.centres) && fixtures::same_bits(i.values, f.values) &&
             fixtures::same_bits(i.weights, f.weights), "ASCII by 0-based index");
     }
@@ -767,17 +771,16 @@ int main ()
     Config c;
     c.log = nullptr;
     c.keepDivergence = true;
-    c.keepUnsmoothedDivergence = true;
     c.smoothing.unit = LengthUnit::Coordinate;
     c.smoothing.sigma = 1.5;
     const Result fr = findVoidsBoxFromField(lf.centres, lf.values, c, lf.weights);
     for (const char* format : kFormats) {
       const std::string file = temporary(std::string("field_result") + format);
       io::writeDivergence(file, fr);
-      const io::Field f = io::readField(file, {"cellX", "cellY", "cellZ"}, "divergenceUnsmoothed", "weight");
+      const io::Field f = io::readField(file, {"cellX", "cellY", "cellZ"}, "divergence", "weight");
       const Result back = findVoidsBoxFromField(f.centres, f.values, c, f.weights);
       check(fixtures::same_bits(f.centres, fr.divergence->centre) &&
-            fixtures::same_bits(f.values, fr.divergence->divergenceUnsmoothed) &&
+            fixtures::same_bits(f.values, fr.divergence->divergence) &&
             back.divergence->voidIndex == fr.divergence->voidIndex &&
             back.divergence->overdenseIndex == fr.divergence->overdenseIndex,
             std::string("read back, the same partition ") + format);

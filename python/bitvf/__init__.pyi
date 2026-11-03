@@ -112,9 +112,13 @@ class Smoothing:
     Each cell takes the weighted mean of the divergence of the cells around
     it, itself included. The weight of a cell is its tracer weight
     (``DivergenceGrid.weight``) times exp(-r^2 / (2 sigma^2)), r the distance
-    between the two cell centres. A cell whose weights sum to 1e-12 or less
-    takes 0. A larger sigma merges small basins into larger ones; sigma = 0
-    disables the smoothing.
+    between the two cell centres. A cell whose weights sum to at most 1e-12
+    times the largest tracer weight of the grid takes 0: so does a cell
+    filled from its neighbours (weight 0) when the cells around hold it
+    alone. A larger sigma merges small basins into larger ones; sigma = 0
+    disables the smoothing. With sigma > 0 the smoothed field and the
+    smoothed weight are kept beside the divergence and the weight
+    (``DivergenceGrid.divergence_smoothed``, ``weight_smoothed``).
 
     In a box, the cells around are those within floor(3.5 sigma / s) cells
     along each axis, s the cell side, cut at the faces of the grid: a cube,
@@ -170,9 +174,6 @@ class Config:
     keep_divergence: bool
     """Fill ``Result.divergence`` with the grid and the divergence field;
     default False, since it holds one entry per cell in several arrays."""
-    keep_unsmoothed_divergence: bool
-    """Also fill ``DivergenceGrid.divergence_unsmoothed``, the field before
-    smoothing; default False. Requires ``keep_divergence``."""
     keep_assignment: bool
     """Fill ``Result.assignment``, where each tracer ended up; default False,
     since it holds one entry per tracer in several arrays."""
@@ -186,9 +187,8 @@ class Config:
     """What the search prints; default ``"normal"``. See ``Verbosity``."""
 
     def __init__(self, *, smoothing: Smoothing = Smoothing(), divergence_cell_size: Optional[float] = None,
-                 keep_divergence: bool = False, keep_unsmoothed_divergence: bool = False,
-                 keep_assignment: bool = False, n_realizations_mean: int = 1,
-                 verbosity: Verbosity = "normal") -> None: ...
+                 keep_divergence: bool = False, keep_assignment: bool = False,
+                 n_realizations_mean: int = 1, verbosity: Verbosity = "normal") -> None: ...
     def __eq__(self, other: object) -> bool: ...
 
 
@@ -493,12 +493,13 @@ class DivergenceGrid:
         """Lightcone only; shape (0, 3) in a box."""
     @property
     def divergence(self) -> NDArray[np.float64]:
-        """The divergence the watershed ran on, after smoothing, shape (nx,
-        ny, nz)."""
+        """The divergence of each cell, before smoothing, shape (nx, ny, nz);
+        what the watershed splits with sigma = 0."""
     @property
-    def divergence_unsmoothed(self) -> NDArray[np.float64]:
-        """The divergence before smoothing, shape (nx, ny, nz), with
-        ``Config.keep_unsmoothed_divergence``; shape (0,) otherwise."""
+    def divergence_smoothed(self) -> NDArray[np.float64]:
+        """The divergence after smoothing (see ``Smoothing``), what the
+        watershed splits, shape (nx, ny, nz), with sigma > 0; shape (0,)
+        with sigma = 0."""
     @property
     def volume(self) -> NDArray[np.float64]:
         """Volume of each cell, in coordinate units cubed, shape (nx, ny,
@@ -507,12 +508,24 @@ class DivergenceGrid:
     def weight(self) -> NDArray[np.float64]:
         """Tracer weight of each cell, the weight of the smoothing, shape
         (nx, ny, nz): n_displacements / n_realizations where a displacement
-        contributed. A cell that no displacement contributed to is empty, and
-        takes the divergence and the weight of nearby cells that hold a
-        value, each mean weighted by 1 / r^2, r the distance between the cell
-        centres: the neighbours within one cell along each axis, or within
-        two when fewer than three of those hold a value, in passes that each
-        read the values left by the previous one, until no cell is empty."""
+        contributed. A cell that no displacement contributed to is empty: it
+        keeps a weight of 0, and takes the mean divergence of nearby cells
+        that hold a value, weighted by 1 / r^2, r the distance between the
+        cell centres: the neighbours within one cell along each axis, or
+        within two when fewer than three of those hold a value, in passes
+        that each read the values left by the previous one, until no cell is
+        empty. With its weight of 0, a filled value enters no smoothed mean;
+        with sigma = 0 the watershed reads it as it is."""
+    @property
+    def weight_smoothed(self) -> NDArray[np.float64]:
+        """Smoothed tracer weight of each cell, shape (nx, ny, nz), with
+        sigma > 0: the mean of ``weight`` over the cells of the smoothing
+        (see ``Smoothing``) with the Gaussian alone as weight, sum K w / sum
+        K, K = exp(-r^2 / (2 sigma^2)). It shows how much of a cell's
+        smoothed divergence comes from displacements; the watershed does not
+        read it. The sum of K over the cube is the product of the three sums
+        of the 1-D kernel along the axes, each cut at the faces. Shape (0,)
+        with sigma = 0."""
     @property
     def n_displacements(self) -> NDArray[np.uint64]:
         """Displacement ends counted in each cell, before the fill, shape
@@ -873,8 +886,7 @@ def find_voids_box(tracers: Union[ArrayLike, otswap.Result], displacement: Optio
         non-negative, or is positive but, in coordinate units, below about
         1e-162 or above about 1e154; if ``divergence_cell_size`` is set and
         not finite and positive, or set with ``grid``; if
-        ``n_realizations_mean`` is 0; if ``keep_unsmoothed_divergence`` is
-        set without ``keep_divergence``.
+        ``n_realizations_mean`` is 0.
     Error
         On ``grid``: if it is not a box grid, or a field that defines the
         cells is inconsistent; if ``mps`` differs from ``grid.mps``, bit for
@@ -903,13 +915,13 @@ def find_voids_box_from_divergence(grid: DivergenceGrid, tracers: ArrayLike, *, 
     """Find voids and overdense basins in a box from a divergence computed
     earlier, with the tracers given.
 
-    The field before smoothing (``grid.divergence_unsmoothed``) is smoothed
-    with ``config.smoothing``, in units of the grid's mps, split into basins
-    and catalogued as ``find_voids_box`` does; a different sigma is the
-    usual reason for the call. With the tracers of the search that produced
-    the grid and the same smoothing, the voids, the overdense basins, the
-    smoothed divergence and the assignment but its ``used`` flags equal that
-    search's bit for bit.
+    The field before smoothing (``grid.divergence``) is smoothed with
+    ``config.smoothing``, in units of the grid's mps, split into basins and
+    catalogued as ``find_voids_box`` does; a different sigma is the usual
+    reason for the call. With the tracers of the search that produced the
+    grid and the same smoothing, the voids, the overdense basins, the
+    smoothed divergence, the smoothed weight and the assignment but its
+    ``used`` flags equal that search's bit for bit, sigma = 0 included.
 
     The tracers are read as with a reused grid: those outside the grid's
     box limits (``grid.limits``) are skipped, those inside but outside every
@@ -919,10 +931,11 @@ def find_voids_box_from_divergence(grid: DivergenceGrid, tracers: ArrayLike, *, 
     Parameters
     ----------
     grid : DivergenceGrid
-        A box grid holding the fields that define its cells,
-        ``divergence_unsmoothed`` and ``weight``: from ``io.read_divergence``,
-        or ``Result.divergence`` of a search with
-        ``keep_unsmoothed_divergence``.
+        A box grid holding the fields that define its cells, ``divergence``
+        and ``weight``: from ``io.read_divergence``, or ``Result.divergence``
+        of a search with ``keep_divergence``. Its other per-cell fields are
+        not read: ``divergence_smoothed`` and ``weight_smoothed`` of the
+        result are computed from these with ``config.smoothing``.
     tracers : array_like, shape (N, 3)
         Cartesian coordinates of the tracers, in coordinate units; at least
         one.
@@ -953,9 +966,8 @@ def find_voids_box_from_divergence(grid: DivergenceGrid, tracers: ArrayLike, *, 
         set.
     Error
         On ``grid`` as on a grid to reuse in ``find_voids_box``; if
-        ``divergence_unsmoothed`` or ``weight`` does not hold one entry per
-        cell, or an entry of either is not finite; if its limits are not
-        valid.
+        ``divergence`` or ``weight`` does not hold one entry per cell, or an
+        entry of either is not finite; if its limits are not valid.
     Error
         On the tracers: if the search reads more than 4294967295 tracers; if
         none is left to read; if the count of a cell differs from the grid's
@@ -1006,9 +1018,9 @@ def find_voids_box_from_field(centres: ArrayLike, values: ArrayLike, *, config: 
         be in ``LengthUnit.COORDINATE``.
     weights : array_like, shape (n,), optional
         The weight of each cell in the smoothing, non-negative, in the order
-        of ``centres``. They are divided by the largest of them before the
-        smoothing, so a cell whose weights sum to at most 1e-12 of the
-        largest weight takes 0. If omitted, every cell has weight 1.
+        of ``centres``, used as given: a cell whose weights sum to at most
+        1e-12 times the largest weight takes 0 (see ``Smoothing``). If
+        omitted, every cell has weight 1.
     mps : float, optional
         A mean particle separation, in coordinate units. Given, it is the
         unit of a sigma in ``LengthUnit.MPS`` and is recorded in
@@ -1022,9 +1034,11 @@ def find_voids_box_from_field(centres: ArrayLike, values: ArrayLike, *, config: 
         ``radius``, ``radius_ext``, ``edge_flag`` and ``contamination`` as
         ``find_voids_box`` computes them, on the faces of the inferred grid,
         and ``field_centre``. With ``Config.keep_divergence``,
-        ``Result.divergence`` holds the grid, the field after and, with
-        ``keep_unsmoothed_divergence``, before smoothing, the weights as
-        divided, the basin indices, the cell centres and volumes.
+        ``Result.divergence`` holds the grid, the field as given
+        (``divergence``) and, with sigma > 0, smoothed
+        (``divergence_smoothed``), the weights as given and, with sigma > 0,
+        their smoothed mean (``weight_smoothed``), the basin indices, the
+        cell centres and volumes.
 
     Raises
     ------
@@ -1050,13 +1064,11 @@ def find_voids_box_from_field(centres: ArrayLike, values: ArrayLike, *, config: 
     Notes
     -----
     A bitvf divergence file is valid input, read with ``io.read_field``: its
-    cell centres, ``divergenceUnsmoothed`` and ``weight`` with the smoothing
+    cell centres, ``divergence`` and ``weight`` with the smoothing
     of the search that wrote it give back that search's basins. Their
     ``centre``, ``radius`` and ``radius_ext`` can differ from that search's
     by a few ulp: the grid's lower face and s are inferred from the centres
-    read and may differ from the original grid's by rounding, and the
-    weights are divided by their largest, which can move the smoothed field
-    by an ulp. Prints the call line ``bitvf: findVoidsBoxFromField: ...``.
+    read and may differ from the original grid's by rounding. Prints the call line ``bitvf: findVoidsBoxFromField: ...``.
     """
 
 

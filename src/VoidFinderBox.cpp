@@ -125,8 +125,13 @@ namespace {
   {
     const bitvf::Config& config = result.config;
 
-    bitvf::internal::box_smooth(cells, search.sigmaLength,
-                                config.keepUnsmoothedDivergence ? &cells.divergenceUnsmoothed : nullptr);
+    double wMax = 0.;
+    if (search.sigmaLength > 0.) {
+      const std::int64_t C = (std::int64_t)cells.nCells;
+#pragma omp parallel for schedule(static) reduction(max:wMax)
+      for (std::int64_t c = 0; c < C; ++c) wMax = std::max(wMax, cells.weight[(std::size_t)c]);
+    }
+    bitvf::internal::box_smooth(cells, search.sigmaLength, 1e-12 * wMax);
     if (report.detailed()) {
       std::ostringstream out = bitvf::internal::Report::line();
       if (search.sigmaLength > 0.) {
@@ -348,7 +353,7 @@ bitvf::Result bitvf::findVoidsBoxFromDivergence (const DivergenceGrid& divergenc
   cells.limits = divergence.limits;
   cells.nRealizations = divergence.nRealizations;
   cells.nRealizationsMean = divergence.nRealizationsMean;
-  cells.divergence = divergence.divergenceUnsmoothed;
+  cells.divergence = divergence.divergence;
   cells.weight = divergence.weight;
   cells.nDisplacements = divergence.nDisplacements;
 

@@ -115,7 +115,7 @@ void bitvf::internal::box_basins (const BoxSearch* search, const BoxDivergence* 
   const double m = withTracers ? grid.mps : 0.;
   const double inverse = 1. / s;
   const double avDens = withTracers ? 1. / (m * m * m) : 0.;
-  const double* D = grid.divergence.data();
+  const double* D = (grid.divergenceSmoothed.empty() ? grid.divergence : grid.divergenceSmoothed).data();
   const std::array<double, 3> lower = grid.lower;
 
   const BasinSet* sets[2] = {&basins.voids, &basins.overdense};

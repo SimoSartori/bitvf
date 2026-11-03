@@ -228,9 +228,8 @@ bitvf::Result bitvf::findVoidsBoxFromField (const std::vector<double>& centres,
   cells.mps = result.mps;
   cells.cellSizeMps = mps ? s / *mps : nan;
 
-  double wMax = 0.;
+  double wMax = weights.empty() ? 1. : 0.;
   for (const double w : weights) wMax = std::max(wMax, w);
-  const double divisor = wMax > 0. ? wMax : 1.;
 
   cells.divergence.resize((std::size_t)C);
   cells.weight.resize((std::size_t)C);
@@ -238,7 +237,7 @@ bitvf::Result bitvf::findVoidsBoxFromField (const std::vector<double>& centres,
   for (std::int64_t c = 0; c < C; ++c) {
     const std::size_t r = lattice.row[(std::size_t)c];
     cells.divergence[(std::size_t)c] = values[r];
-    cells.weight[(std::size_t)c] = weights.empty() ? 1. : weights[r] / divisor;
+    cells.weight[(std::size_t)c] = weights.empty() ? 1. : weights[r];
   }
   if (report.detailed()) {
     std::ostringstream out = internal::Report::line();
@@ -254,7 +253,7 @@ bitvf::Result bitvf::findVoidsBoxFromField (const std::vector<double>& centres,
     report.write(given.str());
   }
 
-  internal::box_smooth(cells, sigmaLength, config.keepUnsmoothedDivergence ? &cells.divergenceUnsmoothed : nullptr);
+  internal::box_smooth(cells, sigmaLength, 1e-12 * wMax);
   if (report.detailed()) {
     std::ostringstream out = internal::Report::line();
     if (sigmaLength > 0.) {
@@ -286,7 +285,8 @@ bitvf::Result bitvf::findVoidsBoxFromField (const std::vector<double>& centres,
 #pragma omp parallel for schedule(static)
     for (std::int64_t b = 0; b < B; ++b)
       cat->fieldCentre[(std::size_t)b] =
-        internal::box_field_at(cells, cells.divergence, &cat->centre[3 * (std::size_t)b]);
+        internal::box_field_at(cells, cells.divergenceSmoothed.empty() ? cells.divergence : cells.divergenceSmoothed,
+                               &cat->centre[3 * (std::size_t)b]);
   }
   if (report.detailed()) {
     std::ostringstream out = internal::Report::line();

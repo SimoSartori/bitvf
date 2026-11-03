@@ -63,7 +63,7 @@ void bitvf::internal::box_watershed (DivergenceGrid& grid, BoxBasins& basins)
   const std::int64_t nLines = nx * ny;
   const std::int64_t nyz = ny * nz;
   const std::int64_t C = (std::int64_t)grid.nCells;
-  const double* D = grid.divergence.data();
+  const double* D = (grid.divergenceSmoothed.empty() ? grid.divergence : grid.divergenceSmoothed).data();
 
   grid.voidIndex.resize((std::size_t)C);
   grid.overdenseIndex.resize((std::size_t)C);

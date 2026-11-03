@@ -107,9 +107,9 @@ Finds the voids of a field given at the centres of the cells of a box
 lattice, with no tracers, with {cpp:func}`bitvf::io::readField` and
 {cpp:func}`bitvf::findVoidsBoxFromField` ({py:func}`bitvf.io.read_field`,
 {py:func}`bitvf.find_voids_box_from_field`). The field is the divergence
-before smoothing, `divergenceUnsmoothed`, of the full reconstruction's
-divergence file, smoothed more widely: the search smooths the field it
-reads, so the smoothed `divergence` column would be smoothed twice.
+before smoothing, `divergence`, of the full reconstruction's divergence
+file, smoothed more widely: the search smooths the field it reads, so the
+`divergenceSmoothed` column would be smoothed twice.
 
 Reads `examples/full_recons_box/output/divergence_box.dat`, or the file given
 as argument in place of `data_dir`.

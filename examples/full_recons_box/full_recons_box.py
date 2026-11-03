@@ -85,10 +85,10 @@ def main():
     rsd = bitvf.BoxRsd(axis=1, redshift=1.0, bias=1.91255, sigma=10.0, zspace_voids=True)
 
     # The void search, on both passes: the default smoothing of 1 mps and the
-    # default cell size. The divergence grid is kept with the field before
-    # smoothing, so that it can be written and searched again later without
-    # the reconstruction (see the field example)
-    voids = bitvf.Config(keep_divergence=True, keep_unsmoothed_divergence=True, verbosity="detailed")
+    # default cell size. The divergence grid is kept, with the field before
+    # and after smoothing, so that it can be written and searched again later
+    # without the reconstruction (see the field example)
+    voids = bitvf.Config(keep_divergence=True, verbosity="detailed")
 
     config = bitvf.BoxConfig(ot=ot_config, limits=box, rsd=rsd, voids=voids)
 

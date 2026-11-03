@@ -22,7 +22,7 @@ or are listed for completeness.
 |---|---|---|
 | `LengthUnit::Mps`, `LengthUnit::Coordinate` | `LengthUnit.MPS`, `LengthUnit.COORDINATE` | |
 | `Smoothing`, `sigma`, `unit` | `Smoothing`, `sigma`, `unit` | |
-| `Config`, its fields | `Config`, `smoothing`, `divergence_cell_size`, `keep_divergence`, `keep_unsmoothed_divergence`, `keep_assignment`, `n_realizations_mean`, `verbosity` | `divergence_cell_size` `None` for the default |
+| `Config`, its fields | `Config`, `smoothing`, `divergence_cell_size`, `keep_divergence`, `keep_assignment`, `n_realizations_mean`, `verbosity` | `divergence_cell_size` `None` for the default |
 | `Config::verbosity` (`otswap::Verbosity`) | `"silent"`, `"normal"`, `"detailed"` | |
 | `Config::log` | — | Python prints to `sys.stdout`, each line as its step finishes |
 | `BoxConfig`, `ot`, `limits`, `mps`, `rsd`, `voids`, `keepReconstructions` | `BoxConfig`, `ot`, `limits`, `mps`, `rsd`, `voids`, `keep_reconstructions` | the nested configurations read as references into the `BoxConfig` |

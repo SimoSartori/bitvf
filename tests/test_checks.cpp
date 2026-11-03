@@ -220,6 +220,19 @@ namespace {
     }
   }
 
+  /// The call passes the smoothing checks: it returns, or fails only after
+  /// the kernel is built, finding no void in the smoothed field.
+  template <typename F>
+  void kernel_built (F&& f, const std::string& what)
+  {
+    try {
+      f();
+    }
+    catch (const std::exception& e) {
+      check(std::string(e.what()).find("no void found") == 0, what + " (threw \"" + e.what() + "\")");
+    }
+  }
+
 }
 
 int main ()
@@ -362,12 +375,6 @@ int main ()
     coordinate.config.smoothing.unit = LengthUnit::Coordinate;
     check(coordinate.search().sigmaLength == 0.7, "sigmaLength is sigma in Coordinate");
 
-    Input unsmoothed;
-    unsmoothed.config.keepUnsmoothedDivergence = true;
-    throws_naming([&] { unsmoothed.run(); }, "requires keeping the divergence", "C3");
-    unsmoothed.config.keepDivergence = true;
-    accepted([&] { unsmoothed.run(); }, "C3 accepts both");
-
     Input averaged;
     averaged.config.nRealizationsMean = 0;
     throws_naming([&] { averaged.run(); }, "the number of realizations averaged is 0", "C5");
@@ -418,8 +425,8 @@ int main ()
             << (c.unit == LengthUnit::Mps ? "Mps" : "Coordinate") << "), mps " << c.mps;
       const std::string what = label.str();
       if (c.fails == nullptr) {
-        accepted([&] { in.run(); }, what + ", arrays: accepted");
-        accepted([&] { findVoidsBox(rec, in.config); }, what + ", reconstruction: accepted");
+        kernel_built([&] { in.run(); }, what + ", arrays: accepted");
+        kernel_built([&] { findVoidsBox(rec, in.config); }, what + ", reconstruction: accepted");
         continue;
       }
       const std::string text = std::string(c.fails) + " to build the kernel";
@@ -720,8 +727,9 @@ int main ()
     for (const double v : g.volume) volume = volume && v == g.cellSize * g.cellSize * g.cellSize;
     check(g.centre.size() == 3 * g.nCells && g.centre == centres.centre && volume,
           "the grid's centre and volume");
-    check(g.divergence.size() == g.nCells && g.voidIndex.size() == g.nCells &&
-          g.overdenseIndex.size() == g.nCells && g.divergenceUnsmoothed.empty(), "the grid's per-cell fields");
+    check(g.divergence.size() == g.nCells && g.divergenceSmoothed.size() == g.nCells &&
+          g.weight.size() == g.nCells && g.weightSmoothed.size() == g.nCells && g.voidIndex.size() == g.nCells &&
+          g.overdenseIndex.size() == g.nCells, "the grid's per-cell fields");
     bool seeds = true;
     for (std::size_t b = 0; b < k.voids.nBasins; ++b)
       seeds = seeds && g.voidIndex[(std::size_t)internal::box_cell(g, &k.voids.centre[3*b])] == (std::int64_t)b;

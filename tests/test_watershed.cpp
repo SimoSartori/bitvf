@@ -54,8 +54,8 @@ namespace {
   // The hashes of the watershed of the generated input, cells of 1 and 0.5
   // mps, sigma 1 mps, recorded once. A different value on some platform
   // means results are not portable there.
-  constexpr std::uint64_t kRecordedHash1 = 0x4a0e42d5a02d1affull;
-  constexpr std::uint64_t kRecordedHash05 = 0x055f50cab4240dbaull;
+  constexpr std::uint64_t kRecordedHash1 = 0x79a496e30eb92d90ull;
+  constexpr std::uint64_t kRecordedHash05 = 0xc336eb9ed527d842ull;
 
   void threads (const int n)
   {
@@ -120,7 +120,7 @@ namespace {
     const std::int64_t ny = (std::int64_t)g.nCellsAxis[1];
     const std::int64_t nz = (std::int64_t)g.nCellsAxis[2];
     const std::int64_t C = (std::int64_t)g.nCells;
-    const std::vector<double>& D = g.divergence;
+    const std::vector<double>& D = g.divergenceSmoothed.empty() ? g.divergence : g.divergenceSmoothed;
     Reference r;
     r.flow.resize(C);
     for (std::int64_t i = 0; i < nx; ++i)
@@ -200,12 +200,13 @@ namespace {
     const DivergenceGrid& g = r.grid;
     const internal::BasinSet& v = r.basins.voids;
     const internal::BasinSet& o = r.basins.overdense;
+    const std::vector<double>& D = g.divergenceSmoothed.empty() ? g.divergence : g.divergenceSmoothed;
     bool ok = g.voidIndex.size() == g.nCells && g.overdenseIndex.size() == g.nCells;
     for (std::size_t b = 0; ok && b < v.seed.size(); ++b)
-      ok = (b == 0 || v.seed[b - 1] < v.seed[b]) && g.divergence[v.seed[b]] < 0. &&
+      ok = (b == 0 || v.seed[b - 1] < v.seed[b]) && D[v.seed[b]] < 0. &&
            g.voidIndex[v.seed[b]] == (std::int64_t)b;
     for (std::size_t b = 0; ok && b < o.seed.size(); ++b)
-      ok = (b == 0 || o.seed[b - 1] < o.seed[b]) && g.divergence[o.seed[b]] >= 0. &&
+      ok = (b == 0 || o.seed[b - 1] < o.seed[b]) && D[o.seed[b]] >= 0. &&
            g.overdenseIndex[o.seed[b]] == (std::int64_t)b;
     if (!ok) return false;
 
@@ -222,14 +223,14 @@ namespace {
       if (inVoid == inOverdense) return false;
       if (inVoid) {
         ++count.nCells[a];
-        if (g.divergence[c] < 0.) {
+        if (D[c] < 0.) {
           ++count.nCoreCells[a];
           count.nCoreTracers[a] += g.nTracers[c];
         }
       }
       else {
         ++oCells[b];
-        if (g.divergence[c] >= 0.) {
+        if (D[c] >= 0.) {
           ++oCore[b];
           oTracers[b] += g.nTracers[c];
         }
@@ -314,7 +315,9 @@ namespace {
                                                         limits, ids, nullptr);
       DivergenceGrid g = internal::box_grid(s, cellSizeMps);
       internal::box_divergence(s, g);
-      internal::box_smooth(g, s.sigmaLength, nullptr);
+      double wMax = 0.;
+      for (const double w : g.weight) wMax = std::max(wMax, w);
+      internal::box_smooth(g, s.sigmaLength, 1e-12 * wMax);
       const Run r = run(g);
       agrees = matches(r, reference(g)) && consistent(r);
 
@@ -624,7 +627,7 @@ int main ()
     const fixtures::Translated in;
     const Result r = in.run();
     const DivergenceGrid& d = *r.divergence;
-    const Partition p = watershedBox(d.divergence, d.nCellsAxis);
+    const Partition p = watershedBox(d.divergenceSmoothed, d.nCellsAxis);
     check(r.overdense.nBasins > 0 && p.nVoids == r.voids.nBasins && p.nOverdense == r.overdense.nBasins,
           "basin counts");
     check(p.voidIndex == d.voidIndex && p.overdenseIndex == d.overdenseIndex, "labels");
@@ -633,7 +636,7 @@ int main ()
     for (std::size_t c = 0; c < d.nCells; ++c) {
       if (d.voidIndex[c] >= 0) {
         ++voidCells[(std::size_t)d.voidIndex[c]];
-        if (d.divergence[c] < 0.) ++voidCore[(std::size_t)d.voidIndex[c]];
+        if (d.divergenceSmoothed[c] < 0.) ++voidCore[(std::size_t)d.voidIndex[c]];
       }
       else ++overdenseCells[(std::size_t)d.overdenseIndex[c]];
     }
@@ -643,7 +646,7 @@ int main ()
               (b == 0 || p.voidSeed[b - 1] < p.voidSeed[b]);
     for (std::size_t b = 0; b < p.nOverdense; ++b)
       seeds = seeds && d.overdenseIndex[(std::size_t)p.overdenseSeed[b]] == (std::int64_t)b &&
-              d.divergence[(std::size_t)p.overdenseSeed[b]] >= 0.;
+              d.divergenceSmoothed[(std::size_t)p.overdenseSeed[b]] >= 0.;
     check(seeds, "seeds ascending, in their basins, overdense seeds at or above 0");
     check(p.voidCells == voidCells && p.voidCoreCells == voidCore && p.overdenseCells == overdenseCells &&
           p.overdenseCoreCells == overdenseCells, "cell counts");

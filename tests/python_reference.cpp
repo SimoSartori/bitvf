@@ -43,10 +43,10 @@
  *                         rsd_sigma=X zspace=0|1 omega_m=X h=X z_max=X] CONFIG out=P
  *
  *  CONFIG is sigma=X unit=mps|coordinate [cell=X] keep=0|1 nrecmean=N
- *  verbosity=silent|normal|detailed; keep sets keepDivergence,
- *  keepUnsmoothedDivergence and keepAssignment (keepAssignment not for
- *  field and read_field). box reuse=1 searches twice, the second time on
- *  the grid of the first, which keeps its divergence and prints nothing;
+ *  verbosity=silent|normal|detailed; keep sets keepDivergence and
+ *  keepAssignment (keepAssignment not for field and read_field). box
+ *  reuse=1 searches twice, the second time on the grid of the first,
+ *  which keeps its divergence and prints nothing;
  *  write=DIR writes the four products of the result, FITS and ASCII, into
  *  DIR. A run with axis corrects redshift-space distortions with the
  *  table DistanceTable(omega_m, h, -1, 0, 0, z_max, 20000).
@@ -163,7 +163,6 @@ namespace {
     if (has("cell")) c.divergenceCellSize = number("cell");
     const bool keep = arg("keep") == "1";
     c.keepDivergence = keep;
-    c.keepUnsmoothedDivergence = keep;
     c.keepAssignment = keep && assignment;
     c.nRealizationsMean = (unsigned)number("nrecmean");
     c.verbosity = verbosity();
@@ -202,9 +201,10 @@ namespace {
     scalar(prefix + ".has_limits", (std::uint64_t)g.limits.has_value());
     dump(prefix + ".centre", g.centre);
     dump(prefix + ".divergence", g.divergence);
-    dump(prefix + ".divergence_unsmoothed", g.divergenceUnsmoothed);
+    dump(prefix + ".divergence_smoothed", g.divergenceSmoothed);
     dump(prefix + ".volume", g.volume);
     dump(prefix + ".weight", g.weight);
+    dump(prefix + ".weight_smoothed", g.weightSmoothed);
     dump(prefix + ".n_displacements", g.nDisplacements);
     dump(prefix + ".n_tracers", g.nTracers);
     dump(prefix + ".void_index", g.voidIndex);

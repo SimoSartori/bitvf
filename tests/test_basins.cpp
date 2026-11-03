@@ -54,8 +54,8 @@ namespace {
   // The hashes of the catalogues and the assignment of the generated
   // input, cells of 1 and 0.5 mps, sigma 1 mps, recorded once. A different
   // value on some platform means results are not portable there.
-  constexpr std::uint64_t kRecordedHash1 = 0x635ad8bd9ce6e272ull;
-  constexpr std::uint64_t kRecordedHash05 = 0x6896aeaadc5576faull;
+  constexpr std::uint64_t kRecordedHash1 = 0xbd6786210bbdd5eeull;
+  constexpr std::uint64_t kRecordedHash05 = 0x4fd2090bab4b52a4ull;
 
   constexpr double kPi = 3.141592653589793;
   constexpr double kInf = std::numeric_limits<double>::infinity();
@@ -196,6 +196,7 @@ namespace {
                                (std::int64_t)g.nCellsAxis[2]};
     const std::int64_t i[3] = {c / (n[1] * n[2]), (c / n[2]) % n[1], c % n[2]};
     const double s = g.cellSize;
+    const std::vector<double>& F = g.divergenceSmoothed.empty() ? g.divergence : g.divergenceSmoothed;
     double num[3] = {0., 0., 0.}, den = 0.;
     for (std::int64_t a = -1; a <= 1; ++a)
       for (std::int64_t b = -1; b <= 1; ++b)
@@ -203,7 +204,7 @@ namespace {
           const std::int64_t ii = i[0] + a, jj = i[1] + b, kk = i[2] + d;
           if (ii < 0 || jj < 0 || kk < 0 || ii >= n[0] || jj >= n[1] || kk >= n[2]) continue;
           if (a == 0 && b == 0 && d == 0) continue;
-          const double D = g.divergence[(ii * n[1] + jj) * n[2] + kk];
+          const double D = F[(ii * n[1] + jj) * n[2] + kk];
           num[0] += D * s * (i[0] - ii);
           num[1] += D * s * (i[1] - jj);
           num[2] += D * s * (i[2] - kk);
@@ -227,6 +228,7 @@ namespace {
     const std::int64_t nz = (std::int64_t)g.nCellsAxis[2];
     const std::size_t nVoid = h.basins.voids.seed.size();
     const std::size_t nAll = nVoid + h.basins.overdense.seed.size();
+    const std::vector<double>& F = g.divergenceSmoothed.empty() ? g.divergence : g.divergenceSmoothed;
     std::vector<std::uint64_t> out(nAll, 0), outCore(nAll, 0), phy(nAll, 0);
     auto basin = [&] (const std::int64_t c) {
       return g.voidIndex[c] >= 0 ? g.voidIndex[c] : (std::int64_t)nVoid + g.overdenseIndex[c];
@@ -236,7 +238,7 @@ namespace {
         for (std::int64_t k = 0; k < nz; ++k) {
           const std::int64_t c = (i * ny + j) * nz + k;
           const std::int64_t b = basin(c);
-          const bool core = g.voidIndex[c] >= 0 ? g.divergence[c] < 0. : g.divergence[c] >= 0.;
+          const bool core = g.voidIndex[c] >= 0 ? F[c] < 0. : F[c] >= 0.;
           const std::uint64_t onFace = (std::uint64_t)((i == 0) + (i == nx - 1) + (j == 0) + (j == ny - 1) +
                                                        (k == 0) + (k == nz - 1));
           out[b] += onFace;
@@ -347,7 +349,9 @@ namespace {
       Hand h;
       h.grid = internal::box_grid(s, cellSizeMps);
       const internal::BoxDivergence div = internal::box_divergence(s, h.grid);
-      internal::box_smooth(h.grid, s.sigmaLength, nullptr);
+      double wMax = 0.;
+      for (const double w : h.grid.weight) wMax = std::max(wMax, w);
+      internal::box_smooth(h.grid, s.sigmaLength, 1e-12 * wMax);
       internal::box_watershed(h.grid, h.basins);
       Catalogues cat;
       internal::box_basins(&s, &div, h.grid, h.basins, cat.voids, cat.overdense);

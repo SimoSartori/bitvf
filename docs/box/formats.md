@@ -88,10 +88,11 @@ The [box guide](guide.md) defines each quantity.
 |---|---|---|
 | `index` | K | row of the cell |
 | `cellX`, `cellY`, `cellZ` | D | the cell centre, in coordinate units |
-| `divergence` | D | the divergence of the displacement field, after smoothing |
-| `divergenceUnsmoothed` | D | before smoothing; only with `keepUnsmoothedDivergence` |
+| `divergence` | D | the divergence of the displacement field, before smoothing |
+| `divergenceSmoothed` | D | after smoothing; only with sigma > 0 |
 | `volume` | D | volume of the cell, in coordinate units cubed |
 | `weight` | D | tracer weight of the cell |
+| `weightSmoothed` | D | tracer weight of the cell, after smoothing; only with sigma > 0 |
 | `nDispl` | K | displacement ends counted in the cell |
 | `nTracers` | K | tracers starting in the cell |
 | `voidIndex` | K | row of the void of the cell, -1 none |
@@ -125,9 +126,10 @@ has no tracer: its files carry no `NREC` and `NRECMEAN`, `MPS` and
 `CELLSIZE` only when an mps was given, and none of the columns that count
 tracers or displacements (`deltaAv`, `delta2Mps`, `nTracers`, `nDispl`). Its
 voids and overdense basins files add `fieldCentre`, the field at the centre,
-after `contamination`. In its divergence file, `divergence` and
-`divergenceUnsmoothed` hold the field after and before smoothing, and
-`weight` the weight of the cell in the smoothing. It has no galaxies file.
+after `contamination`. In its divergence file, `divergence` and, with
+sigma > 0, `divergenceSmoothed` hold the field before and after smoothing,
+`weight` the weight of the cell in the smoothing and, with sigma > 0,
+`weightSmoothed` its smoothed mean. It has no galaxies file.
 
 ## Reading
 
@@ -139,9 +141,8 @@ after `contamination`. In its divergence file, `divergence` and
 
 - **Divergence file.** Read back with every value the writer wrote, in both
   formats. The grid can be reused by
-  {cpp:func}`bitvf::findVoidsBox`, and, when it holds
-  `divergenceUnsmoothed`, searched again with another smoothing by
-  {cpp:func}`bitvf::findVoidsBoxFromDivergence`. The divergence file of a
+  {cpp:func}`bitvf::findVoidsBox`, and searched again with another
+  smoothing by {cpp:func}`bitvf::findVoidsBoxFromDivergence`. The divergence file of a
   field result is read with `readField`.
 - **Mean displacement file.** The tracers, their mean displacement as one
   realization, its validity, the mps, the box limits when the file records
@@ -153,7 +154,7 @@ after `contamination`. In its divergence file, `divergence` and
 - **Field.** Columns are named in FITS; in ASCII, named from the last `###`
   line before the data, or given as 0-based indices in digits. Every value
   read must be finite. A divergence file is valid input, with `cellX`,
-  `cellY`, `cellZ`, `divergenceUnsmoothed` and `weight`.
+  `cellY`, `cellZ`, `divergence` and `weight`.
 
 ## Parameter files
 

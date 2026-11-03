@@ -466,11 +466,12 @@ namespace bitvf {
     BoxDivergence box_divergence (const BoxSearch& search, DivergenceGrid& grid);
 
     /**
-     *  @brief Fill the empty cells (nDisplacements 0) of a box grid's
-     *  divergence and weight, as DivergenceGrid::weight describes.
+     *  @brief Fill the divergence of the empty cells (nDisplacements 0) of
+     *  a box grid, as DivergenceGrid::weight describes; their weight is
+     *  left unchanged.
      *
-     *  Reads only nDisplacements, divergence, weight and the fields that
-     *  define the cells.
+     *  Reads only nDisplacements, divergence and the fields that define
+     *  the cells.
      *
      *  @return the number of passes run, 0 with no empty cell
      *  @exception Error if a pass fills no cell while some are empty
@@ -495,8 +496,8 @@ namespace bitvf {
     //==========================================================================
 
     /**
-     *  @brief Smooth the divergence of a box grid in place, as Smoothing
-     *  describes for a box, with weight as the tracer weight.
+     *  @brief Smooth the divergence of a box grid into divergenceSmoothed,
+     *  as Smoothing describes for a box, with weight as the tracer weight.
      *
      *  The mean over the cube of cells around a cell is computed as three
      *  1-D convolutions of weight times divergence and of weight, along k,
@@ -505,17 +506,25 @@ namespace bitvf {
      *  is floor(3.5 sigmaLength / cellSize), or the nearest integer when
      *  3.5 sigmaLength / cellSize lies within 1e-9 relative of it, capped
      *  per axis at nCellsAxis - 1. A cell whose sum of weights is at most
-     *  1e-12 takes 0. Any nCellsAxis of at least 1 per axis.
+     *  threshold takes 0. Any nCellsAxis of at least 1 per axis.
+     *
+     *  With sigmaLength > 0, divergenceSmoothed receives the smoothed
+     *  field, and weightSmoothed the sum of weight over the cube from the
+     *  same convolutions, divided by the product S_i S_j S_k, S_a the sum
+     *  of the 1-D kernel over the cells of the axis within the half-width,
+     *  cut at the faces, each taken from 0. in ascending order. With
+     *  sigmaLength 0 divergenceSmoothed and weightSmoothed are emptied.
+     *  divergence and weight are never changed.
      *
      *  Reads only divergence, weight and the fields that define the cells.
      *
      *  @param sigmaLength the sigma in coordinate units: 0 for no
      *  smoothing, and when positive with (2 sigmaLength) sigmaLength
      *  positive and finite (check_box checks it)
-     *  @param unsmoothed when not null, receives the divergence before the
-     *  smoothing
+     *  @param threshold the sum of weights at or below which a cell takes
+     *  0: the searches pass 1e-12 times the largest weight of the grid
      */
-    void box_smooth (DivergenceGrid& grid, double sigmaLength, std::vector<double>* unsmoothed);
+    void box_smooth (DivergenceGrid& grid, double sigmaLength, double threshold);
 
     //==========================================================================
 
@@ -563,8 +572,11 @@ namespace bitvf {
      *  with no cell below 0 there is no void, and no error. The result
      *  does not depend on the number of threads.
      *
-     *  Reads only divergence, nCells, nCellsAxis and, when not empty,
-     *  nTracers. Writes voidIndex and overdenseIndex, one of which is -1
+     *  The field split is divergenceSmoothed when it is not empty,
+     *  otherwise divergence: "divergence" below means that field.
+     *
+     *  Reads only divergence, divergenceSmoothed, nCells, nCellsAxis and,
+     *  when not empty, nTracers. Writes voidIndex and overdenseIndex, one of which is -1
      *  in every cell, and every field of basins (nCoreTracers left empty
      *  without nTracers).
      */
@@ -587,8 +599,11 @@ namespace bitvf {
      *  The result does not depend on the number of threads. Any
      *  nCellsAxis of at least 1 per axis.
      *
-     *  Reads divergence, voidIndex, overdenseIndex and the fields that
-     *  define the cells of grid; with search, also mps of grid, cell of
+     *  The divergence is the field box_watershed split: divergenceSmoothed
+     *  when it is not empty, otherwise divergence.
+     *
+     *  Reads divergence, divergenceSmoothed, voidIndex, overdenseIndex and
+     *  the fields that define the cells of grid; with search, also mps of grid, cell of
      *  div and the tracers of search. Writes every field of both
      *  catalogues; centreSky is left empty, and without search so are
      *  deltaAv, delta2Mps and nTracers.

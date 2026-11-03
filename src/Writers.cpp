@@ -320,10 +320,12 @@ void bitvf::io::writeDivergence (const std::string& file, const Result& result)
   const std::size_t nt = field ? 0 : n;
   check_size(grid.centre.size(), 3 * n, "divergence.centre");
   check_size(grid.divergence.size(), n, "divergence.divergence");
-  if (!grid.divergenceUnsmoothed.empty())
-    check_size(grid.divergenceUnsmoothed.size(), n, "divergence.divergenceUnsmoothed");
+  if (!grid.divergenceSmoothed.empty())
+    check_size(grid.divergenceSmoothed.size(), n, "divergence.divergenceSmoothed");
   check_size(grid.volume.size(), n, "divergence.volume");
   check_size(grid.weight.size(), n, "divergence.weight");
+  if (!grid.weightSmoothed.empty())
+    check_size(grid.weightSmoothed.size(), n, "divergence.weightSmoothed");
   check_size(grid.nDisplacements.size(), nt, "divergence.nDisplacements");
   check_size(grid.nTracers.size(), nt, "divergence.nTracers");
   check_size(grid.voidIndex.size(), n, "divergence.voidIndex");
@@ -361,16 +363,20 @@ void bitvf::io::writeDivergence (const std::string& file, const Result& result)
          [&grid] (std::size_t c) { return grid.centre[3*c+1]; }),
     real("cellZ", "z of the cell centre, in coordinate units",
          [&grid] (std::size_t c) { return grid.centre[3*c+2]; }),
-    real("divergence", field ? "field, after smoothing" : "divergence of the displacement field, after smoothing",
+    real("divergence", field ? "field, before smoothing" : "divergence of the displacement field, before smoothing",
          [&grid] (std::size_t c) { return grid.divergence[c]; })};
-  if (!grid.divergenceUnsmoothed.empty())
-    sources.push_back(real("divergenceUnsmoothed",
-                           field ? "field, before smoothing" : "divergence of the displacement field, before smoothing",
-                           [&grid] (std::size_t c) { return grid.divergenceUnsmoothed[c]; }));
+  if (!grid.divergenceSmoothed.empty())
+    sources.push_back(real("divergenceSmoothed",
+                           field ? "field, after smoothing" : "divergence of the displacement field, after smoothing",
+                           [&grid] (std::size_t c) { return grid.divergenceSmoothed[c]; }));
   sources.push_back(real("volume", "volume of the cell, in coordinate units cubed",
                          [&grid] (std::size_t c) { return grid.volume[c]; }));
   sources.push_back(real("weight", field ? "weight of the cell in the smoothing" : "tracer weight of the cell",
                          [&grid] (std::size_t c) { return grid.weight[c]; }));
+  if (!grid.weightSmoothed.empty())
+    sources.push_back(real("weightSmoothed",
+                           field ? "weight of the cell, after smoothing" : "tracer weight of the cell, after smoothing",
+                           [&grid] (std::size_t c) { return grid.weightSmoothed[c]; }));
   if (!field) {
     sources.push_back(integer("nDispl", "displacement ends counted in the cell",
                               [&grid] (std::size_t c) { return (std::int64_t)grid.nDisplacements[c]; }));

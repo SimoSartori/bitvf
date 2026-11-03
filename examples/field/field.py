@@ -55,11 +55,10 @@ def main():
 
     # The columns of the cell centres, in Mpc/h, of the field and of the
     # weight of each cell in the smoothing. Without a weight column every
-    # cell weighs the same. The field is divergenceUnsmoothed, not the
-    # divergence column: the search smooths the field it reads, so the
-    # smoothed divergence would be smoothed twice
-    field = bitvf.io.read_field(field_file, centres=["cellX", "cellY", "cellZ"], value="divergenceUnsmoothed",
-                                weight="weight")
+    # cell weighs the same. The field is the divergence column, before
+    # smoothing, not divergenceSmoothed: the search smooths the field it
+    # reads, so the smoothed divergence would be smoothed twice
+    field = bitvf.io.read_field(field_file, centres=["cellX", "cellY", "cellZ"], value="divergence", weight="weight")
 
     print(f"Cells: {len(field.values)}")
 

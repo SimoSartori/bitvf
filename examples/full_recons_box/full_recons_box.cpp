@@ -107,11 +107,10 @@ int main (int argc, char** argv)
     config.rsd = rsd;
 
     // The void search, on both passes: the default smoothing of 1 mps and
-    // the default cell size. The divergence grid is kept with the field
-    // before smoothing, so that it can be written and searched again later
-    // without the reconstruction (see the field example)
+    // the default cell size. The divergence grid is kept, with the field
+    // before and after smoothing, so that it can be written and searched
+    // again later without the reconstruction (see the field example)
     config.voids.keepDivergence = true;
-    config.voids.keepUnsmoothedDivergence = true;
     config.voids.verbosity = otswap::Verbosity::Detailed;
     config.voids.log = &std::cout;
 

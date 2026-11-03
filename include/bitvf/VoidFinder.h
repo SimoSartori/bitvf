@@ -117,8 +117,9 @@ namespace bitvf {
    *                   contamination (double); edgeFlag (uint8);
    *                   nTracers (size_t)
    *      [cell][3]    DivergenceGrid::centre, centreSky
-   *      [cell]       DivergenceGrid::divergence, divergenceUnsmoothed,
-   *                   volume, weight, cellRaMin .. cellDistanceMax
+   *      [cell]       DivergenceGrid::divergence, divergenceSmoothed,
+   *                   volume, weight, weightSmoothed, cellRaMin ..
+   *                   cellDistanceMax
    *                   (double); nDisplacements, nTracers (uint64);
    *                   voidIndex, overdenseIndex (int64); masked (uint8)
    *      [tracer]     Result::ids (int64); Result::uncorrected,
@@ -157,8 +158,12 @@ namespace bitvf {
    *  around it, itself included. The weight of a cell is its tracer
    *  weight (DivergenceGrid::weight) times exp(-r^2 / (2 sigma^2)), r the
    *  distance between the two cell centres. A cell whose weights sum to
-   *  1e-12 or less takes 0. A larger sigma merges small basins into
-   *  larger ones; sigma = 0 disables the smoothing.
+   *  at most 1e-12 times the largest tracer weight of the grid takes 0:
+   *  so does a cell filled from its neighbours (weight 0) when the cells
+   *  around hold it alone. A larger sigma merges small basins into larger
+   *  ones; sigma = 0 disables the smoothing. With sigma > 0 the smoothed field and the smoothed weight
+   *  are kept beside the divergence and the weight
+   *  (DivergenceGrid::divergenceSmoothed, weightSmoothed).
    *
    *  Box: the cells around are those within floor(3.5 sigma / s) cells
    *  along each axis, s the cell side, cut at the faces of the grid: a
@@ -169,8 +174,7 @@ namespace bitvf {
    *  mps.
    *
    *  Lightcone: the cells around are those whose centre lies closer than
-   *  4 sigma, and each weight is also multiplied by the cell's volume.
-   *  Masked cells (DivergenceGrid::masked) enter no mean and take 0. In
+   *  4 sigma, with the same weights. Masked cells (DivergenceGrid::masked) enter no mean and take 0. In
    *  Mps, sigma is multiplied by mps(z) at the redshift of the centre of
    *  the shell of the cell being smoothed.
    */
@@ -214,10 +218,6 @@ namespace bitvf {
     /// Fill Result::divergence with the grid and the divergence field.
     /// Off by default: it holds one entry per cell in several arrays.
     bool keepDivergence = false;
-
-    /// Also fill DivergenceGrid::divergenceUnsmoothed, the field before
-    /// smoothing. Requires keepDivergence.
-    bool keepUnsmoothedDivergence = false;
 
     /// Fill Result::assignment, where each tracer ended up. Off by
     /// default: it holds one entry per tracer in several arrays.
@@ -305,8 +305,8 @@ namespace bitvf {
 
     /// Cartesian centre, in coordinate units: the seed cell's centre x0,
     /// shifted by -sum_n div_n (x_n - x0) / sum_n |div_n| over the seed's
-    /// neighbouring cells n, with div the smoothed divergence, and kept
-    /// inside the seed cell. Flat, [basin][xyz].
+    /// neighbouring cells n, with div the field the watershed split, and
+    /// kept inside the seed cell. Flat, [basin][xyz].
     std::vector<double> centre;
 
     /// Sky coordinates of centre: right ascension, declination, redshift;
@@ -511,12 +511,13 @@ namespace bitvf {
     /// redshift; radians. Flat, [cell][3] in a lightcone; empty in a box.
     std::vector<double> centreSky;
 
-    /// The divergence the watershed ran on, after smoothing.
+    /// The divergence of each cell, before smoothing; what the watershed
+    /// splits with sigma = 0.
     std::vector<double> divergence;
 
-    /// The divergence before smoothing, when
-    /// Config::keepUnsmoothedDivergence is set; empty otherwise.
-    std::vector<double> divergenceUnsmoothed;
+    /// The divergence after smoothing (see Smoothing), what the watershed
+    /// splits, with sigma > 0; empty with sigma = 0.
+    std::vector<double> divergenceSmoothed;
 
     /// Volume of each cell, in coordinate units cubed: uniform in a box.
     std::vector<double> volume;
@@ -524,12 +525,13 @@ namespace bitvf {
     /// Tracer weight of each cell, the weight of the smoothing:
     /// nDisplacements / nRealizations where a displacement contributed.
     /// A cell that no displacement contributed to (nDisplacements 0) is
-    /// empty, and the fill gives it the divergence and the weight of nearby
-    /// cells that hold a value, a contribution or a value filled in an
-    /// earlier pass, each mean weighted by 1 / r^2, r the distance between
-    /// the cell centres (times the neighbour's volume in a lightcone). The
-    /// fill runs in passes, each reading the values left by the previous
-    /// one.
+    /// empty: it keeps a weight of 0, and the fill gives it the mean
+    /// divergence of nearby cells that hold a value, a contribution or a
+    /// value filled in an earlier pass, weighted by 1 / r^2, r the
+    /// distance between the cell centres. The fill runs in passes, each
+    /// reading the values left by the previous one. With its weight of 0,
+    /// a filled value enters no smoothed mean; with sigma = 0 the
+    /// watershed reads it as it is.
     ///
     /// Box: the neighbours within one cell along each axis, or within two
     /// when fewer than three of those hold a value; the passes repeat
@@ -537,9 +539,18 @@ namespace bitvf {
     ///
     /// Lightcone: the adjacent cells that are not masked, when there are
     /// at least three; the passes repeat until one fills no cell. A cell
-    /// left empty keeps a divergence and a weight of 0, and a masked cell
-    /// is never filled.
+    /// left empty keeps a divergence of 0, and a masked cell is never
+    /// filled.
     std::vector<double> weight;
+
+    /// Smoothed tracer weight of each cell, with sigma > 0: the mean of
+    /// weight over the cells of the smoothing (see Smoothing) with the
+    /// Gaussian alone as weight, sum K w / sum K, K = exp(-r^2 /
+    /// (2 sigma^2)). It shows how much of a cell's smoothed divergence
+    /// comes from displacements; the watershed does not read it. Box: the
+    /// sum of K over the cube is the product of the three sums of the 1-D
+    /// kernel along the axes, each cut at the faces. Empty with sigma = 0.
+    std::vector<double> weightSmoothed;
 
     /// Displacement ends counted in each cell, before the fill: a valid
     /// displacement that leaves its tracer's cell counts 1 in that cell and
@@ -798,10 +809,9 @@ namespace bitvf {
    *    finite, or a lower bound is not below the upper one;
    *  - on config: if smoothing.sigma is not finite and non-negative; if
    *    divergenceCellSize is set and not finite and positive; if
-   *    nRealizationsMean is 0; if keepUnsmoothedDivergence is set without keepDivergence; if
-   *    smoothing.sigma is positive but, in coordinate units (times mps in
-   *    Mps), below about 1e-162 or above about 1e154, too small or too
-   *    large to build the kernel;
+   *    nRealizationsMean is 0; if smoothing.sigma is positive but, in
+   *    coordinate units (times mps in Mps), below about 1e-162 or above
+   *    about 1e154, too small or too large to build the kernel;
    *  - on grid: if it is not a box grid; if a field that defines the cells
    *    is inconsistent: cellSize, mps or cellSizeMps not finite and
    *    positive, cellSize not equal to cellSizeMps * mps bit for bit, a
@@ -878,16 +888,16 @@ namespace bitvf {
    *  @brief Find voids and overdense basins in a box from a divergence
    *  computed earlier, with the tracers given.
    *
-   *  The field before smoothing (DivergenceGrid::divergenceUnsmoothed) is
+   *  The field before smoothing (DivergenceGrid::divergence) is
    *  smoothed with config.smoothing, in units of the grid's mps, split into
    *  basins and catalogued as findVoidsBox does; a different sigma is the
    *  usual reason for the call. With the tracers of the search that
    *  produced the grid and the same smoothing, the voids, the overdense
-   *  basins, the smoothed divergence and the assignment but its used flags
-   *  equal that search's bit for bit. A grid kept in memory with
-   *  Config::keepUnsmoothedDivergence serves as well as one read from a
-   *  divergence file (io::readDivergence). Reports as Config::verbosity
-   *  describes.
+   *  basins, the smoothed divergence, the smoothed weight and the
+   *  assignment but its used flags equal that search's bit for bit,
+   *  sigma = 0 included. A grid kept in memory
+   *  (Config::keepDivergence) serves as well as one read from a divergence
+   *  file (io::readDivergence). Reports as Config::verbosity describes.
    *
    *  The tracers are read as with a reused grid: those outside the grid's
    *  box limits (DivergenceGrid::limits) are skipped
@@ -907,9 +917,10 @@ namespace bitvf {
    *  cellSizeMps.
    *
    *  @param divergence a box grid holding the fields that define its cells,
-   *  divergenceUnsmoothed and weight, and optionally nTracers, nDisplacements,
+   *  divergence and weight, and optionally nTracers, nDisplacements,
    *  limits, nRealizations and nRealizationsMean; its other per-cell
-   *  fields are not read.
+   *  fields are not read: divergenceSmoothed and weightSmoothed of the
+   *  result are computed from these with config.smoothing.
    *
    *  @param tracers Cartesian coordinates of the tracers, 3 * nTracers
    *  entries; at least one.
@@ -927,7 +938,7 @@ namespace bitvf {
    *  - on config as findVoidsBox; if divergenceCellSize is set;
    *  - on the grid as on a grid to reuse in findVoidsBox (a lightcone grid,
    *    or nCellsAxis not equal on the three axes, among others); if
-   *    divergenceUnsmoothed or weight does not hold nCells entries, or an
+   *    divergence or weight does not hold nCells entries, or an
    *    entry of either is not finite; if nTracers is neither empty nor of
    *    nCells entries; if a bound of its limits is not finite, or a lower
    *    bound is not below the upper one;
@@ -978,19 +989,19 @@ namespace bitvf {
    *  on the faces of the inferred grid, and fieldCentre; deltaAv,
    *  delta2Mps and nTracers, which need tracers, are empty. Result is a
    *  field result (see Result). With Config::keepDivergence,
-   *  Result::divergence holds the grid, the field after and, with
-   *  keepUnsmoothedDivergence, before smoothing, the weights as divided,
-   *  the basin indices, the cell centres and volumes; nDisplacements and
+   *  Result::divergence holds the grid, the field as given (divergence)
+   *  and, with sigma > 0, smoothed (divergenceSmoothed), the weights as
+   *  given and, with sigma > 0, their smoothed mean (weightSmoothed), the
+   *  basin indices, the cell centres and volumes; nDisplacements and
    *  nTracers are empty.
    *
    *  A bitvf divergence file is valid input, read with io::readField: its
-   *  cell centres, divergenceUnsmoothed and weight with the smoothing of
+   *  cell centres, divergence and weight with the smoothing of
    *  the search that wrote it give back that search's basins. Their
    *  centre, radius and radiusExt can differ from that search's by a few
-   *  ulp, for two reasons: they are computed from the grid's lower and s,
-   *  which are inferred here from the centres read and may differ from
-   *  the original grid's by rounding; and the weights are divided by
-   *  their largest, which can move the smoothed field by an ulp.
+   *  ulp: they are computed from the grid's lower and s, which are
+   *  inferred here from the centres read and may differ from the original
+   *  grid's by rounding.
    *
    *  @param centres Cartesian coordinates of the cell centres, 3 * nCells
    *  entries, [cell][xyz], in any order.
@@ -1005,9 +1016,9 @@ namespace bitvf {
    *
    *  @param weights the weight of each cell in the smoothing, as
    *  DivergenceGrid::weight in findVoidsBox, nCells entries in the order
-   *  of centres; or empty, which gives every cell the weight 1. Given, they
-   *  are divided by the largest of them before the smoothing, so a cell
-   *  whose weights sum to at most 1e-12 of the largest weight takes 0.
+   *  of centres; or empty, which gives every cell the weight 1. Used as
+   *  given: a cell whose weights sum to at most 1e-12 times the largest
+   *  weight takes 0 (see Smoothing).
    *
    *  @param mps a mean particle separation, in coordinate units, or none.
    *  Given, it is the unit of a sigma in LengthUnit::Mps and is recorded

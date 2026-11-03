@@ -59,14 +59,13 @@ namespace {
   const char* const kKeys[] = {
     "verbosity", "field_file", "column_centre", "column_value", "column_weight", "delimiter", "comment", "mps",
     "sigma", "sigma_unit", "output_dir", "output_file", "output_format", "printOverdense", "printDiv",
-    "printDivUnsmoothed",
   };
 
   /// Why a key does not apply to the run, or empty when it does.
-  std::string rule (const std::string& key, const bool printDiv)
+  std::string rule (const std::string& key)
   {
     for (const char* k : kKeys)
-      if (key == k) return key == "printDivUnsmoothed" && !printDiv ? "does not apply to a run without printDiv" : "";
+      if (key == k) return "";
     return "unknown key";
   }
 
@@ -79,10 +78,7 @@ namespace {
     const app::Parameters p(parameters, file);
     const otswap::io::ParameterFile& f = parameters;
 
-    const bool printDiv = f.get<bool>("printDiv", false);
-    if (app::report_errors(kProgram, app::irrelevant_keys(parameters, file, [printDiv] (const std::string& key) {
-      return rule(key, printDiv);
-    })))
+    if (app::report_errors(kProgram, app::irrelevant_keys(parameters, file, rule)))
       return 1;
 
     bitvf::Config config;
@@ -110,8 +106,8 @@ namespace {
     const std::string outputName = p.output_file();
     const std::string extension = p.word("output_format", {"dat", "fits"}, "dat");
     const bool printOverdense = f.get<bool>("printOverdense", false);
+    const bool printDiv = f.get<bool>("printDiv", false);
     config.keepDivergence = printDiv;
-    if (printDiv) config.keepUnsmoothedDivergence = f.get<bool>("printDivUnsmoothed", false);
 
     if (app::report_unread(kProgram, parameters, file)) return 1;
 

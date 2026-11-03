@@ -136,11 +136,11 @@ namespace {
 // ============================================================================
 
 
-void bitvf::internal::box_smooth (DivergenceGrid& grid, const double sigmaLength,
-                                  std::vector<double>* unsmoothed)
+void bitvf::internal::box_smooth (DivergenceGrid& grid, const double sigmaLength, const double threshold)
 {
   if (sigmaLength == 0.) {
-    if (unsmoothed != nullptr) *unsmoothed = grid.divergence;
+    grid.divergenceSmoothed.clear();
+    grid.weightSmoothed.clear();
     return;
   }
 
@@ -162,8 +162,17 @@ void bitvf::internal::box_smooth (DivergenceGrid& grid, const double sigmaLength
     K[i] = otswap::maths::exp(-(dist * dist) / two);
   }
 
-  if (unsmoothed != nullptr) *unsmoothed = std::move(grid.divergence);
-  const std::vector<double>& field = unsmoothed != nullptr ? *unsmoothed : grid.divergence;
+  std::array<std::vector<double>, 3> kernelSum;
+  for (std::size_t a = 0; a < 3; ++a) {
+    kernelSum[a].assign(n[a], 0.);
+    for (std::size_t x = 0; x < n[a]; ++x) {
+      const std::size_t hi = std::min(n[a] - 1, x + h[a]);
+      for (std::size_t xx = (x >= h[a] ? x - h[a] : 0); xx <= hi; ++xx)
+        kernelSum[a][x] += K[xx + hK - x];
+    }
+  }
+
+  const std::vector<double>& field = grid.divergence;
 
   std::unique_ptr<double[]> num(new double[C]), den(new double[C]);
 #pragma omp parallel for schedule(static)
@@ -182,8 +191,13 @@ void bitvf::internal::box_smooth (DivergenceGrid& grid, const double sigmaLength
     convolve_axis(num.get(), den.get(), n, axis, K, h[(std::size_t)axis], hK, buffer);
   std::vector<double>().swap(buffer);
 
-  if (unsmoothed != nullptr) grid.divergence.resize(C);
+  grid.divergenceSmoothed.resize(C);
+  grid.weightSmoothed.resize(C);
+  const std::size_t nyz = n[1] * n[2];
 #pragma omp parallel for schedule(static)
-  for (std::size_t c = 0; c < C; ++c)
-    grid.divergence[c] = den[c] > 1e-12 ? num[c] / den[c] : 0.;
+  for (std::size_t c = 0; c < C; ++c) {
+    grid.divergenceSmoothed[c] = den[c] > threshold ? num[c] / den[c] : 0.;
+    grid.weightSmoothed[c] =
+      den[c] / (kernelSum[0][c / nyz] * kernelSum[1][(c / n[2]) % n[1]] * kernelSum[2][c % n[2]]);
+  }
 }

@@ -157,11 +157,13 @@ namespace bitvf::io {
    *  (Result::divergence).
    *
    *  Columns: index (K); cellX, cellY, cellZ, the cell centre, in
-   *  coordinate units; divergence, after smoothing; divergenceUnsmoothed,
-   *  only when DivergenceGrid::divergenceUnsmoothed is not empty; volume, in
-   *  coordinate units cubed; weight; nDispl (K), the displacement ends
-   *  counted; nTracers (K); voidIndex (K); overdenseIndex (K). A field
-   *  result has no nDispl and nTracers. ASCII: 17 significant digits.
+   *  coordinate units; divergence, before smoothing; divergenceSmoothed,
+   *  only when DivergenceGrid::divergenceSmoothed is not empty; volume, in
+   *  coordinate units cubed; weight; weightSmoothed, only when
+   *  DivergenceGrid::weightSmoothed is not empty; nDispl (K), the
+   *  displacement ends counted; nTracers (K); voidIndex (K);
+   *  overdenseIndex (K). A field result has no nDispl and nTracers. ASCII:
+   *  17 significant digits.
    *
    *  Keywords as listed in the file description, the row count NCELLS,
    *  followed by the record of the grid: LOWERX, LOWERY, LOWERZ, UPPERX,
@@ -182,11 +184,12 @@ namespace bitvf::io {
    *    finite and positive, a bound of lower or upper is not finite, or
    *    nCells is not the product of nCellsAxis;
    *  - if it is malformed: as writeVoids; a column of the grid not of
-   *    nCells entries (centre 3 * nCells; divergenceUnsmoothed nCells or
-   *    none); outside a field result, the mps, cellSizeMps or limits of the
-   *    grid different from Result::mps, Config::divergenceCellSize or
-   *    Result::limits, bit for bit; its nRealizations or nRealizationsMean
-   *    different from Result::nRealizations or Config::nRealizationsMean;
+   *    nCells entries (centre 3 * nCells; divergenceSmoothed and
+   *    weightSmoothed nCells or none); outside a field result, the mps,
+   *    cellSizeMps or limits of the grid different from Result::mps,
+   *    Config::divergenceCellSize or Result::limits, bit for bit; its
+   *    nRealizations or nRealizationsMean different from
+   *    Result::nRealizations or Config::nRealizationsMean;
    *  - if the file cannot be written, as writeVoids.
    */
   void writeDivergence (const std::string& file, const Result& result);
@@ -308,7 +311,8 @@ namespace bitvf::io {
    *  Every field the writer wrote is read back bit for bit, in both
    *  formats: the cells (lower, upper, cellSize, nCellsAxis, nCells, mps,
    *  cellSizeMps), the box limits, nRealizations, nRealizationsMean and
-   *  every per-cell column, divergenceUnsmoothed when the file has it.
+   *  every per-cell column, divergenceSmoothed and weightSmoothed when the
+   *  file has them.
    *  The grid passes the checks of a grid to reuse, so it can be passed to
    *  findVoidsBox as grid; the per-search fields are records, which a
    *  search reusing the grid does not read.
@@ -363,7 +367,7 @@ namespace bitvf::io {
    *  rest. A divergence file of bitvf is valid input:
    *
    *      const bitvf::io::Field f = bitvf::io::readField("divergence.fits", {"cellX", "cellY", "cellZ"},
-   *                                                      "divergenceUnsmoothed", "weight");
+   *                                                      "divergence", "weight");
    *
    *  @param file the table, FITS or ASCII by its extension.
    *  @param centreColumns the columns of x, y and z of the centres.

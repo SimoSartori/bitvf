@@ -23,7 +23,8 @@
  *
  *  @brief The Gaussian smoothing of a box search: no smoothing at sigma
  *  0, the unsmoothed field kept, agreement with the direct weighted mean
- *  over the cube within the rounding bound, the 1e-12 threshold, the
+ *  over the cube within the rounding bound, the smoothed weight against
+ *  its direct form, the threshold of 1e-12 times the largest weight, the
  *  half-window clamp, and its independence of the number of threads.
  */
 
@@ -52,11 +53,11 @@ using namespace bitvf;
 
 namespace {
 
-  // The hashes of the smoothed divergence of the generated input, cells of
-  // 1 and 0.5 mps, sigma 1 mps, recorded once. A different value on some
+  // The hashes of the smoothed divergence and smoothed weight of the
+  // generated input, cells of 1 and 0.5 mps, sigma 1 mps, recorded once. A different value on some
   // platform means results are not portable there.
-  constexpr std::uint64_t kRecordedHash1 = 0x5d8a2916633921e9ull;
-  constexpr std::uint64_t kRecordedHash05 = 0x5013e745876ba35dull;
+  constexpr std::uint64_t kRecordedHash1 = 0x8030882676f62075ull;
+  constexpr std::uint64_t kRecordedHash05 = 0x3dbb99e0028f44fcull;
 
   constexpr double kU = 0x1p-53;
 
@@ -116,14 +117,25 @@ namespace {
     return random_grid({n, n, n}, s, rng, wide);
   }
 
+  /// The threshold the searches pass: 1e-12 times the largest weight.
+  double threshold (const DivergenceGrid& g)
+  {
+    double wMax = 0.;
+    for (const double w : g.weight) wMax = std::max(wMax, w);
+    return 1e-12 * wMax;
+  }
+
   /// The direct form, per cell: the weighted mean over the cube of half-width
   /// h cut at the faces, summed in ascending (i, j, k) order with total
   /// weight ((K_i K_j) K_k) w; the sum of the weights; the weighted mean of
-  /// |D|; m_x + m_y + m_z and m_x m_y m_z, the window's cells. h is
-  /// halfWidth when given, otherwise from 3.5 sigma / s as the header states.
+  /// |D|; the sum of the weights over the sum of (K_i K_j) K_k; m_x + m_y +
+  /// m_z and m_x m_y m_z, the window's cells; the threshold. h is
+  /// halfWidth when given, otherwise from 3.5 sigma / s as the header
+  /// states.
   struct Direct {
-    std::vector<double> out, den, mean;
+    std::vector<double> out, den, mean, weight;
     std::vector<std::size_t> axes, cells;
+    double threshold = 0.;
   };
 
   Direct direct (const DivergenceGrid& g, const double sigmaLength,
@@ -148,9 +160,11 @@ namespace {
     }
 
     Direct d;
+    d.threshold = threshold(g);
     d.out.resize(g.nCells);
     d.den.resize(g.nCells);
     d.mean.resize(g.nCells);
+    d.weight.resize(g.nCells);
     d.axes.resize(g.nCells);
     d.cells.resize(g.nCells);
     for (std::int64_t i = 0; i < nx; ++i)
@@ -159,7 +173,7 @@ namespace {
           const std::int64_t i0 = std::max<std::int64_t>(0, i - hx), i1 = std::min(nx - 1, i + hx);
           const std::int64_t j0 = std::max<std::int64_t>(0, j - hy), j1 = std::min(ny - 1, j + hy);
           const std::int64_t k0 = std::max<std::int64_t>(0, k - hz), k1 = std::min(nz - 1, k + hz);
-          double num = 0., den = 0., abs = 0.;
+          double num = 0., den = 0., abs = 0., kernel = 0.;
           for (std::int64_t ii = i0; ii <= i1; ++ii)
             for (std::int64_t jj = j0; jj <= j1; ++jj) {
               const double wxy = K[ii - i + h] * K[jj - j + h];
@@ -169,12 +183,14 @@ namespace {
                 num += g.divergence[cc] * total;
                 den += total;
                 abs += std::fabs(g.divergence[cc]) * total;
+                kernel += wxy * K[kk - k + h];
               }
             }
           const std::size_t c = (std::size_t)((i * ny + j) * nz + k);
-          d.out[c] = den > 1e-12 ? num / den : 0.;
+          d.out[c] = den > d.threshold ? num / den : 0.;
           d.den[c] = den;
           d.mean[c] = den > 0. ? abs / den : 0.;
+          d.weight[c] = den / kernel;
           d.axes[c] = (std::size_t)((i1 - i0 + 1) + (j1 - j0 + 1) + (k1 - k0 + 1));
           d.cells[c] = (std::size_t)((i1 - i0 + 1) * (j1 - j0 + 1) * (k1 - k0 + 1));
         }
@@ -198,7 +214,7 @@ namespace {
   }
 
   /// Every cell of out against the direct form: 0 on both sides where the
-  /// weights sum to 1e-12 or less, within beta_c elsewhere; the cells equal
+  /// weights sum to the threshold or less, within beta_c elsewhere; the cells equal
   /// bit for bit counted in equal.
   bool agrees (const std::vector<double>& out, const Direct& d, std::size_t& equal)
   {
@@ -206,7 +222,7 @@ namespace {
     equal = 0;
     for (std::size_t c = 0; c < out.size(); ++c) {
       if (out[c] == d.out[c]) ++equal;
-      if (d.den[c] <= 1e-12) {
+      if (d.den[c] <= d.threshold) {
         ok = ok && out[c] == 0. && d.out[c] == 0.;
         continue;
       }
@@ -215,12 +231,33 @@ namespace {
     return ok;
   }
 
+  /// Every cell of the smoothed weight out against the direct form, within
+  /// the relative bound 2 (gamma(m_x + m_y + m_z + 4) + gamma(m_x m_y m_z +
+  /// 4)) of the two sums of positive terms and their quotient.
+  bool agrees_weight (const std::vector<double>& out, const Direct& d)
+  {
+    bool ok = out.size() == d.weight.size();
+    for (std::size_t c = 0; ok && c < out.size(); ++c) {
+      const double rel = 2 * (gamma(d.axes[c] + 4) + gamma(d.cells[c] + 4)) * (1 + 0x1p-20);
+      ok = std::fabs(out[c] - d.weight[c]) <= rel * d.weight[c];
+    }
+    return ok;
+  }
+
   /// The smoothed field of a copy of g.
   std::vector<double> smoothed (const DivergenceGrid& g, const double sigmaLength)
   {
     DivergenceGrid copy = g;
-    internal::box_smooth(copy, sigmaLength, nullptr);
-    return copy.divergence;
+    internal::box_smooth(copy, sigmaLength, threshold(g));
+    return copy.divergenceSmoothed;
+  }
+
+  /// The smoothed weight of a copy of g.
+  std::vector<double> smoothed_weight (const DivergenceGrid& g, const double sigmaLength)
+  {
+    DivergenceGrid copy = g;
+    internal::box_smooth(copy, sigmaLength, threshold(g));
+    return copy.weightSmoothed;
   }
 
   /// FNV-1a over raw bytes.
@@ -266,19 +303,20 @@ namespace {
       config.log = nullptr;
     }
 
-    /// The hash of the smoothed divergence on cells of cellSizeMps, sigma 1
-    /// mps; the search's sigmaLength in sigmaLength.
+    /// The hash of the smoothed divergence and smoothed weight on cells of
+    /// cellSizeMps, sigma 1 mps; the search's sigmaLength in sigmaLength.
     std::uint64_t hash (const double cellSizeMps, double& sigmaLength) const
     {
       const internal::BoxSearch s = internal::check_box(tracers, displacement, valid, 4., config,
                                                         limits, ids, nullptr);
       DivergenceGrid g = internal::box_grid(s, cellSizeMps);
       internal::box_divergence(s, g);
-      internal::box_smooth(g, s.sigmaLength, nullptr);
+      internal::box_smooth(g, s.sigmaLength, threshold(g));
       sigmaLength = s.sigmaLength;
 
       std::uint64_t h = 0xcbf29ce484222325ull;
-      hash_bytes(h, g.divergence.data(), g.divergence.size() * sizeof(double));
+      hash_bytes(h, g.divergenceSmoothed.data(), g.divergenceSmoothed.size() * sizeof(double));
+      hash_bytes(h, g.weightSmoothed.data(), g.weightSmoothed.size() * sizeof(double));
       return h;
     }
   };
@@ -290,34 +328,66 @@ int main ()
   threads(4);
   std::mt19937 rng(2026);
 
-  group("sigma 0: the field unchanged, unsmoothed equal to it, nullptr accepted");
+  group("sigma 0: divergence and weight unchanged, divergenceSmoothed and weightSmoothed empty");
   {
     const DivergenceGrid base = random_grid(9, 1., rng, true);
     DivergenceGrid g = base;
-    std::vector<double> unsmoothed;
-    internal::box_smooth(g, 0., &unsmoothed);
+    g.divergenceSmoothed.assign(g.nCells, 1.);
+    g.weightSmoothed.assign(g.nCells, 1.);
+    internal::box_smooth(g, 0., 0.);
     check(g.divergence == base.divergence, "the field is unchanged");
-    check(unsmoothed == base.divergence, "unsmoothed is the field");
-    internal::box_smooth(g, 0., nullptr);
-    check(g.divergence == base.divergence, "the field is unchanged with nullptr");
+    check(g.divergenceSmoothed.empty() && g.weightSmoothed.empty(), "both are emptied");
+    check(g.weight == base.weight, "the weight is unchanged");
   }
 
-  group("sigma > 0: unsmoothed receives the input bit for bit, the output is the same as without it");
+  group("sigma > 0: divergence and weight unchanged, one smoothed divergence and one smoothed weight "
+        "per cell");
   {
     const DivergenceGrid base = random_grid(9, 1., rng, true);
     DivergenceGrid g = base;
-    std::vector<double> unsmoothed;
-    internal::box_smooth(g, 1., &unsmoothed);
-    check(unsmoothed == base.divergence, "unsmoothed is the input");
-    check(g.divergence == smoothed(base, 1.), "the output does not depend on unsmoothed");
+    internal::box_smooth(g, 1., threshold(g));
+    check(g.divergence == base.divergence, "the divergence is unchanged");
+    check(g.divergenceSmoothed.size() == base.nCells, "divergenceSmoothed holds nCells entries");
+    check(g.weight == base.weight, "the weight is unchanged");
+    check(g.weightSmoothed.size() == base.nCells, "weightSmoothed holds nCells entries");
   }
 
-  group("half-width 0 (sigma below s / 3.5): equal to the direct form bit for bit");
+  group("half-width 0 (sigma below s / 3.5): equal to the direct form bit for bit, the smoothed weight "
+        "equal to the weight");
   for (const bool wide : {false, true}) {
     const DivergenceGrid base = random_grid(9, 1., rng, wide);
     const double sigma = 0.2;
     check(smoothed(base, sigma) == direct(base, sigma).out,
           wide ? "wide weights and values" : "weights in [1/4, 2)");
+    check(smoothed_weight(base, sigma) == base.weight,
+          wide ? "wide weights: smoothed weight" : "weights in [1/4, 2): smoothed weight");
+  }
+
+  group("smoothed weight: sum K w / sum K over the clipped cube, within the relative bound of the direct "
+        "form, faces, edges, corners and non-cubic grids included");
+  for (const std::array<std::size_t, 3> n : {std::array<std::size_t, 3>{9, 9, 9}, {5, 9, 13}, {1, 7, 11},
+                                             {6, 1, 1}, {2, 3, 4}})
+    for (const std::size_t h : {1, 2, 4, 1000})
+      for (const bool wide : {false, true}) {
+        const double s = 0.75;
+        const double sigma = h == 1000 ? 10. * 13 * s : (h + 0.5) * s / 3.5;
+        const DivergenceGrid base = random_grid(n, s, rng, wide);
+        std::ostringstream what;
+        what << "(" << n[0] << ", " << n[1] << ", " << n[2] << "), h "
+             << (h == 1000 ? std::string("clamped") : std::to_string(h)) << (wide ? ", wide" : "");
+        check(agrees_weight(smoothed_weight(base, sigma), direct(base, sigma)), what.str());
+      }
+
+  group("smoothed weight: a uniform weight stays within the bound of itself, weight 0 gives 0");
+  for (const double w : {0., 0.75}) {
+    DivergenceGrid base = random_grid(9, 1., rng, false);
+    base.weight.assign(base.nCells, w);
+    const std::vector<double> out = smoothed_weight(base, 2.5 / 3.5);
+    const Direct d = direct(base, 2.5 / 3.5);
+    bool ok = true;
+    for (std::size_t c = 0; c < base.nCells; ++c)
+      ok = ok && std::fabs(out[c] - w) <= 2 * (gamma(d.axes[c] + 4) + gamma(d.cells[c] + 4)) * w;
+    check(ok, "weight " + std::to_string(w));
   }
 
   group("half-width: 3.5 sigma / s within 1e-9 of an integer takes that integer, s 1 ulp larger included; "
@@ -358,8 +428,8 @@ int main ()
                   << " cells equal bit for bit" << std::endl;
       }
 
-  group("threshold: weights summing to 1e-12 or less give 0, just above give num / den, whatever the "
-        "largest weight");
+  group("threshold: weights summing to 1e-12 times the largest weight or less give 0, just above give "
+        "num / den, for a largest weight of 1, 1e-20 and 1e20");
   {
     const std::size_t n = 12;
     DivergenceGrid base = random_grid(n, 1., rng, false);
@@ -378,16 +448,17 @@ int main ()
     std::size_t equal = 0;
     check(agrees(out, d, equal), "the other cells within beta_c");
 
-    for (const double wMax : {1., 1e20}) {
+    for (const double wMax : {1., 1e-20, 1e20}) {
       DivergenceGrid tiny = random_grid(5, 1., rng, false);
       for (double& w : tiny.weight) w *= wMax / 2.;
       tiny.weight[2] = wMax;
-      tiny.weight[0] = 1e-12;
-      tiny.weight[1] = std::nextafter(1e-12, 1.);
+      tiny.weight[0] = 1e-12 * wMax;
+      tiny.weight[1] = std::nextafter(1e-12 * wMax, 1e300);
       const std::vector<double> single = smoothed(tiny, 0.2);
       std::ostringstream what;
       what << "largest weight " << wMax;
-      check(single[0] == 0., what.str() + ": a weight sum of exactly 1e-12 gives 0");
+      check(threshold(tiny) == 1e-12 * wMax, what.str() + ": the threshold, 1e-12 times it");
+      check(single[0] == 0., what.str() + ": a weight sum of exactly the threshold gives 0");
       check(single[1] == tiny.weight[1] * tiny.divergence[1] / tiny.weight[1],
             what.str() + ": a weight sum just above gives num / den");
     }
@@ -477,7 +548,7 @@ int main ()
     check(within, "sigma " + std::to_string(sigma));
   }
 
-  group("the same smoothed divergence with 1, 3 and 4 threads, and the recorded hashes");
+  group("the same smoothed divergence and smoothed weight with 1, 3 and 4 threads, and the recorded hashes");
   {
     const Generated in;
     for (const double cellSizeMps : {1., 0.5}) {

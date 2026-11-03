@@ -435,10 +435,6 @@ int main ()
     BoxConfig s = c;
     s.voids.smoothing.sigma = -1.;
     fails(s, t, {}, {}, "the smoothing sigma is", "PB7 C1");
-    s = c;
-    s.voids.keepDivergence = false;
-    s.voids.keepUnsmoothedDivergence = true;
-    fails(s, t, {}, {}, "keeping the unsmoothed divergence requires keeping the divergence", "PB7 C3");
     throws_naming([&] { runBox(t, {}, c, in.ids); }, "needs a distance table carrying the growth rate; call runBox with distances",
                   "PB8");
     BoxConfig a = c;
@@ -548,8 +544,8 @@ int main ()
       hashes[threads == 4][1] = result_hash(p.voids);
     }
     check(hashes[0][0] == hashes[1][0] && hashes[0][1] == hashes[1][1], "1 and 4 threads");
-    check(hashes[0][0] == 0xdc3eee7c8b23d98cull, "recorded hash, with correction");
-    check(hashes[0][1] == 0xd1c655fd041b53cbull, "recorded hash, without");
+    check(hashes[0][0] == 0x08d7a96a4e990a1full, "recorded hash, with correction");
+    check(hashes[0][1] == 0x01ab24d1c86b5ef4ull, "recorded hash, without");
   }
 
   return report("test_runbox");

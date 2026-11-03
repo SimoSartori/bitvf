@@ -129,7 +129,6 @@ namespace fixtures {
       config.log = nullptr;
       config.smoothing.sigma = 0.5;
       config.keepDivergence = true;
-      config.keepUnsmoothedDivergence = true;
       config.keepAssignment = true;
       config.nRealizationsMean = 3;
     }

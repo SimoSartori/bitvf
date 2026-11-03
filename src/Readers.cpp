@@ -285,11 +285,13 @@ bitvf::DivergenceGrid bitvf::io::readDivergence (const std::string& file)
     throw Error(file + ": " + e.what());
   }
 
-  const bool unsmoothed = h.has_column("divergenceUnsmoothed");
+  const bool smoothed = h.has_column("divergenceSmoothed");
+  const bool weightSmoothed = h.has_column("weightSmoothed");
   std::vector<std::string> columns = {"cellX", "cellY", "cellZ", "divergence"};
-  if (unsmoothed) columns.push_back("divergenceUnsmoothed");
+  if (smoothed) columns.push_back("divergenceSmoothed");
   columns.push_back("volume");
   columns.push_back("weight");
+  if (weightSmoothed) columns.push_back("weightSmoothed");
   const otswap::io::Table t = internal::call_otswap([&] {
     return otswap::io::read(file, columns, {"index", "nDispl", "nTracers", "voidIndex", "overdenseIndex"});
   });
@@ -299,12 +301,13 @@ bitvf::DivergenceGrid bitvf::io::readDivergence (const std::string& file)
     throw Error(file + ": it holds " + std::to_string(t.nRows) + " rows, but NCELLS is " + std::to_string(n));
 
   const std::size_t nc = columns.size();
-  const std::size_t s = unsmoothed ? 1 : 0;
+  const std::size_t s = smoothed ? 1 : 0;
   grid.centre.resize(3 * n);
   grid.divergence.resize(n);
-  if (unsmoothed) grid.divergenceUnsmoothed.resize(n);
+  if (smoothed) grid.divergenceSmoothed.resize(n);
   grid.volume.resize(n);
   grid.weight.resize(n);
+  if (weightSmoothed) grid.weightSmoothed.resize(n);
   grid.nDisplacements.resize(n);
   grid.nTracers.resize(n);
   grid.voidIndex.resize(n);
@@ -323,9 +326,10 @@ bitvf::DivergenceGrid bitvf::io::readDivergence (const std::string& file)
                   std::to_string(k[3]) + ", overdenseIndex " + std::to_string(k[4]) + ")");
     for (std::size_t a = 0; a < 3; ++a) grid.centre[3*c+a] = v[a];
     grid.divergence[c] = v[3];
-    if (unsmoothed) grid.divergenceUnsmoothed[c] = v[4];
+    if (smoothed) grid.divergenceSmoothed[c] = v[4];
     grid.volume[c] = v[4+s];
     grid.weight[c] = v[5+s];
+    if (weightSmoothed) grid.weightSmoothed[c] = v[6+s];
     grid.nDisplacements[c] = (std::uint64_t)k[1];
     grid.nTracers[c] = (std::uint64_t)k[2];
     grid.voidIndex[c] = k[3];
