@@ -748,7 +748,7 @@ int main ()
       const double dy = kept.tracers[3*i+1] - x[1];
       const double dz = kept.tracers[3*i+2] - x[2];
       assigned = a.cellIndex[i] == c && v == g.voidIndex[(std::size_t)c] && o == g.overdenseIndex[(std::size_t)c] &&
-                 a.distance[i] == std::sqrt(dx*dx + dy*dy + dz*dz) && a.inMask[i] == 1 && a.inBox[i] == 1 &&
+                 a.distance[i] == std::sqrt(dx*dx + dy*dy + dz*dz) && a.inBox[i] == 1 &&
                  a.used[i] == 1;
     }
     check(assigned, "every tracer's cell, basin and distance");

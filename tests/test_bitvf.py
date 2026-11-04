@@ -276,7 +276,7 @@ def test_find_voids_box_from_divergence(tmp_path, capsys, verbosity):
     source = bitvf.find_voids_box(tracers, displacement, mps=7.0, box=box, config=kept("silent"), ids=ids)
     file = tmp_path / "divergence.fits"
     bitvf.io.write_divergence(file, source)
-    grid = bitvf.io.read_divergence(file, angle_unit="deg")
+    grid = bitvf.io.read_divergence(file)
     config = kept(verbosity)
     config.smoothing.sigma = 1.5
     r = bitvf.find_voids_box_from_divergence(grid, tracers, config=config, ids=ids)
@@ -597,8 +597,9 @@ def test_dtypes_and_shapes(result):
     assert v.centre_sky.shape == (0, 3)
     assert v.edge_flag.dtype == np.uint8 and v.n_tracers.dtype == np.uint64
     assert v.field_centre.shape == (0,)
-    for flag in (a.in_mask, a.in_box, a.used):
+    for flag in (a.in_box, a.used):
         assert flag.dtype == np.bool_ and flag.shape == (n,)
+    assert a.in_mask.dtype == np.bool_ and a.in_mask.shape == (0,)
     assert a.in_box.sum() == n - 4
     for flag in (result.uncorrected, result.outside_grid, result.outside_cut, g.masked):
         assert flag.dtype == np.bool_ and flag.shape == (0,)
@@ -726,6 +727,11 @@ def test_argument_errors(tmp_path):
           "verbosity must be \"silent\", \"normal\" or \"detailed\"; got 'loud'")
     error(lambda: bitvf.io.read_divergence(tmp_path / "x.fits", angle_unit="degrees"),
           "angle_unit must be \"deg\" or \"rad\"; got 'degrees'")
+    # PY14
+    divergence_file = tmp_path / "py14.fits"
+    bitvf.io.write_divergence(divergence_file, bitvf.find_voids_box(tracers, displacement, mps=7.0, config=kept("silent")))
+    error(lambda: bitvf.io.read_divergence(divergence_file, angle_unit="deg"),
+          "angle_unit must not be given for a box file; a box file holds no angles")
     error(lambda: bitvf.io.read_field("x.dat", centres=("a", "b", "c"), value="v", delimiter=",,"),
           "delimiter must be a single character; got ',,'")
     error(lambda: bitvf.io.read_field("x.dat", centres="abc", value="v"),

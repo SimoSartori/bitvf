@@ -130,7 +130,8 @@ namespace bitvf::io {
    *
    *  @exception Error
    *  - if the result is not a box result;
-   *  - if it is malformed: Config::divergenceCellSize empty (in a field
+   *  - if it is malformed, the message starting with "writeVoids: ":
+   *    Config::divergenceCellSize empty (in a field
    *    result, only when Result::mps is a number),
    *    Config::nRealizationsMean 0, a column of the catalogue not of
    *    nBasins entries (centre 3 * nBasins), centreSky not empty, a column
@@ -179,11 +180,13 @@ namespace bitvf::io {
    *  - if the result is not a box result, or holds no divergence grid
    *    (Config::keepDivergence);
    *  - if the grid fails the checks of a grid to reuse (see findVoidsBox),
-   *    the message starting with "cannot write the divergence: "; in a
+   *    the message starting with "writeDivergence: cannot write the
+   *    divergence: "; in a
    *    field result, which no search reuses, only if its cell side is not
    *    finite and positive, a bound of lower or upper is not finite, or
    *    nCells is not the product of nCellsAxis;
-   *  - if it is malformed: as writeVoids; a column of the grid not of
+   *  - if it is malformed, the message starting with "writeDivergence: ", as
+   *    writeVoids; a column of the grid not of
    *    nCells entries (centre 3 * nCells; divergenceSmoothed and
    *    weightSmoothed nCells or none); outside a field result, the mps,
    *    cellSizeMps or limits of the grid different from Result::mps,
@@ -201,7 +204,8 @@ namespace bitvf::io {
    *  Columns: id (K), Result::ids, or the row from 0 when it is empty;
    *  cellIndex (K); voidIndex (K); overdenseIndex (K); distance, from the
    *  centre of the tracer's basin, in coordinate units, NaN for a tracer
-   *  not in a basin; inMask (J); inBox (J), only when Result::limits is
+   *  not in a basin; inMask (J), only when TracerAssignment::inMask is
+   *  not empty (a lightcone); inBox (J), only when Result::limits is
    *  set; used (J), only when TracerAssignment::used is not empty (it is
    *  empty after findVoidsBoxFromDivergence); uncorrected (J), only when
    *  Result::uncorrected is not empty; outsideGrid (J), only when
@@ -216,7 +220,8 @@ namespace bitvf::io {
    *  @exception Error
    *  - if the result is not a box result, is a field result, or holds no
    *    tracer assignment (Config::keepAssignment);
-   *  - if it is malformed: Config::divergenceCellSize empty,
+   *  - if it is malformed, the message starting with "writeGalaxies: ":
+   *    Config::divergenceCellSize empty,
    *    Config::nRealizationsMean 0; ids, uncorrected or outsideGrid
    *    neither empty nor of nTracers entries; a column of the assignment
    *    not of nTracers entries;

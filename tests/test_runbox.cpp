@@ -331,24 +331,28 @@ int main ()
     const Result byHand = findVoidsBox(second, rsdConfig.voids, &grid);
     const TracerAssignment& h = *byHand.assignment;
 
-    std::size_t u = 0, g = 0, j = 0;
+    std::size_t u = 0, g = 0, j = 0, excludedOutside = 0;
     bool excludedRight = true, selectedRight = true, flagsRight = v.uncorrected.size() == N && v.outsideGrid.size() == N;
     for (std::size_t i = 0; i < N; ++i) {
       const bool moved = real.status[i] == otswap::CorrectionStatus::Corrected ||
                          real.status[i] == otswap::CorrectionStatus::MovedByNeighbours;
+      const bool firstOutside = rsdConfig.limits && !(in.tracers[3*i] >= rsdConfig.limits->lower[0] && in.tracers[3*i] <= rsdConfig.limits->upper[0] &&
+                                                      in.tracers[3*i+1] >= rsdConfig.limits->lower[1] && in.tracers[3*i+1] <= rsdConfig.limits->upper[1] &&
+                                                      in.tracers[3*i+2] >= rsdConfig.limits->lower[2] && in.tracers[3*i+2] <= rsdConfig.limits->upper[2]);
       const bool inGrid = moved && bitvf::internal::box_cell(grid, &real.cartesian[3*i]) >= 0;
       if (!moved) ++u;
       else if (!inGrid) ++g;
       flagsRight = flagsRight && v.uncorrected[i] == !moved && v.outsideGrid[i] == (moved && !inGrid);
       if (!inGrid) {
+        excludedOutside += firstOutside;
         excludedRight = excludedRight && a.cellIndex[i] == -1 && a.voidIndex[i] == -1 && a.overdenseIndex[i] == -1 &&
-                        std::isnan(a.distance[i]) && a.inMask[i] == 1 && a.inBox[i] == 1 && a.used[i] == 0;
+                        std::isnan(a.distance[i]) && a.inBox[i] == (firstOutside ? 0 : 1) && a.used[i] == 0;
         continue;
       }
       selectedRight = selectedRight && std::memcmp(&second.tracers[3*j], &real.cartesian[3*i], 3 * sizeof(double)) == 0 &&
                       second.ids[j] == in.ids[i] && a.cellIndex[i] == h.cellIndex[j] && a.voidIndex[i] == h.voidIndex[j] &&
                       a.overdenseIndex[i] == h.overdenseIndex[j] &&
-                      std::memcmp(&a.distance[i], &h.distance[j], sizeof(double)) == 0 && a.inMask[i] == h.inMask[j] &&
+                      std::memcmp(&a.distance[i], &h.distance[j], sizeof(double)) == 0 &&
                       a.inBox[i] == h.inBox[j] && a.used[i] == h.used[j];
       ++j;
     }
@@ -356,7 +360,7 @@ int main ()
           "the fixture has tracers uncorrected, moved out of the grid, and moved out of the box into the grid");
     check(second.nObjects == j && j == N - u - g, "the second reconstruction holds the selected rows, in input order");
     check(flagsRight, "uncorrected for the unmoved (LeftOut included), else outsideGrid for those outside the grid");
-    check(excludedRight, "excluded rows: -1, NaN, inMask and inBox 1, used 0");
+    check(excludedRight, "excluded rows: -1, NaN, the first pass's inBox, used 0");
     check(selectedRight, "selected rows: the corrected position, the input ID, the second search's assignment");
     check(same_catalog(v.voids, byHand.voids) && same_catalog(v.overdense, byHand.overdense),
           "the catalogues are the second search's on the first pass's grid");
@@ -365,9 +369,10 @@ int main ()
     for (const std::uint8_t b : a.inBox) inBoxZeros += b == 0;
     check(v.nTracers == N && v.ids == in.ids && v.counts.tracers == N && v.counts.tracersUncorrected == u &&
           v.counts.tracersOutsideGrid == g && v.counts.tracersUsed == byHand.counts.tracersUsed &&
-          v.counts.tracersOutsideBox == byHand.counts.tracersOutsideBox &&
+          v.counts.tracersOutsideBox == byHand.counts.tracersOutsideBox + excludedOutside &&
           v.counts.displacements == byHand.counts.displacements && inBoxZeros == v.counts.tracersOutsideBox,
           "nTracers, ids, counts; the inBox zeros equal tracersOutsideBox");
+    check(excludedOutside > 0 && a.inMask.empty(), "tracers outside the limits are among the excluded; no inMask in a box");
     check(v.outsideCut.empty() && v.randomSeed == derived, "no outsideCut in a box; randomSeed set");
   }
 
@@ -544,8 +549,8 @@ int main ()
       hashes[threads == 4][1] = result_hash(p.voids);
     }
     check(hashes[0][0] == hashes[1][0] && hashes[0][1] == hashes[1][1], "1 and 4 threads");
-    check(hashes[0][0] == 0x08d7a96a4e990a1full, "recorded hash, with correction");
-    check(hashes[0][1] == 0x01ab24d1c86b5ef4ull, "recorded hash, without");
+    check(hashes[0][0] == 0xa7daddf4a3f9e2f7ull, "recorded hash, with correction");
+    check(hashes[0][1] == 0x88d5155d01e89dc4ull, "recorded hash, without");
   }
 
   return report("test_runbox");

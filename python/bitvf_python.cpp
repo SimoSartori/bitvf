@@ -1077,7 +1077,7 @@ NB_MODULE(_bitvf, m)
       }, "Distance from the centre of the tracer's basin, in coordinate units; NaN when in none.")
     .def_prop_ro("in_mask", [] (AssignmentHandle self) {
         return rows<bool>(self, assignment_of(self).inMask);
-      }, "False when the tracer falls on an unobserved pixel; all True in a box.")
+      }, "False when the tracer falls on an unobserved pixel of the mask; (0,) in a box.")
     .def_prop_ro("in_box", [] (AssignmentHandle self) {
         return rows<bool>(self, assignment_of(self).inBox);
       }, "False when the tracer lies outside the box limits, and so was skipped.")
@@ -1455,13 +1455,22 @@ NB_MODULE(_bitvf, m)
   io.def("read_divergence",
       [] (nb::handle file, nb::handle angleUnit) {
         const std::string path = to_path(file, "file");
-        in_degrees(angleUnit);
-        nb::gil_scoped_release released;
-        return bitvf::io::readDivergence(path);
+        const bool given = !angleUnit.is_none();
+        if (given) in_degrees(angleUnit);
+        bitvf::DivergenceGrid grid;
+        {
+          nb::gil_scoped_release released;
+          grid = bitvf::io::readDivergence(path);
+        }
+        if (grid.geometry == otswap::Geometry::Box && given)
+          throw bitvf::Error("angle_unit must not be given for a box file; a box file holds no angles");
+        if (grid.geometry != otswap::Geometry::Box && !given)
+          throw bitvf::Error("angle_unit is required for a lightcone file");
+        return grid;
       },
-      "file"_a.none(), nb::kw_only(), "angle_unit"_a.none(),
-      "Read a divergence file written by write_divergence; angle_unit is that of a lightcone grid's "
-      "angles, unused by a box grid.");
+      "file"_a.none(), nb::kw_only(), "angle_unit"_a.none() = nb::none(),
+      "Read a divergence file written by write_divergence; angle_unit (\"deg\" or \"rad\") is that of a "
+      "lightcone grid's angles, required for a lightcone file and an error for a box file.");
 
   io.def("read_displacement_mean",
       [] (nb::handle file) {

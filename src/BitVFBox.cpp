@@ -151,8 +151,8 @@ namespace {
    */
   void map_back (bitvf::Result& result, const std::vector<std::size_t>& rows, const std::size_t N,
                  const std::vector<std::int64_t>& ids, std::vector<std::uint8_t>&& uncorrected,
-                 std::vector<std::uint8_t>&& outsideGrid, const std::size_t nUncorrected,
-                 const std::size_t nOutsideGrid)
+                 std::vector<std::uint8_t>&& outsideGrid, const std::vector<std::uint8_t>& firstOutsideBox,
+                 const std::size_t nUncorrected, const std::size_t nOutsideGrid)
   {
     result.nTracers = N;
     result.ids = ids;
@@ -161,6 +161,8 @@ namespace {
     result.counts.tracers = N;
     result.counts.tracersUncorrected = nUncorrected;
     result.counts.tracersOutsideGrid = nOutsideGrid;
+    for (std::size_t i = 0; i < N; ++i)
+      if (result.uncorrected[i] && firstOutsideBox[i]) ++result.counts.tracersOutsideBox;
 
     if (!result.assignment) return;
     const bitvf::TracerAssignment& from = *result.assignment;
@@ -169,8 +171,8 @@ namespace {
     to.voidIndex.assign(N, -1);
     to.overdenseIndex.assign(N, -1);
     to.distance.assign(N, std::numeric_limits<double>::quiet_NaN());
-    to.inMask.assign(N, 1);
     to.inBox.assign(N, 1);
+    for (std::size_t i = 0; i < N; ++i) to.inBox[i] = firstOutsideBox[i] ? 0 : 1;
     if (!from.used.empty()) to.used.assign(N, 0);
     for (std::size_t j = 0; j < rows.size(); ++j) {
       const std::size_t i = rows[j];
@@ -178,7 +180,6 @@ namespace {
       to.voidIndex[i] = from.voidIndex[j];
       to.overdenseIndex[i] = from.overdenseIndex[j];
       to.distance[i] = from.distance[j];
-      to.inMask[i] = from.inMask[j];
       to.inBox[i] = from.inBox[j];
       if (!from.used.empty()) to.used[i] = from.used[j];
     }
@@ -254,7 +255,14 @@ namespace {
       });
 
       report.lap();
-      std::vector<std::uint8_t> uncorrected(N, 0), outsideGrid(N, 0);
+      std::vector<std::uint8_t> uncorrected(N, 0), outsideGrid(N, 0), firstOutsideBox(N, 0);
+      if (config.limits)
+        for (std::size_t i = 0; i < N; ++i)
+          for (std::size_t k = 0; k < 3; ++k)
+            if (!(tracers[3*i+k] >= box.lower[k] && tracers[3*i+k] <= box.upper[k])) {
+              firstOutsideBox[i] = 1;
+              break;
+            }
       std::vector<std::size_t> rows;
       std::size_t nUncorrected = 0, nOutsideGrid = 0;
       for (std::size_t i = 0; i < N; ++i) {
@@ -295,7 +303,7 @@ namespace {
       voids.divergenceCellSize.reset();
       out.voids = findVoidsBox(second, voids, &grid);
       out.voids.randomSeed = randomSeed;
-      map_back(out.voids, rows, N, ids, std::move(uncorrected), std::move(outsideGrid), nUncorrected,
+      map_back(out.voids, rows, N, ids, std::move(uncorrected), std::move(outsideGrid), firstOutsideBox, nUncorrected,
                nOutsideGrid);
 
       if (config.keepReconstructions) {

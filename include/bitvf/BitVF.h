@@ -283,15 +283,17 @@ namespace bitvf {
    *  @par Rows of Result::voids
    *  The selected rows carry the search's values. An excluded row carries
    *  -1 in every index, NaN in TracerAssignment::distance, 0 in
-   *  TracerAssignment::used, 1 in TracerAssignment::inMask and
-   *  TracerAssignment::inBox, since the search did not skip it for the box;
-   *  and one flag, uncorrected before outsideGrid. A tracer outside the box
-   *  of the first reconstruction is uncorrected (LeftOut). Result::ids are
+   *  TracerAssignment::used, and the first reconstruction's value in
+   *  TracerAssignment::inBox (0 for a tracer outside BoxConfig::limits, 1
+   *  otherwise); and one flag, uncorrected before outsideGrid. A tracer
+   *  outside the box of the first reconstruction is uncorrected (LeftOut),
+   *  and uncorrected means only that the correction did not move it. Result::ids are
    *  the ids given, or empty when none. nTracers is N; Result::counts
    *  counts the input rows: tracers N; tracersUncorrected and
-   *  tracersOutsideGrid the rows flagged; tracersUsed, tracersOutsideBox
-   *  and displacements as the second search counted them among the
-   *  selected tracers.
+   *  tracersOutsideGrid the rows flagged; tracersOutsideBox the rows outside
+   *  the limits in the first reconstruction plus those the second search
+   *  found outside among the selected tracers; tracersUsed and displacements
+   *  as the second search counted them among the selected tracers.
    *
    *  @par Reports
    *  As the overload above, the correction at

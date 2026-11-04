@@ -93,19 +93,20 @@ namespace {
     return out.str();
   }
 
-  void check_size (const std::size_t size, const std::size_t expected, const std::string& field)
+  void check_size (const std::size_t size, const std::size_t expected, const std::string& field,
+                   const std::string& writer)
   {
     if (size != expected)
-      throw Error("cannot write " + field + ": it holds " + std::to_string(size) + " entries where " +
+      throw Error(writer + ": cannot write " + field + ": it holds " + std::to_string(size) + " entries where " +
                   std::to_string(expected) + " are expected");
   }
 
   template <typename T>
-  void check_int64 (const std::vector<T>& values, const std::string& field)
+  void check_int64 (const std::vector<T>& values, const std::string& field, const std::string& writer)
   {
     for (std::size_t i = 0; i < values.size(); ++i)
       if (values[i] > (T)std::numeric_limits<std::int64_t>::max())
-        throw Error("cannot write " + field + ": entry " + std::to_string(i) + " is " +
+        throw Error(writer + ": cannot write " + field + ": entry " + std::to_string(i) + " is " +
                     std::to_string(values[i]) + ", above the largest 64-bit integer");
   }
 
@@ -115,14 +116,14 @@ namespace {
     return result.nTracers == 0;
   }
 
-  void check_result (const bitvf::Result& result)
+  void check_result (const bitvf::Result& result, const std::string& writer)
   {
     if (result.geometry != otswap::Geometry::Box)
       throw Error("writing a lightcone result is not implemented");
     if (!result.config.divergenceCellSize && !(is_field(result) && std::isnan(result.mps)))
-      throw Error("the result is malformed: it records no divergence cell size");
+      throw Error(writer + ": the result is malformed: it records no divergence cell size");
     if (result.config.nRealizationsMean == 0)
-      throw Error("the result is malformed: it records 0 realizations averaged");
+      throw Error(writer + ": the result is malformed: it records 0 realizations averaged");
   }
 
   std::vector<Keyword> keywords (const std::string& product, const bitvf::Result& result,
@@ -190,23 +191,24 @@ namespace {
   }
 
   void write_catalog (const std::string& file, const bitvf::Result& result, const bitvf::BasinCatalog& cat,
-                      const std::string& name, const std::string& product)
+                      const std::string& name, const std::string& product,
+                      const std::string& writer)
   {
-    check_result(result);
+    check_result(result, writer);
     const bool field = is_field(result);
     const std::size_t n = cat.nBasins;
     const std::size_t nt = field ? 0 : n;
-    check_size(cat.centre.size(), 3 * n, name + ".centre");
-    check_size(cat.centreSky.size(), 0, name + ".centreSky");
-    check_size(cat.radius.size(), n, name + ".radius");
-    check_size(cat.radiusExt.size(), n, name + ".radiusExt");
-    check_size(cat.deltaAv.size(), nt, name + ".deltaAv");
-    check_size(cat.delta2Mps.size(), nt, name + ".delta2Mps");
-    check_size(cat.edgeFlag.size(), n, name + ".edgeFlag");
-    check_size(cat.contamination.size(), n, name + ".contamination");
-    check_size(cat.nTracers.size(), nt, name + ".nTracers");
-    check_size(cat.fieldCentre.size(), field ? n : 0, name + ".fieldCentre");
-    check_int64(cat.nTracers, name + ".nTracers");
+    check_size(cat.centre.size(), 3 * n, name + ".centre", writer);
+    check_size(cat.centreSky.size(), 0, name + ".centreSky", writer);
+    check_size(cat.radius.size(), n, name + ".radius", writer);
+    check_size(cat.radiusExt.size(), n, name + ".radiusExt", writer);
+    check_size(cat.deltaAv.size(), nt, name + ".deltaAv", writer);
+    check_size(cat.delta2Mps.size(), nt, name + ".delta2Mps", writer);
+    check_size(cat.edgeFlag.size(), n, name + ".edgeFlag", writer);
+    check_size(cat.contamination.size(), n, name + ".contamination", writer);
+    check_size(cat.nTracers.size(), nt, name + ".nTracers", writer);
+    check_size(cat.fieldCentre.size(), field ? n : 0, name + ".fieldCentre", writer);
+    check_int64(cat.nTracers, name + ".nTracers", writer);
 
     std::vector<Source> sources = {
       integer("index", "row of the basin", [] (std::size_t b) { return (std::int64_t)b; }),
@@ -263,7 +265,7 @@ std::string bitvf::io::fileName (const Product product, const std::string& direc
 
 void bitvf::io::writeVoids (const std::string& file, const Result& result)
 {
-  write_catalog(file, result, result.voids, "voids", "voids");
+  write_catalog(file, result, result.voids, "voids", "voids", "writeVoids");
 }
 
 
@@ -272,7 +274,7 @@ void bitvf::io::writeVoids (const std::string& file, const Result& result)
 
 void bitvf::io::writeOverdense (const std::string& file, const Result& result)
 {
-  write_catalog(file, result, result.overdense, "overdense", "overdense_basins");
+  write_catalog(file, result, result.overdense, "overdense", "overdense_basins", "writeOverdense");
 }
 
 
@@ -284,12 +286,12 @@ void bitvf::io::writeDivergence (const std::string& file, const Result& result)
   if (result.geometry != otswap::Geometry::Box)
     throw Error("writing a lightcone result is not implemented");
   if (!result.divergence)
-    throw Error("the result holds no divergence grid: set Config::keepDivergence");
-  check_result(result);
+    throw Error("writeDivergence: the result holds no divergence grid; run the search with the divergence grid kept");
+  check_result(result, "writeDivergence");
 
   const DivergenceGrid& grid = *result.divergence;
   const bool field = is_field(result);
-  const std::string cannot = "cannot write the divergence: ";
+  const std::string cannot = "writeDivergence: cannot write the divergence: ";
   if (field) {
     if (!std::isfinite(grid.cellSize) || grid.cellSize <= 0.)
       throw Error(cannot + "the grid has a cell size of " + std::to_string(grid.cellSize) +
@@ -318,22 +320,22 @@ void bitvf::io::writeDivergence (const std::string& file, const Result& result)
 
   const std::size_t n = grid.nCells;
   const std::size_t nt = field ? 0 : n;
-  check_size(grid.centre.size(), 3 * n, "divergence.centre");
-  check_size(grid.divergence.size(), n, "divergence.divergence");
+  check_size(grid.centre.size(), 3 * n, "divergence.centre", "writeDivergence");
+  check_size(grid.divergence.size(), n, "divergence.divergence", "writeDivergence");
   if (!grid.divergenceSmoothed.empty())
-    check_size(grid.divergenceSmoothed.size(), n, "divergence.divergenceSmoothed");
-  check_size(grid.volume.size(), n, "divergence.volume");
-  check_size(grid.weight.size(), n, "divergence.weight");
+    check_size(grid.divergenceSmoothed.size(), n, "divergence.divergenceSmoothed", "writeDivergence");
+  check_size(grid.volume.size(), n, "divergence.volume", "writeDivergence");
+  check_size(grid.weight.size(), n, "divergence.weight", "writeDivergence");
   if (!grid.weightSmoothed.empty())
-    check_size(grid.weightSmoothed.size(), n, "divergence.weightSmoothed");
-  check_size(grid.nDisplacements.size(), nt, "divergence.nDisplacements");
-  check_size(grid.nTracers.size(), nt, "divergence.nTracers");
-  check_size(grid.voidIndex.size(), n, "divergence.voidIndex");
-  check_size(grid.overdenseIndex.size(), n, "divergence.overdenseIndex");
-  check_int64(grid.nDisplacements, "divergence.nDisplacements");
-  check_int64(grid.nTracers, "divergence.nTracers");
+    check_size(grid.weightSmoothed.size(), n, "divergence.weightSmoothed", "writeDivergence");
+  check_size(grid.nDisplacements.size(), nt, "divergence.nDisplacements", "writeDivergence");
+  check_size(grid.nTracers.size(), nt, "divergence.nTracers", "writeDivergence");
+  check_size(grid.voidIndex.size(), n, "divergence.voidIndex", "writeDivergence");
+  check_size(grid.overdenseIndex.size(), n, "divergence.overdenseIndex", "writeDivergence");
+  check_int64(grid.nDisplacements, "divergence.nDisplacements", "writeDivergence");
+  check_int64(grid.nTracers, "divergence.nTracers", "writeDivergence");
 
-  const std::string malformed = "the result is malformed: ";
+  const std::string malformed = "writeDivergence: the result is malformed: ";
   if (!field) {
     if (grid.mps != result.mps)
       throw Error(malformed + "its divergence grid has an mps of " + exact(grid.mps) +
@@ -417,21 +419,21 @@ void bitvf::io::writeGalaxies (const std::string& file, const Result& result)
     throw Error("the result is a search on a field (findVoidsBoxFromField), which has no tracers: "
                 "it has no galaxies file");
   if (!result.assignment)
-    throw Error("the result holds no tracer assignment: set Config::keepAssignment");
-  check_result(result);
+    throw Error("writeGalaxies: the result holds no tracer assignment; run the search with the tracer assignment kept");
+  check_result(result, "writeGalaxies");
 
   const TracerAssignment& a = *result.assignment;
   const std::size_t n = result.nTracers;
-  if (!result.ids.empty()) check_size(result.ids.size(), n, "ids");
-  if (!result.uncorrected.empty()) check_size(result.uncorrected.size(), n, "uncorrected");
-  if (!result.outsideGrid.empty()) check_size(result.outsideGrid.size(), n, "outsideGrid");
-  check_size(a.cellIndex.size(), n, "assignment.cellIndex");
-  check_size(a.voidIndex.size(), n, "assignment.voidIndex");
-  check_size(a.overdenseIndex.size(), n, "assignment.overdenseIndex");
-  check_size(a.distance.size(), n, "assignment.distance");
-  check_size(a.inMask.size(), n, "assignment.inMask");
-  check_size(a.inBox.size(), n, "assignment.inBox");
-  if (!a.used.empty()) check_size(a.used.size(), n, "assignment.used");
+  if (!result.ids.empty()) check_size(result.ids.size(), n, "ids", "writeGalaxies");
+  if (!result.uncorrected.empty()) check_size(result.uncorrected.size(), n, "uncorrected", "writeGalaxies");
+  if (!result.outsideGrid.empty()) check_size(result.outsideGrid.size(), n, "outsideGrid", "writeGalaxies");
+  check_size(a.cellIndex.size(), n, "assignment.cellIndex", "writeGalaxies");
+  check_size(a.voidIndex.size(), n, "assignment.voidIndex", "writeGalaxies");
+  check_size(a.overdenseIndex.size(), n, "assignment.overdenseIndex", "writeGalaxies");
+  check_size(a.distance.size(), n, "assignment.distance", "writeGalaxies");
+  if (!a.inMask.empty()) check_size(a.inMask.size(), n, "assignment.inMask", "writeGalaxies");
+  check_size(a.inBox.size(), n, "assignment.inBox", "writeGalaxies");
+  if (!a.used.empty()) check_size(a.used.size(), n, "assignment.used", "writeGalaxies");
 
   const std::vector<std::int64_t>& ids = result.ids;
   std::vector<Source> sources = {
@@ -443,8 +445,8 @@ void bitvf::io::writeGalaxies (const std::string& file, const Result& result)
     integer("overdenseIndex", "row of the overdense basin of the tracer, -1 none",
             [&a] (std::size_t i) { return a.overdenseIndex[i]; }),
     real("distance", "distance from the centre of its basin, in coordinate units",
-         [&a] (std::size_t i) { return a.distance[i]; }),
-    flag("inMask", "0 on an unobserved pixel of the mask", a.inMask)};
+         [&a] (std::size_t i) { return a.distance[i]; })};
+  if (!a.inMask.empty()) sources.push_back(flag("inMask", "0 on an unobserved pixel of the mask", a.inMask));
   if (result.limits) sources.push_back(flag("inBox", "0 outside the box limits, skipped", a.inBox));
   if (!a.used.empty())
     sources.push_back(flag("used", "1 when a displacement of the tracer entered the divergence", a.used));

@@ -54,8 +54,8 @@ namespace {
   // The hashes of the catalogues and the assignment of the generated
   // input, cells of 1 and 0.5 mps, sigma 1 mps, recorded once. A different
   // value on some platform means results are not portable there.
-  constexpr std::uint64_t kRecordedHash1 = 0xbd6786210bbdd5eeull;
-  constexpr std::uint64_t kRecordedHash05 = 0x4fd2090bab4b52a4ull;
+  constexpr std::uint64_t kRecordedHash1 = 0x83688cdf6487890eull;
+  constexpr std::uint64_t kRecordedHash05 = 0x926c412455a8dac4ull;
 
   constexpr double kPi = 3.141592653589793;
   constexpr double kInf = std::numeric_limits<double>::infinity();
@@ -853,8 +853,8 @@ int main ()
     check(ok, "(6, 4, 9)");
   }
 
-  group("assignment: cell, void or overdense basin, distance from its centre (NaN when not read), inMask, "
-        "inBox, used");
+  group("assignment: cell, void or overdense basin, distance from its centre (NaN when not read), "
+        "inBox, used; no inMask in a box");
   {
     const std::size_t n = 4;
     DivergenceGrid g = cube(n, 1.);
@@ -890,8 +890,8 @@ int main ()
     check(as.distance[0] == distance(0, &cat.voids.centre[0]) &&
           as.distance[1] == distance(1, &cat.overdense.centre[0]) && std::isnan(as.distance[2]),
           "distance from the void, from the overdense basin, NaN when not read");
-    check(as.inMask == std::vector<std::uint8_t>{1, 1, 1} && as.inBox == search.inBox && as.used == div.used,
-          "inMask all 1, inBox and used passed through");
+    check(as.inMask.empty() && as.inBox == search.inBox && as.used == div.used,
+          "inMask empty in a box, inBox and used passed through");
   }
 
   group("the same catalogues and assignment with 1, 3 and 4 threads, and the recorded hashes");

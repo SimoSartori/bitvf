@@ -212,8 +212,7 @@ namespace {
       integer("cellIndex", 'K', [&a] (std::size_t i) { return a.cellIndex[i]; }),
       integer("voidIndex", 'K', [&a] (std::size_t i) { return a.voidIndex[i]; }),
       integer("overdenseIndex", 'K', [&a] (std::size_t i) { return a.overdenseIndex[i]; }),
-      real("distance", [&a] (std::size_t i) { return a.distance[i]; }),
-      integer("inMask", 'J', [&a] (std::size_t i) { return (std::int64_t)a.inMask[i]; })};
+      real("distance", [&a] (std::size_t i) { return a.distance[i]; })};
     if (r.limits) e.push_back(integer("inBox", 'J', [&a] (std::size_t i) { return (std::int64_t)a.inBox[i]; }));
     e.push_back(integer("used", 'J', [&a] (std::size_t i) { return (std::int64_t)a.used[i]; }));
     if (!r.uncorrected.empty())
@@ -615,69 +614,71 @@ int main ()
     };
 
     malformed([] (Result& b) { b.voids.centre.pop_back(); }, write_voids,
-              "cannot write voids.centre: it holds", "WR2, voids centre");
+              "writeVoids: cannot write voids.centre: it holds", "WR2, voids centre");
     malformed([] (Result& b) { b.voids.radius.push_back(1.); }, write_voids,
-              "cannot write voids.radius: it holds", "WR2, voids radius");
+              "writeVoids: cannot write voids.radius: it holds", "WR2, voids radius");
     malformed([] (Result& b) { b.overdense.centreSky = {1., 2.}; }, write_overdense,
-              "cannot write overdense.centreSky: it holds 2 entries where 0 are expected", "WR2, centreSky");
+              "writeOverdense: cannot write overdense.centreSky: it holds 2 entries where 0 are expected", "WR2, centreSky");
     malformed([] (Result& b) { b.overdense.nTracers.pop_back(); }, write_overdense,
-              "cannot write overdense.nTracers", "WR2, overdense nTracers");
+              "writeOverdense: cannot write overdense.nTracers", "WR2, overdense nTracers");
     malformed([] (Result& b) { b.voids.nTracers[1] = (std::size_t)std::numeric_limits<std::int64_t>::max() + 1; },
-              write_voids, "cannot write voids.nTracers: entry 1 is 9223372036854775808, above the largest",
+              write_voids, "writeVoids: cannot write voids.nTracers: entry 1 is 9223372036854775808, above the largest",
               "WR2, a count above 2^63 - 1");
     malformed([] (Result& b) { b.divergence->nDisplacements[2] = std::numeric_limits<std::uint64_t>::max(); },
-              write_divergence, "cannot write divergence.nDisplacements: entry 2 is", "WR2, nDispl too large");
-    malformed([] (Result& b) { b.ids.pop_back(); }, write_galaxies, "cannot write ids: it holds", "WR2, ids");
-    malformed([] (Result& b) { b.uncorrected = {0}; }, write_galaxies, "cannot write uncorrected", "WR2, uncorrected");
-    malformed([] (Result& b) { b.outsideGrid = {0, 1}; }, write_galaxies, "cannot write outsideGrid",
+              write_divergence, "writeDivergence: cannot write divergence.nDisplacements: entry 2 is", "WR2, nDispl too large");
+    malformed([] (Result& b) { b.ids.pop_back(); }, write_galaxies, "writeGalaxies: cannot write ids: it holds", "WR2, ids");
+    malformed([] (Result& b) { b.uncorrected = {0}; }, write_galaxies, "writeGalaxies: cannot write uncorrected", "WR2, uncorrected");
+    malformed([] (Result& b) { b.outsideGrid = {0, 1}; }, write_galaxies, "writeGalaxies: cannot write outsideGrid",
               "WR2, outsideGrid");
     malformed([] (Result& b) { b.assignment->distance.pop_back(); }, write_galaxies,
-              "cannot write assignment.distance", "WR2, assignment");
+              "writeGalaxies: cannot write assignment.distance", "WR2, assignment");
     malformed([] (Result& b) { b.assignment->inBox.clear(); }, write_galaxies,
-              "cannot write assignment.inBox", "WR2, inBox");
+              "writeGalaxies: cannot write assignment.inBox", "WR2, inBox");
     malformed([] (Result& b) { b.divergence->centre.push_back(0.); }, write_divergence,
-              "cannot write divergence.centre", "WR2, grid centre");
+              "writeDivergence: cannot write divergence.centre", "WR2, grid centre");
     malformed([] (Result& b) { b.divergence->weight.pop_back(); }, write_divergence,
-              "cannot write divergence.weight", "WR2, grid weight");
+              "writeDivergence: cannot write divergence.weight", "WR2, grid weight");
     malformed([] (Result& b) { b.divergence->divergenceSmoothed.pop_back(); }, write_divergence,
-              "cannot write divergence.divergenceSmoothed", "WR2, divergenceSmoothed");
+              "writeDivergence: cannot write divergence.divergenceSmoothed", "WR2, divergenceSmoothed");
     malformed([] (Result& b) { b.divergence->weightSmoothed.pop_back(); }, write_divergence,
-              "cannot write divergence.weightSmoothed", "WR2, weightSmoothed");
+              "writeDivergence: cannot write divergence.weightSmoothed", "WR2, weightSmoothed");
 
     malformed([] (Result& b) { b.divergence.reset(); }, write_divergence,
-              "the result holds no divergence grid: set Config::keepDivergence", "WR3");
+              "writeDivergence: the result holds no divergence grid; run the search with the divergence grid kept", "WR3");
     malformed([] (Result& b) { b.assignment.reset(); }, write_galaxies,
-              "the result holds no tracer assignment: set Config::keepAssignment", "WR4");
+              "writeGalaxies: the result holds no tracer assignment; run the search with the tracer assignment kept", "WR4");
 
     malformed([] (Result& b) { b.divergence->cellSizeMps = std::nextafter(b.divergence->cellSizeMps, 10.); },
-              write_divergence, "cannot write the divergence: the grid to reuse has a cell side of",
+              write_divergence, "writeDivergence: cannot write the divergence: the grid to reuse has a cell side of",
               "WR5, G9");
     malformed([] (Result& b) { b.divergence->nCells += 1; }, write_divergence,
-              "cannot write the divergence: the grid to reuse has", "WR5, G5");
+              "writeDivergence: cannot write the divergence: the grid to reuse has", "WR5, G5");
     malformed([] (Result& b) { b.divergence->raMin = 0.; }, write_divergence,
-              "cannot write the divergence: the grid to reuse is a box grid with a field of a lightcone grid",
+              "writeDivergence: cannot write the divergence: the grid to reuse is a box grid with a field of a lightcone grid",
               "WR5, G7");
 
     malformed([] (Result& b) { b.mps = std::nextafter(b.mps, 20.); }, write_divergence,
-              "the result is malformed: its divergence grid has an mps of", "WR6, mps");
+              "writeDivergence: the result is malformed: its divergence grid has an mps of", "WR6, mps");
     malformed([] (Result& b) { b.config.divergenceCellSize = 2. * *b.config.divergenceCellSize; },
-              write_divergence, "the result is malformed: its divergence grid has a cell size of", "WR6, cell size");
+              write_divergence, "writeDivergence: the result is malformed: its divergence grid has a cell size of", "WR6, cell size");
     malformed([] (Result& b) { b.limits.reset(); }, write_divergence,
-              "the result is malformed: the box limits of its divergence grid differ", "WR6, limits absent");
+              "writeDivergence: the result is malformed: the box limits of its divergence grid differ", "WR6, limits absent");
     malformed([] (Result& b) { b.limits->upper[1] = std::nextafter(b.limits->upper[1], 200.); }, write_divergence,
-              "the result is malformed: the box limits of its divergence grid differ", "WR6, one bound");
+              "writeDivergence: the result is malformed: the box limits of its divergence grid differ", "WR6, one bound");
     malformed([] (Result& b) { b.divergence->nRealizations += 1; }, write_divergence,
-              "the result is malformed: its divergence grid records 3 realizations, but the search's are 2",
+              "writeDivergence: the result is malformed: its divergence grid records 3 realizations, but the search's are 2",
               "WR6, nRealizations");
     malformed([] (Result& b) { b.config.nRealizationsMean = 4; }, write_divergence,
-              "the result is malformed: its divergence grid records 3 realizations averaged, but its "
+              "writeDivergence: the result is malformed: its divergence grid records 3 realizations averaged, but its "
               "configuration records 4", "WR6, nRealizationsMean");
 
-    for (auto write : {write_voids, write_overdense, write_divergence, write_galaxies}) {
-      malformed([] (Result& b) { b.config.divergenceCellSize.reset(); }, write,
-                "the result is malformed: it records no divergence cell size", "WR7");
-      malformed([] (Result& b) { b.config.nRealizationsMean = 0; }, write,
-                "the result is malformed: it records 0 realizations averaged", "WR10");
+    for (auto writer : {std::make_pair(write_voids, "writeVoids"), std::make_pair(write_overdense, "writeOverdense"),
+                        std::make_pair(write_divergence, "writeDivergence"),
+                        std::make_pair(write_galaxies, "writeGalaxies")}) {
+      malformed([] (Result& b) { b.config.divergenceCellSize.reset(); }, writer.first,
+                std::string(writer.second) + ": the result is malformed: it records no divergence cell size", "WR7");
+      malformed([] (Result& b) { b.config.nRealizationsMean = 0; }, writer.first,
+                std::string(writer.second) + ": the result is malformed: it records 0 realizations averaged", "WR10");
     }
 
     throws_naming([] { io::fileName(io::Product::Voids, "dir", "", false); }, "the file name is empty", "WR8");
@@ -775,18 +776,18 @@ int main ()
       return bad;
     };
     refused(write_divergence, changed(f, [] (Result& b) { b.divergence->cellSize = -1.; }),
-            "cannot write the divergence: the grid has a cell size of", "WR12 cell side");
+            "writeDivergence: cannot write the divergence: the grid has a cell size of", "WR12 cell side");
     refused(write_divergence, changed(f, [] (Result& b) {
               b.divergence->upper[1] = std::numeric_limits<double>::infinity(); }),
-            "cannot write the divergence: the grid has a bound that is not finite on axis y", "WR12 bound");
+            "writeDivergence: cannot write the divergence: the grid has a bound that is not finite on axis y", "WR12 bound");
     refused(write_divergence, changed(f, [] (Result& b) { b.divergence->nCellsAxis[2] += 1; }),
             "cells for (", "WR12 counts");
     refused(write_voids, changed(f, [] (Result& b) { b.voids.deltaAv.assign(b.voids.nBasins, 0.); }),
-            "cannot write voids.deltaAv", "WR13 deltaAv");
+            "writeVoids: cannot write voids.deltaAv", "WR13 deltaAv");
     refused(write_overdense, changed(f, [] (Result& b) { b.overdense.nTracers.assign(b.overdense.nBasins, 1); }),
-            "cannot write overdense.nTracers", "WR13 nTracers");
+            "writeOverdense: cannot write overdense.nTracers", "WR13 nTracers");
     refused(write_voids, changed(f, [] (Result& b) { b.voids.fieldCentre.pop_back(); }),
-            "cannot write voids.fieldCentre", "WR13 fieldCentre short");
+            "writeVoids: cannot write voids.fieldCentre", "WR13 fieldCentre short");
     refused(write_voids, changed(m, [] (Result& b) { b.config.divergenceCellSize.reset(); }),
             "it records no divergence cell size", "WR13 with mps, no cell size");
     refused(write_voids, changed(r, [] (Result& b) { b.voids.fieldCentre.assign(b.voids.nBasins, 0.); }),

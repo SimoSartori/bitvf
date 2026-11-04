@@ -577,8 +577,8 @@ class TracerAssignment:
         (not read by the search)."""
     @property
     def in_mask(self) -> NDArray[np.bool_]:
-        """False when the tracer falls on an unobserved pixel of the mask;
-        all True in a box."""
+        """False when the tracer falls on an unobserved pixel of the mask.
+        Shape (0,) in a box."""
     @property
     def in_box(self) -> NDArray[np.bool_]:
         """False for a tracer outside the box limits, which was skipped; all
@@ -1232,8 +1232,9 @@ def run_box(tracers: ArrayLike, randoms: Optional[ArrayLike] = None, *, config: 
         The voids, and as ``config`` asks the redshift-space voids, the two
         reconstructions and the corrected catalogue. In ``voids``, a row
         excluded from the second pass carries -1 in every index, NaN in
-        ``TracerAssignment.distance``, False in ``used`` and True in
-        ``in_mask`` and ``in_box``, and one flag, ``uncorrected`` before
+        ``TracerAssignment.distance``, False in ``used`` and, in ``in_box``,
+        the first reconstruction's value (False for a tracer outside the
+        box limits, True otherwise), and one flag, ``uncorrected`` before
         ``outside_grid``; ``Result.counts`` counts the input rows.
 
     Raises

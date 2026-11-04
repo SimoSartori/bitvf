@@ -341,7 +341,6 @@ bitvf::TracerAssignment bitvf::internal::box_assignment (const BoxSearch& search
   result.voidIndex.resize((std::size_t)N);
   result.overdenseIndex.resize((std::size_t)N);
   result.distance.resize((std::size_t)N);
-  result.inMask.assign((std::size_t)N, 1);
   result.inBox = search.inBox;
   result.used = div.used;
 

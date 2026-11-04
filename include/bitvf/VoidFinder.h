@@ -598,12 +598,12 @@ namespace bitvf {
     /// basin (not read by the search).
     std::vector<double> distance;
 
-    /// 0 when the tracer falls on an unobserved pixel of the mask; all 1 in
-    /// a box.
+    /// Lightcone: 0 when the tracer falls on an unobserved pixel of the
+    /// mask. Empty in a box.
     std::vector<std::uint8_t> inMask;
 
-    /// 0 when the tracer lies outside the box limits, and so was skipped;
-    /// all 1 without limits and in a lightcone.
+    /// Box: 0 when the tracer lies outside the box limits, and so was
+    /// skipped; all 1 without limits.
     std::vector<std::uint8_t> inBox;
 
     /// 1 when at least one valid displacement of the tracer entered the

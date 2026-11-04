@@ -113,7 +113,6 @@ and can be reused by another search.
 | `voidIndex` | K | row of the void of the tracer, -1 none |
 | `overdenseIndex` | K | row of the overdense basin of the tracer, -1 none |
 | `distance` | D | distance from the centre of its basin, in coordinate units; NaN when in none |
-| `inMask` | J | 0 on an unobserved pixel of the mask; 1 in a box |
 | `inBox` | J | 0 outside the box limits, skipped; only when the search had limits |
 | `used` | J | 1 when a displacement of the tracer entered the divergence; not after a search from a divergence |
 | `uncorrected` | J | 1 when left unmoved by the redshift-space correction, excluded; only in the real-space pass of a run with correction |

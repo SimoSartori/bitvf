@@ -168,8 +168,9 @@ def write_divergence(file: Path, result: Result) -> None:
         If the result is not a box result, or holds no divergence grid.
     Error
         If the grid fails the checks of a grid to reuse, the message starting
-        with ``"cannot write the divergence: "``; or if the result is
-        malformed.
+        with ``"writeDivergence: cannot write the divergence: "``; or if
+        the result is malformed, the message starting with
+        ``"writeDivergence: "``.
     Error
         If the file cannot be written: the message starts with
         ``"otswap: "``.
@@ -182,7 +183,7 @@ def write_galaxies(file: Path, result: Result) -> None:
 
     Columns: id (K), ``Result.ids``; cellIndex (K); voidIndex (K);
     overdenseIndex (K); distance, from the centre of the tracer's basin, NaN
-    for a tracer in no basin; inMask (J); inBox (J), only when
+    for a tracer in no basin; inMask (J), only for a lightcone; inBox (J), only when
     ``Result.limits`` is set; used (J), except after
     ``find_voids_box_from_divergence``; uncorrected (J) and outsideGrid (J),
     only when those flags are filled. Keywords as in the module description,
@@ -266,7 +267,7 @@ class Field:
         was named, so that it passes straight to ``weights=``."""
 
 
-def read_divergence(file: Path, *, angle_unit: str) -> DivergenceGrid:
+def read_divergence(file: Path, *, angle_unit: Optional[str] = None) -> DivergenceGrid:
     """Read a divergence file written by ``write_divergence``.
 
     Every field the writer wrote is read back bit for bit, in both formats:
@@ -282,9 +283,9 @@ def read_divergence(file: Path, *, angle_unit: str) -> DivergenceGrid:
     ----------
     file : str or os.PathLike
         A divergence file, ASCII or FITS.
-    angle_unit : {"deg", "rad"}
-        The unit of a lightcone grid's angles; unused by a box grid, but
-        required.
+    angle_unit : {"deg", "rad"}, optional
+        The unit of a lightcone grid's angles: required for a lightcone
+        file, an error for a box file, which holds no angles.
 
     Returns
     -------
@@ -294,6 +295,9 @@ def read_divergence(file: Path, *, angle_unit: str) -> DivergenceGrid:
     ------
     Error
         If ``angle_unit`` is neither ``"deg"`` nor ``"rad"``.
+    Error
+        If ``angle_unit`` is given for a box file, or missing for a
+        lightcone file.
     Error
         If the file cannot be read, or lacks a column: the message starts
         with ``"otswap: "``.
