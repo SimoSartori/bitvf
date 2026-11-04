@@ -267,35 +267,39 @@ namespace bitvf {
      *  @brief Check box limits: every bound finite, each lower bound below
      *  the upper one.
      *  @param name the name of the limits in the messages, plural
+     *  @param fn the public function that starts the messages; empty for limits the user gave
      *  @exception Error on the first bound that fails
      */
-    void check_limits (const otswap::BoxLimits& limits, const std::string& name);
+    void check_limits (const otswap::BoxLimits& limits, const std::string& name, const std::string& fn = "");
 
     /**
      *  @brief Check a flat array of Cartesian coordinates, every entry.
      *  @param name the name of the array in the messages
+     *  @param fn the public function that starts the messages about the size
      *  @param allowEmpty whether an empty array is accepted
      *  @return the number of rows
      *  @exception Error if the array is empty and may not be, if its size
      *  is not a multiple of three, or on the first entry not finite
      */
-    std::size_t check_coordinates (const std::vector<double>& a, const std::string& name, bool allowEmpty);
+    std::size_t check_coordinates (const std::vector<double>& a, const std::string& name, bool allowEmpty,
+                                   const std::string& fn);
 
     /**
      *  @brief Check the IDs of the tracers: one per tracer, or none, and no
      *  value twice.
-     *  @param name the name of the IDs in the messages
+     *  @param fn the public function that starts the messages
+     *  @param fromResult whether the IDs are a reconstruction's (the message then names it)
      *  @exception Error on a wrong size, or on the first value held twice
      */
-    void check_ids (const std::vector<std::int64_t>& ids, std::size_t nTracers, const std::string& name);
+    void check_ids (const std::vector<std::int64_t>& ids, std::size_t nTracers, const std::string& fn, bool fromResult);
 
     /**
-     *  @brief Check the box of a box reconstruction (otswap::Result::box):
+     *  @brief Check the box of a box reconstruction (otswap::Result::box), for the public function fn:
      *  present, every bound finite, no lower bound above the upper one,
      *  and equal to otswap::SelectionCounts::boxLimits when those are set.
      *  @exception Error, as a malformed reconstruction
      */
-    void check_reconstruction_box (const otswap::Result& reconstruction);
+    void check_reconstruction_box (const otswap::Result& reconstruction, const std::string& fn);
 
     /**
      *  @brief Check the configuration of a search.
@@ -311,11 +315,12 @@ namespace bitvf {
      *  before it is written.
      *  @param mps the mps of the search
      *  @param mpsMustMatch whether mps must equal grid.mps, bit for bit
-     *  @param name the name of the grid that starts the messages
+     *  @param fn the public function that starts the messages; empty when the caller adds its own
+     *  @param name the name of the grid in the messages
      *  @exception Error on an inconsistent field, or on a different mps
      *  when it must match
      */
-    void check_box_grid (const DivergenceGrid& grid, double mps, bool mpsMustMatch,
+    void check_box_grid (const DivergenceGrid& grid, double mps, bool mpsMustMatch, const std::string& fn,
                          const std::string& name = "the grid to reuse");
 
     //==========================================================================

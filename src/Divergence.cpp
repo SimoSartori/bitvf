@@ -222,7 +222,7 @@ bitvf::internal::BoxDivergence bitvf::internal::box_divergence (const BoxSearch&
   const SweepErrors errors = sweep(search, grid, result, numerator, q, true);
 
   if (errors.outside != kNone)
-    throw Error("the valid displacement of tracer " + std::to_string(errors.outside / R) +
+    throw Error("findVoidsBox: the valid displacement of tracer " + std::to_string(errors.outside / R) +
                 " in realization " + std::to_string(errors.outside % R) + " ends outside every "
                 "cell of the grid, which spans the box limits (with an otswap result, its box) or "
                 "the reused grid; the tracers and the displacement do not come from one "

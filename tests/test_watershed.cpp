@@ -665,14 +665,14 @@ int main ()
   group("watershedBox errors WS1-WS3");
   {
     const std::vector<double> field(2 * 3 * 4, -1.);
-    throws_naming([&] { watershedBox(field, {2, 0, 4}); }, "nCellsAxis is (2, 0, 4); every count must be at least 1",
+    throws_naming([&] { watershedBox(field, {2, 0, 4}); }, "the number of cells along each axis is (2, 0, 4); every count must be at least 1",
                   "WS1");
-    throws_naming([&] { watershedBox(field, {2, 3, 5}); }, "field holds 24 entries for (2, 3, 5) cells", "WS2");
+    throws_naming([&] { watershedBox(field, {2, 3, 5}); }, "watershedBox: field holds 24 entries for (2, 3, 5) cells", "WS2");
     throws_naming([&] { watershedBox(field, {(std::size_t)1 << 40, (std::size_t)1 << 40, 1}); }, "field holds 24",
                   "WS2, a product that overflows");
     std::vector<double> bad = field;
     bad[9] = std::numeric_limits<double>::infinity();
-    throws_naming([&] { watershedBox(bad, {2, 3, 4}); }, "field holds a non-finite value at entry 9", "WS3");
+    throws_naming([&] { watershedBox(bad, {2, 3, 4}); }, "the field holds a non-finite value at entry 9", "WS3");
   }
 
   return report("test_watershed");

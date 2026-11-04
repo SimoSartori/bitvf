@@ -712,7 +712,7 @@ def test_argument_errors(tmp_path):
           "weights is empty; omit it for unit weights")
     # PY4, PY5
     error(lambda: f(tracers, displacement, valid * 2, mps=7.0),
-          "valid holds 2.000000 at entry 1; every entry must be 0 or 1")
+          "the validity flags hold 2.000000 at entry 1; each must be 0 or 1")
     error(lambda: f(tracers, displacement, mps=7.0, ids=np.full(n, 0.5)),
           "ids holds 0.500000 at entry 0; every entry must be a 64-bit integer")
     error(lambda: f(tracers, displacement, mps=7.0, ids=["a"] * n),
@@ -761,7 +761,7 @@ def test_form_errors(reconstruction):
 # prefixed.
 def test_library_errors():
     tracers, displacement, _, _, _ = translated()
-    with pytest.raises(bitvf.Error, match="mps"):
+    with pytest.raises(bitvf.Error, match="mean particle separation"):
         bitvf.find_voids_box(tracers, displacement, mps=-1.0, config=quiet())
     error(lambda: bitvf.run_box(tracers, config=bitvf.BoxConfig(ot=otswap.Config(convergence=2.0), voids=quiet())),
           "otswap: the convergence threshold is 2.000000; it must lie strictly between 0 and 1")

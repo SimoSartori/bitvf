@@ -56,23 +56,24 @@ namespace {
   {
     using bitvf::Error;
 
-    bitvf::internal::check_coordinates(tracers, "tracers", false);
-    bitvf::internal::check_coordinates(randoms, "the random array", true);
-    bitvf::internal::check_ids(ids, tracers.size() / 3, "ids");
+    bitvf::internal::check_coordinates(tracers, "tracers", false, "runBox");
+    bitvf::internal::check_coordinates(randoms, "the random array", true, "runBox");
+    bitvf::internal::check_ids(ids, tracers.size() / 3, "runBox", false);
     if (config.limits) bitvf::internal::check_limits(*config.limits, "the box limits");
     if (config.mps && (!std::isfinite(*config.mps) || *config.mps <= 0.))
-      throw Error("mps is " + std::to_string(*config.mps) + " in coordinate units; it must be finite and positive");
+      throw Error("the mean particle separation is " + std::to_string(*config.mps) +
+                  " in coordinate units; it must be finite and positive");
     if (config.ot.nRealizations == 0)
       throw Error("the number of realizations is 0; it must be at least 1");
     bitvf::internal::check_config(config.voids, false);
 
     if (config.rsd) {
       if (distances == nullptr)
-        throw Error("the correction of redshift-space distortions (config.rsd) needs a distance table carrying "
-                    "the growth rate; call runBox with distances");
+        throw Error("the correction of redshift-space distortions needs a distance table that carries "
+                    "the growth rate, and none was given");
       const bitvf::BoxRsd& rsd = *config.rsd;
       if (!rsd.axis)
-        throw Error("the line-of-sight axis (BoxRsd::axis) is not set; it must be 0, 1 or 2");
+        throw Error("the line-of-sight axis is not set; it must be 0, 1 or 2");
       if (*rsd.axis > 2)
         throw Error("the line-of-sight axis is " + std::to_string(*rsd.axis) + "; it must be 0, 1 or 2");
       if (!std::isfinite(rsd.sigma) || rsd.sigma < 0.)
@@ -95,7 +96,7 @@ namespace {
       if (!(box.lower[k] < box.upper[k]))
         throw Error(std::string(randoms.empty() ? "the tracers span" : "the tracers and the given randoms span") +
                     " no volume (all of them in one plane, on one line or at one point), so they fix no box; "
-                    "give the box limits (BoxConfig::limits)");
+                    "give the box limits");
     return box;
   }
 

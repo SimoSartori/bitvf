@@ -310,7 +310,7 @@ void bitvf::io::writeDivergence (const std::string& file, const Result& result)
   }
   else
     try {
-      internal::check_box_grid(grid, result.mps, false);
+      internal::check_box_grid(grid, result.mps, false, "");
     }
     catch (const Error& e) {
       throw Error(cannot + e.what());

@@ -337,7 +337,7 @@ int main ()
     bad = limits;
     bad.upper[2] = bad.lower[2];
     throws_naming([&] { boxGrid(bad, 1., 1.); }, "the box limits are [", "GB1 lower not below upper");
-    throws_naming([&] { boxGrid(limits, -1., 1.); }, "mps is ", "GB2");
+    throws_naming([&] { boxGrid(limits, -1., 1.); }, "the mean particle separation is ", "GB2");
     throws_naming([&] { boxGrid(limits, 1., 0.); }, "the divergence cell size is ", "GB3");
     auto from = [&rec] (auto&& change) {
       otswap::Result r = rec;
@@ -345,11 +345,11 @@ int main ()
       return r;
     };
     throws_naming([&] { boxGrid(from([] (otswap::Result& r) { r.geometry = otswap::Geometry::Lightcone; })); },
-                  "the reconstruction is not a box result", "GB4");
+                  "boxGrid: the reconstruction is not a box result", "GB4");
     throws_naming([&] { boxGrid(from([] (otswap::Result& r) { r.nRealizations = 0; })); },
-                  "it holds no realizations", "GB5");
+                  "boxGrid: the reconstruction is malformed: it holds no realizations", "GB5");
     throws_naming([&] { boxGrid(from([] (otswap::Result& r) { r.box.reset(); })); },
-                  "it holds no box", "GB6 no box");
+                  "boxGrid: the reconstruction is malformed: it holds no box", "GB6 no box");
     throws_naming([&] { boxGrid(from([&nan] (otswap::Result& r) { r.box->upper[0] = nan; })); },
                   "has a bound of", "GB6 not finite");
     throws_naming([&] { boxGrid(from([] (otswap::Result& r) { r.box->lower[2] = r.box->upper[2] + 1.;
@@ -358,7 +358,7 @@ int main ()
     throws_naming([&] { boxGrid(from([] (otswap::Result& r) { r.box->upper[1] += 1.; })); },
                   "differs from its box limits", "GB6 differs from the limits");
     throws_naming([&] { boxGrid(from([&nan] (otswap::Result& r) { r.mps = nan; })); },
-                  "the reconstruction's mps is ", "GB7");
+                  "boxGrid: the reconstruction's mps is ", "GB7");
     throws_naming([&] { boxGrid(rec, -2.); }, "the divergence cell size is ", "GB8");
     otswap::BoxLimits huge;
     huge.lower = {0., 0., 0.};

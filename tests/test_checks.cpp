@@ -255,21 +255,21 @@ int main ()
   {
     Input in;
     in.tracers.clear();
-    throws_naming([&] { in.run(); }, "tracers is empty", "T1");
+    throws_naming([&] { in.run(); }, "findVoidsBox: tracers is empty", "T1");
 
     Input bad;
     bad.tracers.push_back(1.);
-    throws_naming([&] { bad.run(); }, "not a multiple of three", "T2");
+    throws_naming([&] { bad.run(); }, "findVoidsBox: tracers holds", "T2");
 
     Input nan;
     nan.tracers[5] = kNaN;
-    throws_naming([&] { nan.run(); }, "tracers holds a non-finite value at entry 5", "T3");
+    throws_naming([&] { nan.run(); }, "the tracers hold a non-finite value at entry 5", "T3");
 
     Input outside;
     outside.limits = box(0., 50.);
     outside.tracers[0] = 200.;
     outside.tracers[1] = kNaN;
-    throws_naming([&] { outside.run(); }, "tracers holds a non-finite",
+    throws_naming([&] { outside.run(); }, "the tracers hold a non-finite",
                   "T3 reads the rows outside the limits");
   }
 
@@ -277,7 +277,7 @@ int main ()
   {
     Input empty;
     empty.displacement.clear();
-    throws_naming([&] { empty.run(); }, "displacement holds 0 entries", "D1, empty");
+    throws_naming([&] { empty.run(); }, "findVoidsBox: displacement holds 0 entries", "D1, empty");
 
     Input partial;
     partial.displacement.push_back(0.);
@@ -303,18 +303,18 @@ int main ()
   {
     Input in;
     in.valid.pop_back();
-    throws_naming([&] { in.run(); }, "valid holds 399 entries", "V1");
+    throws_naming([&] { in.run(); }, "findVoidsBox: valid holds 399 entries", "V1");
 
     Input two;
     two.valid[7] = 2;
-    throws_naming([&] { two.run(); }, "valid holds 2 at entry 7", "V2");
+    throws_naming([&] { two.run(); }, "the validity flags hold 2 at entry 7", "V2");
   }
 
   group("mps: finite and positive");
   for (const double mps : {0., -1., kNaN, std::numeric_limits<double>::infinity()}) {
     Input in;
     in.mps = mps;
-    throws_naming([&] { in.run(); }, "mps is", "M1");
+    throws_naming([&] { in.run(); }, "the mean particle separation is", "M1");
   }
 
   group("the limits: finite, lower below upper; a point on a face is inside");
@@ -342,7 +342,7 @@ int main ()
   {
     Input in;
     in.ids.assign(kN - 1, 0);
-    throws_naming([&] { in.run(); }, "ids holds 199 entries", "I1");
+    throws_naming([&] { in.run(); }, "findVoidsBox: ids holds 199 entries", "I1");
 
     Input twice;
     for (std::size_t i = 0; i < kN; ++i) twice.ids.push_back((std::int64_t)i - 100);
@@ -567,12 +567,12 @@ int main ()
     with([] (otswap::Result& r) { r.outsideBox.assign(3, 0); }, "malformed: outsideBox",
          "O2, outsideBox");
     with([] (otswap::Result& r) { r.ids.assign(3, 0); }, "malformed: ids", "O2, ids");
-    with([] (otswap::Result& r) { r.valid[0] = 3; }, "the reconstruction's valid holds 3", "O3");
+    with([] (otswap::Result& r) { r.valid[0] = 3; }, "findVoidsBox: the reconstruction's validity flags hold 3", "O3");
     with([] (otswap::Result& r) { r.ids.assign(kN, 5); }, "twice", "O3, ids");
     with([] (otswap::Result& r) { r.tracers[4] = kNaN; }, "the reconstruction's tracers",
          "O4, tracers");
     with([] (otswap::Result& r) { r.displacement[4] = kNaN; },
-         "the reconstruction's displacement", "O4, displacement");
+         "findVoidsBox: the reconstruction's displacements hold a non-finite", "O4, displacement");
     with([] (otswap::Result& r) { r.mps = kNaN; }, "the reconstruction's mps", "O5");
     with([] (otswap::Result& r) { r.selection.boxLimits = box(5., 1.); },
          "the reconstruction's box limits", "O6");

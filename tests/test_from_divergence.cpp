@@ -169,7 +169,7 @@ int main ()
     throws_naming([&] { Config x = c; x.divergenceCellSize = 1.; findVoidsBoxFromDivergence(d, in.tracers, x); },
                   "the divergence cell size is set for a search from a divergence", "FD2 cell size");
     throws_naming([&] { DivergenceGrid x = d; x.nCellsAxis[2] -= 1; findVoidsBoxFromDivergence(x, in.tracers, c); },
-                  "the divergence grid has ", "FD3 non-cubic");
+                  "findVoidsBoxFromDivergence: the divergence grid has ", "FD3 non-cubic");
     throws_naming([&] { DivergenceGrid x = d; x.geometry = otswap::Geometry::Lightcone;
                         findVoidsBoxFromDivergence(x, in.tracers, c); },
                   "the divergence grid is not a box grid", "FD3 lightcone");

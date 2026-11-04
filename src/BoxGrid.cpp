@@ -156,7 +156,8 @@ bitvf::DivergenceGrid bitvf::boxGrid (const otswap::BoxLimits& box, const double
   internal::check_limits(box, "the box limits");
 
   if (!std::isfinite(mps) || mps <= 0.)
-    throw Error("mps is " + std::to_string(mps) + " in coordinate units; it must be finite and positive");
+    throw Error("the mean particle separation is " + std::to_string(mps) +
+                " in coordinate units; it must be finite and positive");
 
   if (!std::isfinite(divergenceCellSize) || divergenceCellSize <= 0.)
     throw Error("the divergence cell size is " + std::to_string(divergenceCellSize) +
@@ -178,15 +179,15 @@ bitvf::DivergenceGrid bitvf::boxGrid (const otswap::Result& reconstruction,
   const otswap::Result& rec = reconstruction;
 
   if (rec.geometry != otswap::Geometry::Box)
-    throw Error("the reconstruction is not a box result; use the lightcone grid builder");
+    throw Error("boxGrid: the reconstruction is not a box result; use the lightcone grid builder");
 
   if (rec.nRealizations == 0)
-    throw Error("the reconstruction is malformed: it holds no realizations");
+    throw Error("boxGrid: the reconstruction is malformed: it holds no realizations");
 
-  internal::check_reconstruction_box(rec);
+  internal::check_reconstruction_box(rec, "boxGrid");
 
   if (!std::isfinite(rec.mps) || rec.mps <= 0.)
-    throw Error("the reconstruction's mps is " + std::to_string(rec.mps) +
+    throw Error("boxGrid: the reconstruction's mps is " + std::to_string(rec.mps) +
                 " in coordinate units; it must be finite and positive");
 
   if (divergenceCellSize && (!std::isfinite(*divergenceCellSize) || *divergenceCellSize <= 0.))

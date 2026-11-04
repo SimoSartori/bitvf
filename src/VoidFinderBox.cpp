@@ -361,7 +361,7 @@ bitvf::Result bitvf::findVoidsBoxFromDivergence (const DivergenceGrid& divergenc
   if (!divergence.nTracers.empty())
     for (std::size_t c = 0; c < cells.nCells; ++c)
       if (cells.nTracers[c] != divergence.nTracers[c])
-        throw Error("the tracers do not match the divergence: cell " + std::to_string(c) + " holds " +
+        throw Error("findVoidsBoxFromDivergence: the tracers do not match the divergence: cell " + std::to_string(c) + " holds " +
                     std::to_string(cells.nTracers[c]) + " of the tracers read, but the grid's nTracers is " +
                     std::to_string(divergence.nTracers[c]) + "; pass the tracers of the search that produced the field");
   if (report.detailed()) {

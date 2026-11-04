@@ -401,21 +401,21 @@ int main ()
     const std::vector<double>& v = lf.values;
     const Config c = coordinate(1.5);
     const double nan = std::numeric_limits<double>::quiet_NaN();
-    throws_naming([&] { findVoidsBoxFromField({}, {}, c); }, "centres is empty", "FF1 empty");
+    throws_naming([&] { findVoidsBoxFromField({}, {}, c); }, "findVoidsBoxFromField: centres is empty", "FF1 empty");
     throws_naming([&] { findVoidsBoxFromField({1., 2.}, {1.}, c); }, "centres", "FF1 size");
     throws_naming([&] { auto y = x; y[5] = nan; findVoidsBoxFromField(y, v, c); }, "centres", "FF1 non-finite");
     throws_naming([&] { auto w = v; w.pop_back(); findVoidsBoxFromField(x, w, c); },
-                  "values holds " + std::to_string(v.size() - 1) + " entries for", "FF2 size");
+                  "findVoidsBoxFromField: values holds " + std::to_string(v.size() - 1) + " entries for", "FF2 size");
     throws_naming([&] { auto w = v; w[3] = nan; findVoidsBoxFromField(x, w, c); },
-                  "values holds a non-finite value at entry 3", "FF2 non-finite");
+                  "the field values hold a non-finite value at entry 3", "FF2 non-finite");
     throws_naming([&] { findVoidsBoxFromField(x, v, c, {1., 2.}); }, "or none", "FF3 size");
     throws_naming([&] { auto w = lf.weights; w[4] = -1.; findVoidsBoxFromField(x, v, c, w); },
                   "at entry 4; every weight must be finite and non-negative", "FF3 negative");
-    throws_naming([&] { findVoidsBoxFromField(x, v, c, {}, 0.); }, "mps is ", "FF4");
+    throws_naming([&] { findVoidsBoxFromField(x, v, c, {}, 0.); }, "the mean particle separation is ", "FF4");
     throws_naming([&] { Config y = c; y.divergenceCellSize = 1.; findVoidsBoxFromField(x, v, y); },
                   "the divergence cell size is set for a search on a field", "FF5 cell size");
     throws_naming([&] { Config y = c; y.keepAssignment = true; findVoidsBoxFromField(x, v, y); },
-                  "keepAssignment is set for a search on a field", "FF5 keepAssignment");
+                  "a search on a field has no tracers to assign to cells; do not ask for the assignment", "FF5 keepAssignment");
     throws_naming([&] { Config y = c; y.nRealizationsMean = 2; findVoidsBoxFromField(x, v, y); },
                   "for a search on a field, which has no realizations", "FF5 nRealizationsMean");
     throws_naming([&] { Config y = c; y.smoothing.unit = LengthUnit::Mps; findVoidsBoxFromField(x, v, y); },

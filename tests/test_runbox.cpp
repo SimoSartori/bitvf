@@ -416,7 +416,7 @@ int main ()
     fails(c, {1., 2.}, {}, {}, "tracers holds 2 entries, which is not a multiple of three", "PB1 size");
     std::vector<double> bad = t;
     bad[5] = kNaN;
-    fails(c, bad, {}, {}, "tracers holds a non-finite value at entry 5", "PB1 finite");
+    fails(c, bad, {}, {}, "the tracers hold a non-finite value at entry 5", "PB1 finite");
     fails(c, t, {1., 2., 3., 4.}, {}, "the random array holds 4 entries, which is not a multiple of three", "PB2 size");
     fails(c, t, {1., 2., kNaN}, {}, "the random array holds a non-finite value at entry 2", "PB2 finite");
     fails(c, t, {}, {1, 2}, "ids holds 2 entries for 2004 tracers", "PB3 size");
@@ -428,18 +428,18 @@ int main ()
     fails(l, t, {}, {}, "the box limits are [0.000000, -1.000000] on axis y", "PB4");
     BoxConfig m = c;
     m.mps = -1.;
-    fails(m, t, {}, {}, "mps is -1.000000 in coordinate units; it must be finite and positive", "PB5");
+    fails(m, t, {}, {}, "the mean particle separation is -1.000000 in coordinate units; it must be finite and positive", "PB5");
     BoxConfig r0 = c;
     r0.ot.nRealizations = 0;
     fails(r0, t, {}, {}, "the number of realizations is 0; it must be at least 1", "PB6");
     BoxConfig s = c;
     s.voids.smoothing.sigma = -1.;
     fails(s, t, {}, {}, "the smoothing sigma is", "PB7 C1");
-    throws_naming([&] { runBox(t, {}, c, in.ids); }, "needs a distance table carrying the growth rate; call runBox with distances",
+    throws_naming([&] { runBox(t, {}, c, in.ids); }, "needs a distance table that carries the growth rate, and none was given",
                   "PB8");
     BoxConfig a = c;
     a.rsd->axis.reset();
-    fails(a, t, {}, {}, "the line-of-sight axis (BoxRsd::axis) is not set; it must be 0, 1 or 2", "PB9 empty");
+    fails(a, t, {}, {}, "the line-of-sight axis is not set; it must be 0, 1 or 2", "PB9 empty");
     a.rsd->axis = 3;
     fails(a, t, {}, {}, "the line-of-sight axis is 3; it must be 0, 1 or 2", "PB9 above 2");
     BoxConfig w = c;
@@ -458,7 +458,7 @@ int main ()
     for (std::size_t i = 0; i < Pipeline::kN; ++i) flat[3*i+2] = 4.;
     BoxConfig f = in.config;
     fails(f, flat, {}, {}, "the tracers span no volume (all of them in one plane, on one line or at one point), so they "
-          "fix no box; give the box limits (BoxConfig::limits)", "PB12");
+          "fix no box; give the box limits", "PB12");
     fails(f, flat, {1., 1., 4., 2., 2., 4.}, {}, "the tracers and the given randoms span no volume", "PB12 randoms");
     check(otLog.str().empty(), "no reconstruction ran before these errors");
   }

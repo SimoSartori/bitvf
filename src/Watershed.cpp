@@ -268,7 +268,7 @@ bitvf::Partition bitvf::watershedBox (const std::vector<double>& field, const st
     std::to_string(n[2]) + ")";
 
   if (n[0] == 0 || n[1] == 0 || n[2] == 0)
-    throw Error("nCellsAxis is " + shape + "; every count must be at least 1");
+    throw Error("the number of cells along each axis is " + shape + "; every count must be at least 1");
 
   std::size_t expected = 1;
   bool fits = true;
@@ -277,12 +277,12 @@ bitvf::Partition bitvf::watershedBox (const std::vector<double>& field, const st
     else expected *= count;
   }
   if (!fits || field.size() != expected)
-    throw Error("field holds " + std::to_string(field.size()) + " entries for " + shape +
+    throw Error("watershedBox: field holds " + std::to_string(field.size()) + " entries for " + shape +
                 " cells; it must hold nx * ny * nz entries, one per cell");
 
   for (std::size_t c = 0; c < field.size(); ++c)
     if (!std::isfinite(field[c]))
-      throw Error("field holds a non-finite value at entry " + std::to_string(c));
+      throw Error("the field holds a non-finite value at entry " + std::to_string(c));
 
   DivergenceGrid grid;
   grid.nCellsAxis = n;

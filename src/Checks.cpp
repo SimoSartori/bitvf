@@ -53,14 +53,16 @@ namespace {
 
   /**
    *  @brief Check that every entry of a validity array is 0 or 1.
-   *  @param name the name of the array in the messages
+   *  @param fn the public function that starts the message of a reconstruction's flags
+   *  @param fromResult whether the flags are a reconstruction's
    */
-  void check_valid (const std::vector<std::uint8_t>& valid, const std::string& name)
+  void check_valid (const std::vector<std::uint8_t>& valid, const std::string& fn, const bool fromResult)
   {
     for (std::size_t i = 0; i < valid.size(); ++i)
       if (valid[i] > 1)
-        throw bitvf::Error(name + " holds " + std::to_string(valid[i]) + " at entry " +
-                           std::to_string(i) + "; each entry must be 0 or 1");
+        throw bitvf::Error((fromResult ? fn + ": the reconstruction's validity flags hold "
+                                       : std::string("the validity flags hold ")) + std::to_string(valid[i]) + " at entry " +
+                           std::to_string(i) + "; each must be 0 or 1");
   }
 
   /**
@@ -104,9 +106,9 @@ namespace {
 
     const std::size_t nTracersRead = N - search.counts.tracersOutsideBox - search.counts.tracersOutsideGrid;
     if (nTracersRead > std::numeric_limits<unsigned>::max())
-      throw bitvf::Error("tracers: the search reads " + std::to_string(nTracersRead) + " tracers, more than " +
+      throw bitvf::Error("the search reads " + std::to_string(nTracersRead) + " tracers, more than " +
                          std::to_string(std::numeric_limits<unsigned>::max()) +
-                         ", the most the count within 2 mps of a centre (delta2Mps) supports");
+                         ", the most that the density contrast within 2 mean particle separations of a centre supports");
   }
 
   /**
@@ -119,13 +121,14 @@ namespace {
    *
    *  @param search the search, with every field but outsideGrid,
    *  sigmaLength and counts other than tracers and tracersOutsideBox set
-   *  @param displacementName the name of the displacements in the messages
+   *  @param fn the public function that starts the messages about a grid and a reconstruction
+   *  @param fromResult whether the displacements are a reconstruction's
    */
   void select_box (bitvf::internal::BoxSearch& search, const bitvf::Config& config, const bitvf::DivergenceGrid* grid,
-                   const bool mpsMustMatch, const std::string& displacementName)
+                   const bool mpsMustMatch, const std::string& fn, const bool fromResult)
   {
     bitvf::internal::check_config(config, grid != nullptr);
-    if (grid != nullptr) bitvf::internal::check_box_grid(*grid, search.mps, mpsMustMatch);
+    if (grid != nullptr) bitvf::internal::check_box_grid(*grid, search.mps, mpsMustMatch, fn);
 
     search.sigmaLength = sigma_length(config.smoothing, search.mps);
 
@@ -155,7 +158,8 @@ namespace {
 
     if (firstNonFinite != none) {
       const std::size_t row = firstNonFinite / 3;
-      throw bitvf::Error(displacementName + " holds a non-finite value at entry " +
+      throw bitvf::Error((fromResult ? fn + ": the reconstruction's displacements hold " : std::string("the displacements hold ")) +
+                         "a non-finite value at entry " +
                          std::to_string(firstNonFinite) + " (realization " +
                          std::to_string(row / N) + ", tracer " + std::to_string(row % N) +
                          ", component " + std::to_string(firstNonFinite % 3) +
@@ -180,17 +184,18 @@ namespace {
 // ============================================================================
 
 
-void bitvf::internal::check_limits (const otswap::BoxLimits& limits, const std::string& name)
+void bitvf::internal::check_limits (const otswap::BoxLimits& limits, const std::string& name, const std::string& fn)
 {
+  const std::string at = fn.empty() ? "" : fn + ": ";
   for (std::size_t k = 0; k < 3; ++k)
     for (const double bound : {limits.lower[k], limits.upper[k]})
       if (!std::isfinite(bound))
-        throw Error(name + " hold a bound of " + std::to_string(bound) + " on axis " +
+        throw Error(at + name + " hold a bound of " + std::to_string(bound) + " on axis " +
                     kAxes[k] + "; every bound must be finite");
 
   for (std::size_t k = 0; k < 3; ++k)
     if (!(limits.lower[k] < limits.upper[k]))
-      throw Error(name + " are [" + std::to_string(limits.lower[k]) + ", " +
+      throw Error(at + name + " are [" + std::to_string(limits.lower[k]) + ", " +
                   std::to_string(limits.upper[k]) + "] on axis " + kAxes[k] +
                   "; the lower bound must be below the upper one");
 }
@@ -200,21 +205,21 @@ void bitvf::internal::check_limits (const otswap::BoxLimits& limits, const std::
 
 
 std::size_t bitvf::internal::check_coordinates (const std::vector<double>& a, const std::string& name,
-                                                const bool allowEmpty)
+                                                const bool allowEmpty, const std::string& fn)
 {
   if (a.empty()) {
     if (allowEmpty) return 0;
-    throw Error(name + " is empty");
+    throw Error(fn + ": " + name + " is empty");
   }
 
   if (a.size() % 3 != 0)
-    throw Error(name + " holds " + std::to_string(a.size()) +
+    throw Error(fn + ": " + name + " holds " + std::to_string(a.size()) +
                 " entries, which is not a multiple of three");
 
   for (std::size_t i = 0; i < a.size(); ++i)
     if (!std::isfinite(a[i]))
-      throw Error(name + " holds a non-finite value at entry " + std::to_string(i) +
-                  " (object " + std::to_string(i/3) + ", component " +
+      throw Error((name.compare(0, 4, "the ") == 0 ? name : "the " + name) + (name.back() == 's' ? " hold" : " holds") +
+                  " a non-finite value at entry " + std::to_string(i) + " (object " + std::to_string(i/3) + ", component " +
                   std::to_string(i%3) + ")");
 
   return a.size() / 3;
@@ -225,11 +230,11 @@ std::size_t bitvf::internal::check_coordinates (const std::vector<double>& a, co
 
 
 void bitvf::internal::check_ids (const std::vector<std::int64_t>& ids, const std::size_t nTracers,
-                                 const std::string& name)
+                                 const std::string& fn, const bool fromResult)
 {
   if (ids.empty()) return;
   if (ids.size() != nTracers)
-    throw Error(name + " holds " + std::to_string(ids.size()) + " entries for " +
+    throw Error(fn + ": " + (fromResult ? "the reconstruction's ids" : "ids") + " holds " + std::to_string(ids.size()) + " entries for " +
                 std::to_string(nTracers) + " tracers; give one per tracer, or none");
 
   std::vector<std::pair<std::int64_t, std::size_t>> sorted(ids.size());
@@ -244,7 +249,7 @@ void bitvf::internal::check_ids (const std::vector<std::int64_t>& ids, const std
     }
   }
   if (second < ids.size())
-    throw Error(name + " holds " + std::to_string(ids[first]) + " twice, at entries " +
+    throw Error((fromResult ? fn + ": the reconstruction's ids hold " : std::string("the ids hold ")) + std::to_string(ids[first]) + " twice, at entries " +
                 std::to_string(first) + " and " + std::to_string(second) +
                 "; each tracer needs its own ID");
 }
@@ -253,9 +258,9 @@ void bitvf::internal::check_ids (const std::vector<std::int64_t>& ids, const std
 // ============================================================================
 
 
-void bitvf::internal::check_reconstruction_box (const otswap::Result& rec)
+void bitvf::internal::check_reconstruction_box (const otswap::Result& rec, const std::string& fn)
 {
-  const std::string malformed = "the reconstruction is malformed: ";
+  const std::string malformed = fn + ": the reconstruction is malformed: ";
 
   if (!rec.box) throw Error(malformed + "it holds no box (otswap::Result::box)");
   const otswap::BoxLimits& box = *rec.box;
@@ -288,30 +293,32 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const std::vector<double>
                                                        const std::vector<std::int64_t>& ids,
                                                        const DivergenceGrid* grid)
 {
-  const std::size_t N = check_coordinates(tracers, "tracers", false);
+  const std::string fn = "findVoidsBox";
+  const std::size_t N = check_coordinates(tracers, "tracers", false, fn);
 
   if (displacement.empty() || displacement.size() % (3 * N) != 0)
-    throw Error("displacement holds " + std::to_string(displacement.size()) + " entries for " +
+    throw Error(fn + ": displacement holds " + std::to_string(displacement.size()) + " entries for " +
                 std::to_string(N) + " tracers; it must hold 3 * nRealizations * " +
                 std::to_string(N) + " entries, with a whole nRealizations of at least 1");
 
   const std::size_t R = displacement.size() / (3 * N);
   if (R > UINT_MAX)
-    throw Error("displacement holds " + std::to_string(R) + " realizations; at most " +
+    throw Error("the displacements hold " + std::to_string(R) + " realizations; at most " +
                 std::to_string(UINT_MAX) + " are supported");
 
   if (!valid.empty() && valid.size() != R * N)
-    throw Error("valid holds " + std::to_string(valid.size()) + " entries for " +
+    throw Error(fn + ": valid holds " + std::to_string(valid.size()) + " entries for " +
                 std::to_string(R) + " realizations of " + std::to_string(N) +
                 " tracers; give one per displacement, or none");
-  check_valid(valid, "valid");
+  check_valid(valid, fn, false);
 
   if (!std::isfinite(mps) || mps <= 0.)
-    throw Error("mps is " + std::to_string(mps) + " in coordinate units; it must be finite and positive");
+    throw Error("the mean particle separation is " + std::to_string(mps) +
+                " in coordinate units; it must be finite and positive");
 
-  if (limits) check_limits(*limits, "the box limits");
+  if (limits) check_limits(*limits, "the box limits", "");
 
-  check_ids(ids, N, "ids");
+  check_ids(ids, N, fn, false);
 
   BoxSearch search;
   search.nTracers = N;
@@ -335,7 +342,7 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const std::vector<double>
           break;
         }
 
-  select_box(search, config, grid, true, "displacement");
+  select_box(search, config, grid, true, fn, false);
   return search;
 }
 
@@ -348,13 +355,14 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const otswap::Result& rec
                                                        const DivergenceGrid* grid)
 {
   const otswap::Result& rec = reconstruction;
+  const std::string fn = "findVoidsBox";
 
   if (rec.geometry != otswap::Geometry::Box)
-    throw Error("the reconstruction is not a box result; use the lightcone void finder");
+    throw Error(fn + ": the reconstruction is not a box result; use the lightcone void finder");
 
   const std::size_t N = rec.nObjects;
   const std::size_t R = rec.nRealizations;
-  const std::string malformed = "the reconstruction is malformed: ";
+  const std::string malformed = fn + ": the reconstruction is malformed: ";
   if (N == 0) throw Error(malformed + "it holds no objects");
   if (R == 0) throw Error(malformed + "it holds no realizations");
 
@@ -370,8 +378,8 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const otswap::Result& rec
   check_size(rec.outsideBox.size(), N, "outsideBox", true);
   check_size(rec.ids.size(), N, "ids", true);
 
-  check_valid(rec.valid, "the reconstruction's valid");
-  check_ids(rec.ids, N, "the reconstruction's ids");
+  check_valid(rec.valid, fn, true);
+  check_ids(rec.ids, N, fn, true);
 
   BoxSearch search;
   search.nTracers = N;
@@ -393,21 +401,21 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const otswap::Result& rec
     if (search.inBox[i])
       for (std::size_t k = 0; k < 3; ++k)
         if (!std::isfinite(rec.tracers[3*i+k]))
-          throw Error("the reconstruction's tracers hold a non-finite value at entry " +
+          throw Error(fn + ": the reconstruction's tracers hold a non-finite value at entry " +
                       std::to_string(3*i+k) + " (object " + std::to_string(i) + ", component " +
                       std::to_string(k) + ")");
 
   if (grid == nullptr) {
     if (!std::isfinite(rec.mps) || rec.mps <= 0.)
-      throw Error("the reconstruction's mps is " + std::to_string(rec.mps) +
+      throw Error(fn + ": the reconstruction's mps is " + std::to_string(rec.mps) +
                   " in coordinate units; it must be finite and positive");
     search.mps = rec.mps;
   }
   else search.mps = grid->mps;
 
-  if (rec.selection.boxLimits) check_limits(*rec.selection.boxLimits, "the reconstruction's box limits");
+  if (rec.selection.boxLimits) check_limits(*rec.selection.boxLimits, "the reconstruction's box limits", fn);
 
-  check_reconstruction_box(rec);
+  check_reconstruction_box(rec, fn);
   const otswap::BoxLimits& box = *rec.box;
 
   for (std::size_t i = 0; i < N; ++i)
@@ -419,7 +427,7 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const otswap::Result& rec
   search.box = box;
   search.limits = rec.selection.boxLimits;
 
-  select_box(search, config, grid, false, "the reconstruction's displacement");
+  select_box(search, config, grid, false, fn, true);
   return search;
 }
 
@@ -455,9 +463,9 @@ void bitvf::internal::check_config (const Config& config, const bool gridGiven)
 
 
 void bitvf::internal::check_box_grid (const DivergenceGrid& grid, const double mps,
-                                      const bool mpsMustMatch, const std::string& name)
+                                      const bool mpsMustMatch, const std::string& fn, const std::string& name)
 {
-  const std::string bad = name + " ";
+  const std::string bad = (fn.empty() ? "" : fn + ": ") + name + " ";
 
   if (grid.geometry != otswap::Geometry::Box)
     throw Error(bad + "is not a box grid");
@@ -511,7 +519,7 @@ void bitvf::internal::check_box_grid (const DivergenceGrid& grid, const double m
     throw Error(bad + "is a box grid with a field of a lightcone grid set");
 
   if (mpsMustMatch && mps != grid.mps)
-    throw Error("mps is " + exact(mps) + " in coordinate units, but " + name + " was built with " +
+    throw Error((fn.empty() ? "" : fn + ": ") + "the mean particle separation is " + exact(mps) + " in coordinate units, but " + name + " was built with " +
                 exact(grid.mps) + "; they must be equal");
 }
 
@@ -524,32 +532,33 @@ bitvf::internal::BoxSearch bitvf::internal::check_box_from_divergence (const Div
                                                                        const Config& config,
                                                                        const std::vector<std::int64_t>& ids)
 {
-  const std::size_t N = check_coordinates(tracers, "tracers", false);
-  check_ids(ids, N, "ids");
+  const std::string fn = "findVoidsBoxFromDivergence";
+  const std::size_t N = check_coordinates(tracers, "tracers", false, fn);
+  check_ids(ids, N, fn, false);
 
   check_config(config, false);
   if (config.divergenceCellSize)
     throw Error("the divergence cell size is set for a search from a divergence; leave it empty, "
                 "the cells are the grid's");
 
-  check_box_grid(grid, grid.mps, false, "the divergence grid");
-  if (grid.limits) check_limits(*grid.limits, "the grid's box limits");
+  check_box_grid(grid, grid.mps, false, fn, "the divergence grid");
+  if (grid.limits) check_limits(*grid.limits, "the grid's box limits", fn);
 
   const std::size_t C = grid.nCells;
   const std::pair<const std::vector<double>*, const char*> fields[2] = {
     {&grid.divergence, "divergence"}, {&grid.weight, "weight"}};
   for (const auto& field : fields) {
     if (field.first->size() != C)
-      throw Error("the grid's " + std::string(field.second) + " holds " + std::to_string(field.first->size()) +
+      throw Error(fn + ": the grid's " + std::string(field.second) + " holds " + std::to_string(field.first->size()) +
                   " entries for " + std::to_string(C) + " cells; a search from a divergence needs one per cell"
                   " (keep it with Config::keepDivergence, or read it from a divergence file)");
     for (std::size_t c = 0; c < C; ++c)
       if (!std::isfinite((*field.first)[c]))
-        throw Error("the grid's " + std::string(field.second) + " holds a non-finite value at cell " +
+        throw Error(fn + ": the grid's " + std::string(field.second) + " holds a non-finite value at cell " +
                     std::to_string(c));
   }
   if (!grid.nTracers.empty() && grid.nTracers.size() != C)
-    throw Error("the grid's nTracers holds " + std::to_string(grid.nTracers.size()) + " entries for " +
+    throw Error(fn + ": the grid's nTracers holds " + std::to_string(grid.nTracers.size()) + " entries for " +
                 std::to_string(C) + " cells; give one per cell, or none");
 
   BoxSearch search;
@@ -592,32 +601,34 @@ double bitvf::internal::check_box_from_field (const std::vector<double>& centres
                                               const std::vector<double>& weights,
                                               const std::optional<double>& mps)
 {
-  const std::size_t N = check_coordinates(centres, "centres", false);
+  const std::string fn = "findVoidsBoxFromField";
+  const std::size_t N = check_coordinates(centres, "centres", false, fn);
 
   if (values.size() != N)
-    throw Error("values holds " + std::to_string(values.size()) + " entries for " + std::to_string(N) +
+    throw Error(fn + ": values holds " + std::to_string(values.size()) + " entries for " + std::to_string(N) +
                 " centres; it must hold one per centre");
   for (std::size_t c = 0; c < N; ++c)
     if (!std::isfinite(values[c]))
-      throw Error("values holds a non-finite value at entry " + std::to_string(c));
+      throw Error("the field values hold a non-finite value at entry " + std::to_string(c));
 
   if (!weights.empty() && weights.size() != N)
-    throw Error("weights holds " + std::to_string(weights.size()) + " entries for " + std::to_string(N) +
+    throw Error(fn + ": weights holds " + std::to_string(weights.size()) + " entries for " + std::to_string(N) +
                 " centres; it must hold one per centre, or none");
   for (std::size_t c = 0; c < weights.size(); ++c)
     if (!std::isfinite(weights[c]) || weights[c] < 0.)
-      throw Error("weights holds " + exact(weights[c]) + " at entry " + std::to_string(c) +
+      throw Error("the weights hold " + exact(weights[c]) + " at entry " + std::to_string(c) +
                   "; every weight must be finite and non-negative");
 
   if (mps && (!std::isfinite(*mps) || *mps <= 0.))
-    throw Error("mps is " + std::to_string(*mps) + " in coordinate units; it must be finite and positive");
+    throw Error("the mean particle separation is " + std::to_string(*mps) +
+                " in coordinate units; it must be finite and positive");
 
   check_config(config, false);
   if (config.divergenceCellSize)
     throw Error("the divergence cell size is set for a search on a field; leave it empty, "
                 "the cells are the lattice's");
   if (config.keepAssignment)
-    throw Error("keepAssignment is set for a search on a field, which has no tracers; leave it unset");
+    throw Error("a search on a field has no tracers to assign to cells; do not ask for the assignment");
   if (config.nRealizationsMean != 1)
     throw Error("the number of realizations averaged is " + std::to_string(config.nRealizationsMean) +
                 " for a search on a field, which has no realizations; leave it 1");

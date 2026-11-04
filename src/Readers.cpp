@@ -279,7 +279,7 @@ bitvf::DivergenceGrid bitvf::io::readDivergence (const std::string& file)
   grid.limits = h.limits(true);
 
   try {
-    internal::check_box_grid(grid, grid.mps, true);
+    internal::check_box_grid(grid, grid.mps, true, "");
   }
   catch (const Error& e) {
     throw Error(file + ": " + e.what());
