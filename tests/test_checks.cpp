@@ -49,6 +49,8 @@ using namespace bitvf;
 
 namespace {
 
+  std::vector<double> unmoved;
+
   constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
   constexpr double kInf = std::numeric_limits<double>::infinity();
   constexpr std::size_t kN = 200;
@@ -610,7 +612,7 @@ int main ()
     for (std::size_t i = 0; i < kN; ++i) plane.tracers[3*i+2] = 50.;
     plane.selection.boxLimits.reset();
     plane.box->lower[2] = plane.box->upper[2] = 50.;
-    check(internal::check_box(plane, config, nullptr).box->upper[2] == 50.,
+    check(internal::check_box(plane, config, nullptr, unmoved).box->upper[2] == 50.,
           "O6 accepts a flat box");
 
     otswap::Result flagged = in.reconstruction();
@@ -633,14 +635,14 @@ int main ()
     const DivergenceGrid grid7 = internal::box_grid(seven.search(), 1.);
     Config sigma = config;
     sigma.smoothing.sigma = 0.7;
-    check(internal::check_box(in.reconstruction(), sigma, &grid7).sigmaLength == 0.7 * 7.,
+    check(internal::check_box(in.reconstruction(), sigma, &grid7, unmoved).sigmaLength == 0.7 * 7.,
           "sigmaLength in Mps uses the reused grid's mps, not the reconstruction's");
 
     const otswap::Result rec = in.reconstruction();
     Input limited = in;
     limited.limits = rec.box;
     const internal::BoxSearch a = limited.search();
-    const internal::BoxSearch b = internal::check_box(rec, config, nullptr);
+    const internal::BoxSearch b = internal::check_box(rec, config, nullptr, unmoved);
     check(a.nTracers == b.nTracers && a.nRealizations == b.nRealizations && a.mps == b.mps &&
           a.sigmaLength == b.sigmaLength &&
           a.maxDisplacement == b.maxDisplacement && a.inBox == b.inBox &&
@@ -655,7 +657,7 @@ int main ()
     wide.box = wide.selection.boxLimits = box(-30., 130.);
     Input wideLimits = in;
     wideLimits.limits = wide.box;
-    const DivergenceGrid g = internal::box_grid(internal::check_box(wide, config, nullptr), 1.);
+    const DivergenceGrid g = internal::box_grid(internal::check_box(wide, config, nullptr, unmoved), 1.);
     check(g.lower == internal::box_grid(wideLimits.search(), 1.).lower && g.lower[0] < -30. &&
           g.upper[0] > 130.,
           "the grid is built on the reconstruction's box, wider than its tracers");

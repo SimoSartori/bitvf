@@ -26,6 +26,7 @@
  *  errors.
  */
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -368,8 +369,7 @@ int main ()
     }
 
   group("mean file read by otswap, FITS and ASCII: the search on it uses R = 1, the file's box and ids; a mean of "
-        "several realizations keeps nRealizationsMean, NREC 1; ASCII searched only with limits, since its 9-digit "
-        "tracers can fall outside a box measured on the exact ones");
+        "several realizations keeps nRealizationsMean, NREC 1");
   {
     std::vector<double> tracers(in.tracers.begin(), in.tracers.begin() + 3 * kN);
     otswap::Config ot;
@@ -403,7 +403,6 @@ int main ()
           check(m.box.has_value() && m2.box.has_value() && same_limits(m.box, m2.box) &&
                 (!limited || same_limits(m.box, rec.box)), tag + ": the file's box");
 
-          if (!limited && std::string(format) != ".fits") continue;
           for (const otswap::Result* source : {&m, &m2}) {
             Config config;
             config.log = nullptr;
@@ -416,6 +415,46 @@ int main ()
           }
         }
       }
+  }
+
+  group("tracers rounded just outside a measured box, as in an ASCII mean file, are moved onto it and reported; a "
+        "tracer outside by more than the tolerance still fails; FITS and in-memory results report no move");
+  {
+    std::vector<double> tracers(in.tracers.begin(), in.tracers.begin() + 3 * kN);
+    otswap::Config ot;
+    ot.nRealizations = 2;
+    ot.seed = 1;
+    ot.log = nullptr;
+    const otswap::Result rec = otswap::reconstructBox(tracers, {}, ot);
+    const std::string line = "onto the box edge";
+    auto searched = [&] (const otswap::Result& source) {
+      Config config;
+      std::ostringstream log;
+      config.log = &log;
+      const Result s = findVoidsBox(source, config);
+      return std::make_pair(s.voids.nBasins, log.str());
+    };
+    check(searched(rec).second.find(line) == std::string::npos, "in memory: no move reported");
+
+    const std::string fits = temporary("moved.fits");
+    otswap::io::writeDisplacementMean(fits, rec);
+    check(searched(otswap::io::readDisplacementMean(fits)).second.find(line) == std::string::npos,
+          "FITS: no move reported");
+    std::remove(fits.c_str());
+
+    const std::string ascii = temporary("moved.txt");
+    otswap::io::writeDisplacementMean(ascii, rec);
+    const auto run = searched(otswap::io::readDisplacementMean(ascii));
+    std::remove(ascii.c_str());
+    check(run.first > 0 && run.second.find(line) != std::string::npos, "ASCII: the search runs and reports the move");
+
+    otswap::Result far = rec;
+    far.tracers[0] = far.box->lower[0] - 1e-6 * std::max(1., std::abs(far.box->lower[0]));
+    throws_naming([&] { searched(far); }, "lies outside its box", "outside by more than the tolerance");
+    otswap::Result near = rec;
+    near.tracers[0] = near.box->lower[0] - 1e-9 * std::max(1., std::abs(near.box->lower[0]));
+    check(searched(near).second.find("moved 1 tracer onto the box edge") != std::string::npos,
+          "outside by less than the tolerance: moved");
   }
 
   group("default cell size: 1 up to 20 realizations, cbrt(20 / R) above, recorded in Result::config");

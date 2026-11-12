@@ -285,8 +285,15 @@ bitvf::Result bitvf::findVoidsBox (const otswap::Result& reconstruction,
                                    const DivergenceGrid* grid)
 {
   internal::Report report(config.verbosity, config.log);
-  const internal::BoxSearch search = internal::check_box(reconstruction, config, grid);
+  std::vector<double> moved;
+  const internal::BoxSearch search = internal::check_box(reconstruction, config, grid, moved);
   report_selection(report, search, grid != nullptr ? "the reused grid" : nullptr);
+  if (report.normal() && search.tracersMoved > 0) {
+    std::ostringstream out = internal::Report::line();
+    out << "moved " << search.tracersMoved << (search.tracersMoved == 1 ? " tracer" : " tracers")
+        << " onto the box edge";
+    report.write(out.str());
+  }
   if (grid == nullptr) report_checked(report, search, "from the reconstruction");
   else {
     std::ostringstream source = internal::Report::line();

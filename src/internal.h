@@ -185,6 +185,10 @@ namespace bitvf {
       /// otswap::SelectionCounts::boxLimits; empty without them.
       std::optional<otswap::BoxLimits> limits;
 
+      /// The number of tracers moved onto the box edge; 0 outside the
+      /// otswap::Result overload.
+      std::size_t tracersMoved = 0;
+
       /// The counts known after the checks: tracers, tracersOutsideBox,
       /// tracersOutsideGrid, displacements.
       Counts counts;
@@ -219,12 +223,19 @@ namespace bitvf {
      *  otswap::Result::outsideBox are skipped unread. With a grid, its mps is the search's, and the
      *  reconstruction's is not read.
      *
+     *  Without box limits, a tracer outside the box by at most 1e-8 times
+     *  the larger of its coordinate and the bound, on an axis, is moved onto
+     *  the box on that axis; the positions are then copied into moved, which
+     *  BoxSearch::tracers refers to, and BoxSearch::tracersMoved counts the
+     *  tracers moved. moved stays empty when none is moved.
+     *
      *  @exception Error as the overload above, and on a reconstruction that
      *  is not a box result or is malformed.
      */
     BoxSearch check_box (const otswap::Result& reconstruction,
                          const Config& config,
-                         const DivergenceGrid* grid);
+                         const DivergenceGrid* grid,
+                         std::vector<double>& moved);
 
     /**
      *  @brief Check the arguments of findVoidsBoxFromDivergence and select

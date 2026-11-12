@@ -867,6 +867,14 @@ namespace bitvf {
    *  linear in the displacement, so a search on the mean of R realizations
    *  does not give the result of the search on the R realizations.
    *
+   *  Without box limits, a tracer rounded just outside the box, as in an
+   *  ASCII mean file, is moved onto it: on an axis where it lies outside by
+   *  at most 1e-8 times the larger of its coordinate and the bound, it is
+   *  put on the lower bound, or on the largest value below the upper one.
+   *  The displacement is kept. The search and the files written from the
+   *  result use the moved positions; the report states how many tracers
+   *  were moved. With box limits, the tracers outside are excluded.
+   *
    *  @param config the parameters of the search.
    *
    *  @param grid a grid to reuse, or null, as above. Its mps wins over the
@@ -884,7 +892,8 @@ namespace bitvf {
    *  from selection.boxLimits when those are set; selection.boxLimits with
    *  a bound not finite, a width not finite, or a lower bound not below
    *  the upper one; a tracer not flagged in
-   *  outsideBox lying outside box; if its mps is not finite and positive
+   *  outsideBox lying outside box by more than the tolerance above, or at all when box
+   *  limits are set; if its mps is not finite and positive
    *  and no grid is given; and as above, but for
    *  the mps of the grid, which wins over the reconstruction's. A positive
    *  smoothing.sigma in Mps is checked against the mps of the search: the

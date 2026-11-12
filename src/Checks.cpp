@@ -358,7 +358,8 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const std::vector<double>
 
 bitvf::internal::BoxSearch bitvf::internal::check_box (const otswap::Result& reconstruction,
                                                        const Config& config,
-                                                       const DivergenceGrid* grid)
+                                                       const DivergenceGrid* grid,
+                                                       std::vector<double>& moved)
 {
   const otswap::Result& rec = reconstruction;
   const std::string fn = "findVoidsBox";
@@ -439,11 +440,23 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const otswap::Result& rec
   const otswap::BoxLimits& box = *rec.box;
 
   for (std::size_t i = 0; i < N; ++i)
-    if (search.inBox[i])
-      for (std::size_t k = 0; k < 3; ++k)
-        if (!(rec.tracers[3*i+k] >= box.lower[k] && rec.tracers[3*i+k] <= box.upper[k]))
+    if (search.inBox[i]) {
+      bool movedTracer = false;
+      for (std::size_t k = 0; k < 3; ++k) {
+        const double x = rec.tracers[3*i+k];
+        if (x >= box.lower[k] && x <= box.upper[k]) continue;
+        const double bound = x < box.lower[k] ? box.lower[k] : box.upper[k];
+        const double tolerance = 1e-8 * std::max(std::abs(x), std::abs(bound));
+        if (rec.selection.boxLimits || !(std::abs(x - bound) <= tolerance))
           throw Error(malformed + "tracer " + std::to_string(i) + " lies outside its box "
                       "(otswap::Result::box) and is not flagged in outsideBox");
+        if (moved.empty()) moved = rec.tracers;
+        moved[3*i+k] = x < box.lower[k] ? box.lower[k] : std::nextafter(box.upper[k], box.lower[k]);
+        movedTracer = true;
+      }
+      if (movedTracer) ++search.tracersMoved;
+    }
+  if (!moved.empty()) search.tracers = &moved;
   search.box = box;
   search.limits = rec.selection.boxLimits;
 
