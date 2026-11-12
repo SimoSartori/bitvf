@@ -11,7 +11,8 @@ covers what applies to every box search, in both APIs; the
 |---|---|---|
 | a tracer catalogue: reconstruction, optional correction of redshift-space distortions, search | {cpp:func}`bitvf::runBox` | {py:func}`bitvf.run_box` |
 | an otswap box reconstruction | {cpp:func}`bitvf::findVoidsBox` | {py:func}`bitvf.find_voids_box` |
-| displacement arrays, from any source, or otswap's mean displacement file | {cpp:func}`bitvf::findVoidsBox`, {cpp:func}`bitvf::io::readDisplacementMean` | {py:func}`bitvf.find_voids_box`, {py:func}`bitvf.io.read_displacement_mean` |
+| displacement arrays, from any source | {cpp:func}`bitvf::findVoidsBox` | {py:func}`bitvf.find_voids_box` |
+| otswap's mean displacement file, read with `otswap::io::readDisplacementMean` (Python `otswap.io.read_displacement_mean`) | {cpp:func}`bitvf::findVoidsBox`, the `otswap::Result` overload | {py:func}`bitvf.find_voids_box` with the `otswap.Result` |
 | a divergence grid kept or written earlier, to search it again with another smoothing | {cpp:func}`bitvf::findVoidsBoxFromDivergence` | {py:func}`bitvf.find_voids_box_from_divergence` |
 | any field at the centres of a box lattice, with no tracers | {cpp:func}`bitvf::findVoidsBoxFromField` | {py:func}`bitvf.find_voids_box_from_field` |
 | a field on a grid, split into basins only | {cpp:func}`bitvf::watershedBox` | {py:func}`bitvf.watershed_box` |

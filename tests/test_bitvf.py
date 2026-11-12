@@ -303,7 +303,7 @@ def test_find_voids_box_from_field(tmp_path, capsys, verbosity):
 
 
 @needs_cpp
-def test_read_field_and_read_displacement_mean(tmp_path, capsys, reconstruction):
+def test_read_field_and_search_on_a_mean_file(tmp_path, capsys, reconstruction):
     tracers, displacement, _, ids, box = translated()
     source = bitvf.find_voids_box(tracers, displacement, mps=7.0, box=box, config=kept("silent"), ids=ids)
     file = tmp_path / "divergence.dat"
@@ -320,13 +320,12 @@ def test_read_field_and_read_displacement_mean(tmp_path, capsys, reconstruction)
     capsys.readouterr()
     mean = tmp_path / "mean.fits"
     otswap.io.write_displacement_mean(mean, reconstruction)
-    m = bitvf.io.read_displacement_mean(mean)
-    assert m.displacement.shape == (1, reconstruction.n_objects, 3)
-    assert m.valid.shape == (1, reconstruction.n_objects) and m.valid.dtype == np.bool_
+    m = otswap.io.read_displacement_mean(mean, angle_unit="deg")
+    assert m.n_realizations == 1 and m.n_realizations_mean == reconstruction.n_realizations
     config = kept()
-    config.n_realizations_mean = m.n_realizations_averaged
-    r = bitvf.find_voids_box(m.tracers, m.displacement, m.valid, mps=m.mps, box=m.limits, ids=m.ids,
-                             config=config)
+    config.n_realizations_mean = m.n_realizations_mean
+    r = bitvf.find_voids_box(m, config=config)
+    assert r.n_realizations == 1 and r.config.n_realizations_mean == m.n_realizations_mean
     printed = capsys.readouterr().out
     out = run_cpp(tmp_path, "mean", file=mean, name="mean", **config_params(config))
     assert_same_result(r, out)
@@ -554,7 +553,7 @@ def test_results_are_read_only(result):
     with pytest.raises(AttributeError):
         result.voids.n_basins = 3
     for cls in (bitvf.Result, bitvf.BasinCatalog, bitvf.DivergenceGrid, bitvf.TracerAssignment, bitvf.Counts,
-                bitvf.Partition, bitvf.BitVFResult, bitvf.io.DisplacementMean, bitvf.io.Field):
+                bitvf.Partition, bitvf.BitVFResult, bitvf.io.Field):
         with pytest.raises(TypeError):
             cls()
 

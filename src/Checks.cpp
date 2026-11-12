@@ -371,6 +371,20 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const otswap::Result& rec
   const std::string malformed = fn + ": the reconstruction is malformed: ";
   if (N == 0) throw Error(malformed + "it holds no objects");
   if (R == 0) throw Error(malformed + "it holds no realizations");
+  if (rec.nRealizationsMean == 0) throw Error(malformed + "nRealizationsMean is 0; it must be at least 1");
+  if (rec.nRealizationsMean > 1 && R != 1)
+    throw Error(malformed + "it holds " + std::to_string(R) + " realizations, each the mean of " +
+                std::to_string(rec.nRealizationsMean) + "; a mean holds one realization");
+  if (!rec.validRealizations.empty()) {
+    if (rec.validRealizations.size() != N)
+      throw Error(malformed + "validRealizations holds " + std::to_string(rec.validRealizations.size()) +
+                  " entries for " + std::to_string(N) + " objects");
+    for (std::size_t i = 0; i < N; ++i)
+      if ((std::size_t)rec.validRealizations[i] > R * rec.nRealizationsMean)
+        throw Error(malformed + "validRealizations holds " + std::to_string(rec.validRealizations[i]) +
+                    " for object " + std::to_string(i) + ", above nRealizations * nRealizationsMean = " +
+                    std::to_string(R * rec.nRealizationsMean));
+  }
 
   auto check_size = [&] (const std::size_t size, const std::size_t expected,
                          const std::string& name, const bool allowEmpty) {

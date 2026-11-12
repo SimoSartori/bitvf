@@ -857,7 +857,15 @@ namespace bitvf {
    *  limits, the result equals that of the overload above. Reports as
    *  Config::verbosity describes.
    *
-   *  @param reconstruction a box result of otswap::reconstructBox.
+   *  @param reconstruction a box result of otswap::reconstructBox, or the
+   *  mean of one: the Result read from a mean displacement file by
+   *  otswap::io::readDisplacementMean (nRealizations 1,
+   *  nRealizationsMean the number averaged; set Config::nRealizationsMean
+   *  to it, so that bitvf's files record it). The box is the file's box
+   *  keywords, with or without BOXLIM; a file without them (written by
+   *  otswap 0.2) holds no box limits and is refused. The divergence is not
+   *  linear in the displacement, so a search on the mean of R realizations
+   *  does not give the result of the search on the R realizations.
    *
    *  @param config the parameters of the search.
    *
@@ -866,11 +874,16 @@ namespace bitvf {
    *  states both.
    *
    *  @exception Error if the reconstruction is not a box result; if it is
-   *  malformed: nObjects or nRealizations 0, tracers, displacement, valid,
+   *  malformed: nObjects, nRealizations or nRealizationsMean 0,
+   *  nRealizationsMean above 1 with nRealizations not 1, validRealizations
+   *  neither empty nor of nObjects entries or holding more than
+   *  nRealizations * nRealizationsMean, tracers, displacement, valid,
    *  outsideBox or ids of a size that does not match them, valid holding a
    *  value other than 0 and 1, ids holding a value twice, box missing, with
    *  a bound not finite or a lower bound above the upper one, or different
-   *  from selection.boxLimits when those are set, a tracer not flagged in
+   *  from selection.boxLimits when those are set; selection.boxLimits with
+   *  a bound not finite, a width not finite, or a lower bound not below
+   *  the upper one; a tracer not flagged in
    *  outsideBox lying outside box; if its mps is not finite and positive
    *  and no grid is given; and as above, but for
    *  the mps of the grid, which wins over the reconstruction's. A positive
@@ -1096,7 +1109,15 @@ namespace bitvf {
    *  the default for the reconstruction's realizations,
    *  min(1, (20 / nRealizations)^(1/3)) mps.
    *
-   *  @param reconstruction a box result of otswap::reconstructBox.
+   *  @param reconstruction a box result of otswap::reconstructBox, or the
+   *  mean of one: the Result read from a mean displacement file by
+   *  otswap::io::readDisplacementMean (nRealizations 1,
+   *  nRealizationsMean the number averaged; set Config::nRealizationsMean
+   *  to it, so that bitvf's files record it). The box is the file's box
+   *  keywords, with or without BOXLIM; a file without them (written by
+   *  otswap 0.2) holds no box limits and is refused. The divergence is not
+   *  linear in the displacement, so a search on the mean of R realizations
+   *  does not give the result of the search on the R realizations.
    *
    *  @param divergenceCellSize the cell side in units of mps, as
    *  Config::divergenceCellSize; finite and positive. Empty for the

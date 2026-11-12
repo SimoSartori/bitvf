@@ -509,12 +509,15 @@ namespace {
         break;
       }
       case Mean: {
-        const bitvf::io::DisplacementMean mean = bitvf::io::readDisplacementMean(run.inputFile);
+        const otswap::Result mean = app::call_otswap([&] {
+          return otswap::io::readDisplacementMean(run.inputFile);
+        });
+        if (mean.geometry == otswap::Geometry::Box && !mean.box)
+          throw bitvf::Error(run.inputFile + ": the file holds no box limits; write it with otswap 0.3 or later");
         if (run.divergenceFile) grid = bitvf::io::readDivergence(*run.divergenceFile);
         bitvf::Config c = config;
-        c.nRealizationsMean = mean.nRealizationsAveraged;
-        write_search(bitvf::findVoidsBox(mean.tracers, mean.displacement, mean.valid, mean.mps, c, mean.limits,
-                                         mean.ids, grid ? &*grid : nullptr), false);
+        c.nRealizationsMean = mean.nRealizationsMean;
+        write_search(bitvf::findVoidsBox(mean, c, grid ? &*grid : nullptr), false);
         break;
       }
       case Divergence: {

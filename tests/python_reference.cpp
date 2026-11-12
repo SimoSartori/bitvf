@@ -293,10 +293,10 @@ namespace {
                                                     config(&log, false), weights, mps));
     }
     else if (mode == "mean") {
-      const bitvf::io::DisplacementMean m = bitvf::io::readDisplacementMean(arg("file"));
+      const otswap::Result m = otswap::io::readDisplacementMean(arg("file"));
       bitvf::Config c = config(&log);
-      c.nRealizationsMean = m.nRealizationsAveraged;
-      dump_result("", bitvf::findVoidsBox(m.tracers, m.displacement, m.valid, m.mps, c, m.limits, m.ids));
+      c.nRealizationsMean = m.nRealizationsMean;
+      dump_result("", bitvf::findVoidsBox(m, c));
     }
     else if (mode == "read_field") {
       const bitvf::io::Field f = bitvf::io::readField(arg("file"), {arg("x"), arg("y"), arg("z")}, arg("value"),

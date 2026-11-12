@@ -21,8 +21,9 @@
 /**
  *  @file tests/test_readers.cpp
  *
- *  @brief The readers of bitvf::io: the divergence file and otswap's mean
- *  displacement file read back, reuse, the default cell size, errors.
+ *  @brief The reader of bitvf::io for the divergence file, reuse, the
+ *  search on otswap's mean displacement file, the default cell size,
+ *  errors.
  */
 
 #include <cmath>
@@ -36,6 +37,7 @@
 #include <iomanip>
 #include <limits>
 #include <locale>
+#include <map>
 #include <optional>
 #include <random>
 #include <sstream>
@@ -99,24 +101,6 @@ namespace {
     for (int c = 0; c < 3; ++c)
       if (!same_bits(a->lower[c], b->lower[c]) || !same_bits(a->upper[c], b->upper[c])) return false;
     return true;
-  }
-
-  /// The double an ASCII file holds for @p value written with @p digits
-  /// significant digits.
-  double as_written (const double value, const int digits)
-  {
-    if (std::isnan(value)) return value;
-    std::ostringstream out;
-    out.imbue(std::locale::classic());
-    out << std::defaultfloat << std::setprecision(digits) << value;
-    return std::strtod(out.str().c_str(), nullptr);
-  }
-
-  std::vector<double> as_written (const std::vector<double>& values, const int digits)
-  {
-    std::vector<double> w;
-    for (const double v : values) w.push_back(as_written(v, digits));
-    return w;
   }
 
   /// A search on tracers uniform in [0, 100)^3, kOut more beyond the
@@ -219,15 +203,6 @@ namespace {
     return c;
   }
 
-  otswap::io::Column flag_column (const std::string& name, std::vector<double> data)
-  {
-    otswap::io::Column c;
-    c.name = name;
-    c.type = 'J';
-    c.data = std::move(data);
-    return c;
-  }
-
   otswap::io::Column integer_column (const std::string& name, std::vector<std::int64_t> integers)
   {
     otswap::io::Column c;
@@ -280,19 +255,6 @@ namespace {
     }
   };
 
-  /// A small mean displacement file: three tracers, NREC 2, MPS 10.
-  Table mean_table ()
-  {
-    Table t;
-    t.columns = {real_column("tracX", {1., 2., 3.}), real_column("tracY", {4., 5., 6.}),
-                 real_column("tracZ", {7., 8., 9.}), real_column("displX", {0.1, 0.2, 0.3}),
-                 real_column("displY", {0.4, 0.5, 0.6}), real_column("displZ", {0.7, 0.8, 0.9}),
-                 flag_column("nValidRec", {2., 1., 0.})};
-    t.keywords = {{"PRODUCT", "displacements", ""}, {"GEOMETRY", "box", ""}, {"NREC", "2", ""},
-                  {"MPS", "10", ""}};
-    return t;
-  }
-
   /// The divergence file of @p r, as writeDivergence writes it.
   Table divergence_table (const Result& r)
   {
@@ -338,7 +300,6 @@ namespace {
     }
   }
 
-  void read_mean (const std::string& f) { io::readDisplacementMean(f); }
   void read_divergence (const std::string& f) { io::readDivergence(f); }
 
   /// @p f must raise a bitvf::Error starting with "otswap: ", an
@@ -406,7 +367,9 @@ int main ()
             std::string(written == &r ? "limits " : "no limits ") + format + ": catalogues and grid equal");
     }
 
-  group("mean file, FITS: tracers, displacements, validity, mps, limits, ids, NREC; the search on it uses R = 1");
+  group("mean file read by otswap, FITS and ASCII: the search on it uses R = 1, the file's box and ids; a mean of "
+        "several realizations keeps nRealizationsMean, NREC 1; ASCII searched only with limits, since its 9-digit "
+        "tracers can fall outside a box measured on the exact ones");
   {
     std::vector<double> tracers(in.tracers.begin(), in.tracers.begin() + 3 * kN);
     otswap::Config ot;
@@ -422,43 +385,35 @@ int main ()
         if (named)
           for (std::size_t i = 0; i < rec.nObjects; ++i) rec.ids.push_back(i % 2 == 0 ? (std::int64_t)i : -(std::int64_t)i);
         for (const char* format : kFormats) {
-          const bool fits = std::string(format) == ".fits";
           const std::string file = temporary(std::string("mean") + format);
           otswap::io::writeDisplacementMean(file, rec);
-          const io::DisplacementMean m = io::readDisplacementMean(file);
+          const otswap::Result m = otswap::io::readDisplacementMean(file);
+          const std::string again = temporary(std::string("mean_again") + format);
+          otswap::io::writeDisplacementMean(again, m);
+          const otswap::Result m2 = otswap::io::readDisplacementMean(again);
+          std::map<std::string, std::string> keywords;
+          for (const otswap::io::Keyword& k : otswap::io::readKeywords(again)) keywords[k.name] = k.value;
           std::remove(file.c_str());
+          std::remove(again.c_str());
 
-          std::vector<std::uint8_t> valid;
-          for (const unsigned v : rec.validRealizations) valid.push_back(v > 0 ? 1 : 0);
           const std::string tag = what + " " + format;
-          if (fits) {
-            check(same_bits(m.tracers, rec.tracers) && same_bits(m.displacement, rec.meanDisplacement),
-                  tag + ": tracers and displacement bit for bit");
-          }
-          else {
-            check(same_bits(m.tracers, as_written(rec.tracers, 9)) &&
-                  same_bits(m.displacement, as_written(rec.meanDisplacement, 9)),
-                  tag + ": tracers and displacement as the 9-digit text");
-          }
-          check(m.valid == valid, tag + ": valid where nValidRec > 0");
-          check(same_bits(m.mps, rec.mps), tag + ": mps");
-          check(limited ? same_limits(m.limits, rec.box) && m.limits.has_value() : !m.limits, tag + ": limits");
-          check(m.ids == rec.ids, tag + ": ids");
-          check(m.nRealizationsAveraged == 3, tag + ": nRealizationsAveraged");
-          if (limited) {
-            bool invalidOutside = true;
-            for (std::size_t i = kN; i < kN + kOut; ++i) invalidOutside = invalidOutside && m.valid[i] == 0;
-            check(invalidOutside, tag + ": the tracers outside the limits not valid");
-          }
+          check(m.nRealizations == 1 && m.nRealizationsMean == 3 && m2.nRealizations == 1 &&
+                m2.nRealizationsMean == 3, tag + ": a mean of 3, one realization");
+          check(keywords["NREC"] == "1" && keywords["NRECMEAN"] == "3", tag + ": NREC 1, NRECMEAN 3 in the file");
+          check(m.box.has_value() && m2.box.has_value() && same_limits(m.box, m2.box) &&
+                (!limited || same_limits(m.box, rec.box)), tag + ": the file's box");
 
-          if (!fits) continue;
-          Config config;
-          config.log = nullptr;
-          config.nRealizationsMean = m.nRealizationsAveraged;
-          const Result s = findVoidsBox(m.tracers, m.displacement, m.valid, m.mps, config, m.limits, m.ids);
-          check(s.nRealizations == 1 && s.config.divergenceCellSize == 1. && s.voids.nBasins > 0 &&
-                same_limits(s.limits, m.limits) && s.ids == m.ids,
-                tag + ": the search runs with one realization, default cell 1");
+          if (!limited && std::string(format) != ".fits") continue;
+          for (const otswap::Result* source : {&m, &m2}) {
+            Config config;
+            config.log = nullptr;
+            config.nRealizationsMean = source->nRealizationsMean;
+            const Result s = findVoidsBox(*source, config);
+            check(s.nRealizations == 1 && s.config.nRealizationsMean == 3 && s.config.divergenceCellSize == 1. &&
+                  s.voids.nBasins > 0 && s.ids == source->ids &&
+                  (limited ? same_limits(s.limits, source->box) : !s.limits),
+                  tag + ": the search runs with one realization, default cell 1");
+          }
         }
       }
   }
@@ -478,27 +433,9 @@ int main ()
   {
     for (const char* format : kFormats) {
       const std::string missing = std::string("/nonexistent_bitvf_directory/x") + format;
-      otswap_nested([&] { io::readDisplacementMean(missing); }, std::string("RD1, mean, no file ") + format);
       otswap_nested([&] { io::readDivergence(missing); }, std::string("RD1, divergence, no file ") + format);
     }
     {
-      Table t = mean_table();
-      t.erase_column("displZ");
-      for (const char* format : kFormats) {
-        const std::string file = temporary(std::string("rd1") + format);
-        t.write(file);
-        otswap_nested([&] { io::readDisplacementMean(file); }, std::string("RD1, a missing column ") + format);
-        std::remove(file.c_str());
-      }
-      t = mean_table();
-      t.column("nValidRec").type = 'D';
-      t.column("nValidRec").data[0] = 1.5;
-      for (const char* format : kFormats) {
-        const std::string file = temporary(std::string("rd1") + format);
-        t.write(file);
-        otswap_nested([&] { io::readDisplacementMean(file); }, std::string("RD1, not an integer ") + format);
-        std::remove(file.c_str());
-      }
       Table d = divergence_table(p);
       d.erase_column("weight");
       for (const char* format : kFormats) {
@@ -509,19 +446,8 @@ int main ()
       }
     }
 
-    const Table mean = mean_table();
     const Table div = divergence_table(r);
     {
-      Table t = mean;
-      t.set("PRODUCT", "voids");
-      refused(t, read_mean, " is not a mean displacement file: its PRODUCT is 'voids', where 'displacements' is "
-              "expected", "RD2, mean");
-      t.set("PRODUCT", "complete displacements");
-      refused(t, read_mean, "; read it with otswap::io::readDisplacementComplete and pass the otswap::Result to "
-              "findVoidsBox", "RD2, mean, a complete file");
-      t.erase("PRODUCT");
-      refused(t, read_mean, " has no PRODUCT keyword: not an otswap mean displacement file", "RD2, mean, none");
-
       Table d = div;
       d.set("PRODUCT", "displacements");
       refused(d, read_divergence, " is not a divergence file: its PRODUCT is 'displacements', where 'divergence' "
@@ -539,9 +465,6 @@ int main ()
       for (const char* format : kFormats) {
         const std::string file = temporary(std::string("complete") + format);
         otswap::io::writeDisplacementComplete(file, rec);
-        throws_naming([&] { io::readDisplacementMean(file); },
-                      "its PRODUCT is 'complete displacements', where 'displacements' is expected; read it with "
-                      "otswap::io::readDisplacementComplete", std::string("RD2, a real complete file ") + format);
         throws_naming([&] { io::readDivergence(file); },
                       "is not a divergence file: its PRODUCT is 'complete displacements'",
                       std::string("RD2, a real complete file as a divergence ") + format);
@@ -584,11 +507,6 @@ int main ()
       }
     }
     {
-      Table t = mean;
-      t.set("GEOMETRY", "lightcone");
-      refused(t, read_mean, "reading a lightcone mean displacement file is not implemented", "RD3, mean");
-      t.set("GEOMETRY", "sphere");
-      refused(t, read_mean, ": GEOMETRY is 'sphere'; it must be box or lightcone", "RD4, mean");
       Table d = div;
       d.set("GEOMETRY", "lightcone");
       refused(d, read_divergence, "reading a lightcone divergence file is not implemented", "RD3, divergence");
@@ -596,22 +514,6 @@ int main ()
       refused(d, read_divergence, ": GEOMETRY is 'Box'; it must be box or lightcone", "RD4, divergence");
     }
     {
-      Table t = mean;
-      t.erase("MPS");
-      refused(t, read_mean, ": keyword MPS is missing", "RD5, MPS missing");
-      t = mean;
-      t.set("MPS", "ten");
-      refused(t, read_mean, ": keyword MPS is 'ten', not a number", "RD5, MPS not a number");
-      t.set("MPS", "10 m");
-      refused(t, read_mean, ": keyword MPS is '10 m', not a number", "RD5, MPS with trailing text");
-      t = mean;
-      t.set("NREC", "1.5");
-      refused(t, read_mean, ": keyword NREC is '1.5', not a whole number in [0, 4294967295]", "RD5, NREC 1.5");
-      t.set("NREC", "-1");
-      refused(t, read_mean, ": keyword NREC is '-1', not a whole number", "RD5, NREC negative");
-      t.set("NREC", "4294967296");
-      refused(t, read_mean, ": keyword NREC is '4294967296', not a whole number", "RD5, NREC too large");
-
       for (const char* key : {"NCELLS", "NRECMEAN", "CELLSIZE", "CELLSIDE", "LOWERY", "UPPERZ", "NCELLX"}) {
         Table d = div;
         d.erase(key);
@@ -623,27 +525,6 @@ int main ()
       refused(d, read_divergence, ": keyword NCELLY is 'x', not a whole number", "RD5, NCELLY");
     }
     {
-      Table t = mean;
-      t.set("BOXLIM", "2");
-      refused(t, read_mean, ": keyword BOXLIM is '2', where only 1 is written", "RD6, mean BOXLIM 2");
-      t.set("BOXLIM", "1");
-      const char* const boxKeys[6] = {"BOXXLO", "BOXXHI", "BOXYLO", "BOXYHI", "BOXZLO", "BOXZHI"};
-      for (int k = 0; k < 5; ++k) t.set(boxKeys[k], k % 2 == 0 ? "-1" : "11");
-      refused(t, read_mean, ": BOXLIM = 1 records box limits, but keyword BOXZHI is missing", "RD6, mean BOXZHI");
-      t.set("BOXZHI", "11");
-      t.set("BOXYLO", "abc");
-      refused(t, read_mean, ": keyword BOXYLO is 'abc', not a number", "RD6, mean BOXYLO not a number");
-
-      Table loose = mean;
-      for (int k = 0; k < 6; ++k) loose.set(boxKeys[k], k % 2 == 0 ? "-1" : "11");
-      for (const char* format : kFormats) {
-        const std::string file = temporary(std::string("loose") + format);
-        loose.write(file);
-        const io::DisplacementMean m = io::readDisplacementMean(file);
-        check(!m.limits, std::string("RD6: mean BOX* without BOXLIM ignored ") + format);
-        std::remove(file.c_str());
-      }
-
       Table d = div;
       d.set("BOXLIM", "0");
       refused(d, read_divergence, ": keyword BOXLIM is '0', where only 1 is written", "RD6, divergence BOXLIM 0");
@@ -656,9 +537,6 @@ int main ()
       refused(d, read_divergence, ": keyword BOXXLO is present without BOXLIM = 1", "RD6, divergence no BOXLIM");
     }
     {
-      Table t = mean;
-      t.set("NREC", "0");
-      refused(t, read_mean, ": NREC is 0; it must be at least 1", "RD7, mean");
       Table d = div;
       d.set("NREC", "0");
       refused(d, read_divergence, ": NREC is 0; it must be at least 1", "RD7, divergence NREC");
@@ -701,13 +579,6 @@ int main ()
       d = div;
       d.set("NCELLS", std::to_string(r.divergence->nCells + 1));
       refused(d, read_divergence, ": the grid to reuse has", "RD9, G5");
-    }
-    {
-      Table t = mean;
-      t.column("nValidRec").data[1] = 3.;
-      refused(t, read_mean, ": data row 2 (from 1) has nValidRec 3, outside 0..2", "RD10, above NREC");
-      t.column("nValidRec").data[1] = -1.;
-      refused(t, read_mean, ": data row 2 (from 1) has nValidRec -1, outside 0..2", "RD10, negative");
     }
   }
 

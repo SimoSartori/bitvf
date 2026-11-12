@@ -39,7 +39,7 @@ The input keys choose the kind of run; at most one of them is given.
 |---|---|---|
 | pipeline | none | reads the tracers (and the randoms, when given), runs {cpp:func}`bitvf::runBox`: the reconstruction, with `perform_recons = true` the correction of redshift-space distortions and a second reconstruction, then the search |
 | from a reconstruction | `displacement_file` | reads otswap's complete displacement file and searches it, {cpp:func}`bitvf::findVoidsBox` |
-| from mean displacements | `displacement_mean_file` | reads otswap's mean displacement file, {cpp:func}`bitvf::io::readDisplacementMean`, and searches it as one realization |
+| from mean displacements | `displacement_mean_file` | reads otswap's mean displacement file with `otswap::io::readDisplacementMean` and searches it as one realization with {cpp:func}`bitvf::findVoidsBox`, `Config::nRealizationsMean` from the file's NRECMEAN; a file holding no box limits (otswap 0.2) is refused |
 | from a divergence | `divergence_input_file` | reads a divergence file written with `printDiv` and the tracers, and searches it again with the smoothing given, {cpp:func}`bitvf::findVoidsBoxFromDivergence` |
 
 ## The keys of `bitvf`

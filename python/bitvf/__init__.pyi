@@ -179,8 +179,9 @@ class Config:
     since it holds one entry per tracer in several arrays."""
     n_realizations_mean: int
     """Realizations averaged into each displacement given; default 1, for
-    the displacements of single realizations. For a mean displacement file,
-    its NREC (``io.DisplacementMean.n_realizations_averaged``). A record
+    the displacements of single realizations. For the ``otswap.Result`` read
+    from a mean displacement file (``otswap.io.read_displacement_mean``), its
+    ``n_realizations_mean``. A record
     only, written as the keyword NRECMEAN of bitvf's files; no computation
     reads it. Must be at least 1, at most 4294967295."""
     verbosity: Verbosity
@@ -823,6 +824,16 @@ def find_voids_box(tracers: Union[ArrayLike, otswap.Result], displacement: Optio
     ``otswap.Result.outside_box`` are skipped. Given the same arrays and
     ``otswap.Result.box`` as ``box``, both forms give the same result.
 
+    The ``otswap.Result`` may be the mean of a reconstruction, read from a
+    mean displacement file by ``otswap.io.read_displacement_mean`` (one
+    realization, ``n_realizations_mean`` the number averaged; set
+    ``Config.n_realizations_mean`` to it, so that bitvf's files record it).
+    Its box is the file's box keywords, with or without BOXLIM; a file
+    without them (written by otswap 0.2) holds no box limits and is
+    refused. The divergence is not linear in the displacement, so a search
+    on the mean of R realizations does not give the result of the search on
+    the R realizations.
+
     Parameters
     ----------
     tracers : array_like, shape (N, 3), or otswap.Result
@@ -892,7 +903,11 @@ def find_voids_box(tracers: Union[ArrayLike, otswap.Result], displacement: Optio
         cells is inconsistent; if ``mps`` differs from ``grid.mps``, bit for
         bit.
     Error
-        On the reconstruction: if it is not a box result, or is malformed.
+        On the reconstruction: if it is not a box result, or is malformed:
+        no objects, ``n_realizations`` or ``n_realizations_mean`` 0, a mean
+        (``n_realizations_mean`` above 1) of several realizations,
+        ``valid_realizations`` of the wrong length or above
+        ``n_realizations`` x ``n_realizations_mean``, or no box.
     Error
         On the data: if the search reads more than 4294967295 tracers; if no
         valid displacement is left to read; with ``box`` or ``grid``, if a

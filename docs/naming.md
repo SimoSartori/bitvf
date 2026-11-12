@@ -67,6 +67,5 @@ or are listed for completeness.
 | `io::fileName(product, directory, name, zspace)` | `io.file_name(product, directory, name, *, zspace)` | |
 | `io::writeVoids`, `writeOverdense`, `writeDivergence`, `writeGalaxies` | `io.write_voids`, `write_overdense`, `write_divergence`, `write_galaxies` | the same files, byte for byte |
 | `io::readDivergence(file)` | `io.read_divergence(file, *, angle_unit=None)` | `angle_unit` required for a lightcone file, an error for a box file |
-| `io::readDisplacementMean(file)`, `io::DisplacementMean` | `io.read_displacement_mean(file)`, `io.DisplacementMean` | `displacement` (1, N, 3), `valid` (1, N) |
 | `io::readField(file, centreColumns, valueColumn, weightColumn, delimiter, comment)`, `io::Field` | `io.read_field(file, *, centres, value, weight, delimiter, comment)`, `io.Field` | `weights` `None` when no column is named |
 | a path, `std::string` | `str` or `os.PathLike` | |

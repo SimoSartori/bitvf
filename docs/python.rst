@@ -107,11 +107,6 @@ Readers
 
 .. autoapifunction:: bitvf.io.read_divergence
 
-.. autoapifunction:: bitvf.io.read_displacement_mean
-
-.. autoapiclass:: bitvf.io.DisplacementMean
-   :members:
-
 .. autoapifunction:: bitvf.io.read_field
 
 .. autoapiclass:: bitvf.io.Field

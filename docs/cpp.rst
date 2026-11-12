@@ -121,11 +121,6 @@ Readers
 
 .. doxygenfunction:: bitvf::io::readDivergence
 
-.. doxygenfunction:: bitvf::io::readDisplacementMean
-
-.. doxygenstruct:: bitvf::io::DisplacementMean
-   :members:
-
 .. doxygenfunction:: bitvf::io::readField
 
 .. doxygenstruct:: bitvf::io::Field

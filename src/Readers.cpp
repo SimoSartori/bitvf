@@ -134,20 +134,18 @@ namespace {
 
     /**
      *  @brief The box limits: the six box keywords when BOXLIM = 1, else
-     *  none. With boxOnlyWithLimits, a box keyword without BOXLIM is an
-     *  error.
+     *  none. A box keyword without BOXLIM is an error.
      */
-    std::optional<otswap::BoxLimits> limits (const bool boxOnlyWithLimits) const
+    std::optional<otswap::BoxLimits> limits () const
     {
       const std::string* boxlim = find("BOXLIM");
       if (boxlim != nullptr && *boxlim != "1")
         throw Error(file + ": keyword BOXLIM is '" + *boxlim + "', where only 1 is written");
       if (boxlim == nullptr) {
-        if (boxOnlyWithLimits)
-          for (const char* k : kBoxKeywords)
-            if (find(k) != nullptr)
-              throw Error(file + ": keyword " + std::string(k) + " is present without BOXLIM = 1, "
-                          "which bitvf writes with the box limits");
+        for (const char* k : kBoxKeywords)
+          if (find(k) != nullptr)
+            throw Error(file + ": keyword " + std::string(k) + " is present without BOXLIM = 1, "
+                        "which bitvf writes with the box limits");
         return std::nullopt;
       }
       for (const char* k : kBoxKeywords)
@@ -180,52 +178,6 @@ namespace {
 // ============================================================================
 
 
-bitvf::io::DisplacementMean bitvf::io::readDisplacementMean (const std::string& file)
-{
-  const Header h {file, internal::call_otswap([&file] { return otswap::io::readKeywords(file); })};
-  h.product("displacements", "mean displacement", "an otswap mean displacement");
-  h.box_geometry("mean displacement");
-
-  DisplacementMean m;
-  m.nRealizationsAveraged = (unsigned)h.whole("NREC", kUnsigned);
-  if (m.nRealizationsAveraged == 0) throw Error(file + ": NREC is 0; it must be at least 1");
-  m.mps = h.real("MPS");
-  m.limits = h.limits(false);
-
-  const std::vector<std::string> names = internal::call_otswap([&file] { return otswap::io::columnNames(file); });
-  const bool hasId = Header::has_column(names, "id");
-  std::vector<std::string> integerColumns = {"nValidRec"};
-  if (hasId) integerColumns.push_back("id");
-  const otswap::io::Table t = internal::call_otswap([&] {
-    return otswap::io::read(file, {"tracX", "tracY", "tracZ", "displX", "displY", "displZ"}, integerColumns);
-  });
-
-  const std::size_t n = t.nRows;
-  const std::size_t ni = integerColumns.size();
-  m.tracers.resize(3 * n);
-  m.displacement.resize(3 * n);
-  m.valid.resize(n);
-  if (hasId) m.ids.resize(n);
-  for (std::size_t i = 0; i < n; ++i) {
-    for (std::size_t c = 0; c < 3; ++c) {
-      m.tracers[3*i+c] = t.values[6*i+c];
-      m.displacement[3*i+c] = t.values[6*i+3+c];
-    }
-    const std::int64_t nValid = t.integers[ni*i];
-    if (nValid < 0 || nValid > (std::int64_t)m.nRealizationsAveraged)
-      throw Error(file + ": data row " + std::to_string(i+1) + " (from 1) has nValidRec " + std::to_string(nValid) +
-                  ", outside 0.." + std::to_string(m.nRealizationsAveraged));
-    m.valid[i] = nValid > 0 ? 1 : 0;
-    if (hasId) m.ids[i] = t.integers[ni*i+1];
-  }
-
-  return m;
-}
-
-
-// ============================================================================
-
-
 bitvf::DivergenceGrid bitvf::io::readDivergence (const std::string& file)
 {
   const Header h {file, internal::call_otswap([&file] { return otswap::io::readKeywords(file); })};
@@ -247,7 +199,7 @@ bitvf::DivergenceGrid bitvf::io::readDivergence (const std::string& file)
     grid.upper[c] = h.real(std::string("UPPER") + kAxis[c]);
     grid.nCellsAxis[c] = (std::size_t)h.whole(std::string("NCELL") + kAxis[c], kSize);
   }
-  grid.limits = h.limits(true);
+  grid.limits = h.limits();
 
   try {
     internal::check_box_grid(grid, grid.mps, true, "");

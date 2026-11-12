@@ -135,7 +135,6 @@ sigma > 0, `divergenceSmoothed` hold the field before and after smoothing,
 | C++ | Python | Reads |
 |---|---|---|
 | {cpp:func}`io::readDivergence <bitvf::io::readDivergence>` | {py:func}`io.read_divergence <bitvf.io.read_divergence>` | a divergence file, back into a grid, bit for bit |
-| {cpp:func}`io::readDisplacementMean <bitvf::io::readDisplacementMean>` | {py:func}`io.read_displacement_mean <bitvf.io.read_displacement_mean>` | otswap's mean displacement file of a box reconstruction |
 | {cpp:func}`io::readField <bitvf::io::readField>` | {py:func}`io.read_field <bitvf.io.read_field>` | a field at cell centres, from any table |
 
 - **Divergence file.** Read back with every value the writer wrote, in both
@@ -143,13 +142,16 @@ sigma > 0, `divergenceSmoothed` hold the field before and after smoothing,
   {cpp:func}`bitvf::findVoidsBox`, and searched again with another
   smoothing by {cpp:func}`bitvf::findVoidsBoxFromDivergence`. The divergence file of a
   field result is read with `readField`.
-- **Mean displacement file.** The tracers, their mean displacement as one
-  realization, its validity, the mps, the box limits when the file records
-  them, and the IDs, ready for `findVoidsBox`. The divergence is not linear
-  in the displacement, so the search on the mean of R realizations does not
-  give the search on the R realizations; set `Config::nRealizationsMean` to
-  the file's `NREC` so that bitvf's files record it. ASCII holds the
-  positions with 9 significant digits: prefer FITS.
+- **Mean displacement file.** bitvf has no reader for it: read it with
+  `otswap::io::readDisplacementMean` (Python `otswap.io.read_displacement_mean`)
+  and pass the `otswap::Result` to the `Result` overload of
+  {cpp:func}`bitvf::findVoidsBox`. The box is the file's box keywords, with
+  or without `BOXLIM`; a file without them (written by otswap 0.2) is
+  refused. The divergence is not linear in the displacement, so the search on
+  the mean of R realizations does not give the search on the R realizations;
+  set `Config::nRealizationsMean` to the `Result`'s `nRealizationsMean`
+  so that bitvf's files record it. ASCII holds the positions with 9
+  significant digits: prefer FITS.
 - **Field.** Columns are named in FITS; in ASCII, named from the last `###`
   line before the data, or given as 0-based indices in digits. Every value
   read must be finite. A divergence file is valid input, with `cellX`,

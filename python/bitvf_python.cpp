@@ -595,7 +595,6 @@ namespace {
   using AssignmentHandle = nb::handle_t<bitvf::TracerAssignment>;
   using ResultHandle = nb::handle_t<bitvf::Result>;
   using PartitionHandle = nb::handle_t<PartitionObject>;
-  using MeanHandle = nb::handle_t<bitvf::io::DisplacementMean>;
   using FieldHandle = nb::handle_t<bitvf::io::Field>;
 
   const bitvf::DivergenceGrid& grid_of (GridHandle self) { return nb::cast<const bitvf::DivergenceGrid&>(self); }
@@ -1413,31 +1412,6 @@ NB_MODULE(_bitvf, m)
   writer("write_divergence", &bitvf::io::writeDivergence, "Write the divergence grid, one row per cell.");
   writer("write_galaxies", &bitvf::io::writeGalaxies, "Write where each tracer ended up, one row per tracer.");
 
-  nb::class_<bitvf::io::DisplacementMean>(io, "DisplacementMean",
-      "otswap's mean displacement file, shaped for find_voids_box as one realization. Read-only.")
-    .def_prop_ro("tracers", [] (MeanHandle self) {
-        return triplets(self, nb::cast<const bitvf::io::DisplacementMean&>(self).tracers);
-      }, "Tracer positions, in coordinate units, shape (N, 3).")
-    .def_prop_ro("displacement", [] (MeanHandle self) {
-        const auto& d = nb::cast<const bitvf::io::DisplacementMean&>(self);
-        return view<double>(self, d.displacement, {1, d.displacement.size() / 3, 3});
-      }, "Mean displacement of each tracer, shape (1, N, 3); NaN where no realization was valid.")
-    .def_prop_ro("valid", [] (MeanHandle self) {
-        const auto& d = nb::cast<const bitvf::io::DisplacementMean&>(self);
-        return view<bool>(self, d.valid, {1, d.valid.size()});
-      }, "Whether each displacement is valid, shape (1, N).")
-    .def_prop_ro("mps", [] (const bitvf::io::DisplacementMean& d) { return d.mps; },
-                 "Mean particle separation of the reconstruction, in coordinate units.")
-    .def_prop_ro("limits", [] (const bitvf::io::DisplacementMean& d) { return box_or_none(d.limits); },
-                 "The box limits of the reconstruction, when the file records them; None otherwise.")
-    .def_prop_ro("ids", [] (const bitvf::io::DisplacementMean& d) {
-        return ids_array(d.ids, d.tracers.size() / 3);
-      }, nb::rv_policy::reference,
-      "The IDs, a new read-only copy on each access; 0..N-1 when the file has none.")
-    .def_prop_ro("n_realizations_averaged",
-                 [] (const bitvf::io::DisplacementMean& d) { return d.nRealizationsAveraged; },
-                 "Realizations averaged into each displacement: set Config.n_realizations_mean to it.");
-
   nb::class_<bitvf::io::Field>(io, "Field", "A field at the centres of cells, for find_voids_box_from_field. "
                                "Read-only.")
     .def_prop_ro("centres", [] (FieldHandle self) {
@@ -1471,14 +1445,6 @@ NB_MODULE(_bitvf, m)
       "file"_a.none(), nb::kw_only(), "angle_unit"_a.none() = nb::none(),
       "Read a divergence file written by write_divergence; angle_unit (\"deg\" or \"rad\") is that of a "
       "lightcone grid's angles, required for a lightcone file and an error for a box file.");
-
-  io.def("read_displacement_mean",
-      [] (nb::handle file) {
-        const std::string path = to_path(file, "file");
-        nb::gil_scoped_release released;
-        return bitvf::io::readDisplacementMean(path);
-      },
-      "file"_a.none(), "Read otswap's mean displacement file of a box reconstruction.");
 
   io.def("read_field",
       [] (nb::handle file, nb::handle centres, nb::handle value, nb::handle weight, nb::handle delimiter,

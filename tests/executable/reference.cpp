@@ -32,6 +32,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -82,7 +83,7 @@ int main (int argc, char** argv)
   }
   const std::string data = argv[1];
   g_out = argv[2];
-  for (const char* kind : {"pipeline", "rsd", "complete", "mean", "divergence", "field"})
+  for (const char* kind : {"pipeline", "rsd", "complete", "mean", "meanmulti", "meanold", "divergence", "field"})
     std::filesystem::create_directories(g_out + "/" + kind);
 
   try {
@@ -146,15 +147,39 @@ int main (int argc, char** argv)
     // mean.ini: pipeline's mean file, cell 1.2 mps, sigma 3 in coordinate
     // units, FITS.
     {
-      const bitvf::io::DisplacementMean m = bitvf::io::readDisplacementMean(path("pipeline", "displacement_mean_",
-                                                                                 "fits"));
+      const otswap::Result m = otswap::io::readDisplacementMean(path("pipeline", "displacement_mean_", "fits"));
       bitvf::Config c = search_config();
       c.divergenceCellSize = 1.2;
       c.smoothing.sigma = 3.;
       c.smoothing.unit = bitvf::LengthUnit::Coordinate;
-      c.nRealizationsMean = m.nRealizationsAveraged;
-      write_search("mean", bitvf::findVoidsBox(m.tracers, m.displacement, m.valid, m.mps, c, m.limits, m.ids),
-                   "fits");
+      c.nRealizationsMean = m.nRealizationsMean;
+      write_search("mean", bitvf::findVoidsBox(m, c), "fits");
+    }
+
+    // meanmulti.ini: pipeline's mean file written again from the Result
+    // read (NREC 1, NRECMEAN 2), searched as mean.ini does.
+    {
+      const otswap::Result m = otswap::io::readDisplacementMean(path("pipeline", "displacement_mean_", "fits"));
+      otswap::io::writeDisplacementMean(path("meanmulti", "displacement_mean_", "fits"), m);
+      const otswap::Result again = otswap::io::readDisplacementMean(path("meanmulti", "displacement_mean_", "fits"));
+      bitvf::Config c = search_config();
+      c.divergenceCellSize = 1.2;
+      c.smoothing.sigma = 3.;
+      c.smoothing.unit = bitvf::LengthUnit::Coordinate;
+      c.nRealizationsMean = again.nRealizationsMean;
+      write_search("meanmulti", bitvf::findVoidsBox(again, c), "fits");
+    }
+
+    // meanold.ini: pipeline's mean file as ASCII without its box keywords,
+    // as otswap 0.2 wrote it.
+    {
+      const otswap::Result m = otswap::io::readDisplacementMean(path("pipeline", "displacement_mean_", "fits"));
+      const std::string full = path("meanold", "full_", "dat");
+      otswap::io::writeDisplacementMean(full, m);
+      std::ifstream in(full);
+      std::ofstream out(path("meanold", "displacement_mean_", "dat"));
+      for (std::string line; std::getline(in, line); )
+        if (line.compare(0, 6, "## BOX") != 0) out << line << '\n';
     }
 
     // divergence.ini: pipeline's divergence with the tracers and their IDs,

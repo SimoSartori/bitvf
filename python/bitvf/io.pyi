@@ -207,50 +207,6 @@ def write_galaxies(file: Path, result: Result) -> None:
     """
 
 
-class DisplacementMean:
-    """otswap's mean displacement file (``otswap.io.write_displacement_mean``),
-    shaped for ``find_voids_box`` as one realization::
-
-        m = bitvf.io.read_displacement_mean("displacement_mean.fits")
-        config.n_realizations_mean = m.n_realizations_averaged
-        r = bitvf.find_voids_box(m.tracers, m.displacement, m.valid, mps=m.mps, box=m.limits,
-                                 ids=m.ids, config=config)
-
-    Read-only.
-    """
-
-    @property
-    def tracers(self) -> NDArray[np.float64]:
-        """Tracer positions, in coordinate units, shape (N, 3): columns
-        tracX, tracY, tracZ."""
-    @property
-    def displacement(self) -> NDArray[np.float64]:
-        """Mean displacement of each tracer, in coordinate units, shape
-        (1, N, 3): columns displX, displY, displZ, as stored; NaN where no
-        realization was valid."""
-    @property
-    def valid(self) -> NDArray[np.bool_]:
-        """Validity of each displacement, shape (1, N): True where column
-        nValidRec is positive."""
-    @property
-    def mps(self) -> float:
-        """Mean particle separation of the reconstruction, in coordinate
-        units: keyword MPS."""
-    @property
-    def limits(self) -> Optional[otswap.BoxLimits]:
-        """The box limits of the reconstruction, keywords BOXXLO to BOXZHI,
-        when the file records them as limits (BOXLIM = 1); None otherwise."""
-    @property
-    def ids(self) -> NDArray[np.int64]:
-        """Column id, shape (N,), a new read-only copy on each access;
-        0..N-1 when the file has none."""
-    @property
-    def n_realizations_averaged(self) -> int:
-        """Realizations averaged into each displacement: keyword NREC. Set
-        ``Config.n_realizations_mean`` to it, so that bitvf's files record
-        it."""
-
-
 class Field:
     """A field at the centres of cells, for ``find_voids_box_from_field``.
     Read-only."""
@@ -314,49 +270,6 @@ def read_divergence(file: Path, *, angle_unit: Optional[str] = None) -> Divergen
         the data row, counted from 1 among the data rows (comment and blank
         lines do not count), as "data row k (from 1)". If the grid fails the checks of a grid to
         reuse.
-    """
-
-
-def read_displacement_mean(file: Path) -> DisplacementMean:
-    """Read otswap's mean displacement file of a box reconstruction.
-
-    FITS stores the doubles themselves; ASCII holds tracers and
-    displacements with 9 significant digits, so they are rounded, and a
-    tracer within rounding of a box limit can fall on the other side of it.
-    Keywords are exact in both formats. The box keywords are limits only
-    with BOXLIM = 1; otherwise the search builds its grid on the tracers and
-    the endpoints of their displacements. The default
-    ``Config.divergence_cell_size`` of such a search is 1, whatever the
-    realizations averaged.
-
-    Parameters
-    ----------
-    file : str or os.PathLike
-        The mean displacement file, ASCII or FITS.
-
-    Returns
-    -------
-    DisplacementMean
-
-    Raises
-    ------
-    Error
-        If the file cannot be read, lacks a column, or an integer column
-        holds anything but an integer: the message starts with
-        ``"otswap: "``.
-    Error
-        If it has no PRODUCT keyword, its PRODUCT is not displacements, or
-        GEOMETRY is not box (only box files are read); if NREC or MPS is
-        missing or not a number, NREC is 0, BOXLIM holds anything but 1, or
-        BOXLIM = 1 comes without the six box keywords; if nValidRec lies
-        outside 0 to NREC in a row: the message names the data row, counted from 1 among the data
-        rows (comment and blank lines do not count), as "data row k (from 1)".
-
-    Notes
-    -----
-    The divergence is not linear in the displacement, so a search on the
-    mean of R realizations does not give the result of the search on the R
-    realizations.
     """
 
 

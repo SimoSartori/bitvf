@@ -560,6 +560,26 @@ int main ()
     with([] (otswap::Result& r) { r.nObjects = 0; }, "holds no objects", "O2, no objects");
     with([] (otswap::Result& r) { r.nRealizations = 0; }, "holds no realizations",
          "O2, no realizations");
+    with([] (otswap::Result& r) { r.nRealizationsMean = 0; }, "nRealizationsMean is 0", "O2, mean 0");
+    with([] (otswap::Result& r) { r.nRealizations = 2; r.nRealizationsMean = 3; },
+         "a mean holds one realization", "O2, a mean of several realizations");
+    with([] (otswap::Result& r) { r.validRealizations.assign(3, 1); }, "malformed: validRealizations holds 3 entries",
+         "O2, validRealizations size");
+    with([] (otswap::Result& r) {
+           r.nRealizations = 1;
+           r.nRealizationsMean = 4;
+           r.validRealizations.assign(r.nObjects, 1);
+           r.validRealizations[2] = 5;
+         }, "above nRealizations * nRealizationsMean = 4", "O2, validRealizations above the mean");
+    accepted([&] {
+               otswap::Result r = in.reconstruction();
+               r.nRealizations = 1;
+               r.nRealizationsMean = 4;
+               r.displacement.resize(3 * r.nObjects);
+               r.valid.resize(r.nObjects);
+               r.validRealizations.assign(r.nObjects, 4);
+               findVoidsBox(r, config);
+             }, "a mean of 4 realizations, validRealizations in [0, 4]");
     with([] (otswap::Result& r) { r.tracers.pop_back(); }, "malformed: tracers", "O2, tracers");
     with([] (otswap::Result& r) { r.displacement.pop_back(); }, "malformed: displacement",
          "O2, displacement");
