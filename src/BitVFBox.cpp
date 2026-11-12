@@ -35,6 +35,8 @@
 #include <utility>
 #include <vector>
 
+#include "otswap/Random.h"
+
 #include "bitvf/BitVF.h"
 #include "internal.h"
 
@@ -97,6 +99,10 @@ namespace {
         throw Error(std::string(randoms.empty() ? "the tracers span" : "the tracers and the given randoms span") +
                     " no volume (all of them in one plane, on one line or at one point), so they fix no box; "
                     "give the box limits");
+    for (std::size_t k = 0; k < 3; ++k)
+      if (!std::isfinite(box.upper[k] - box.lower[k]))
+        throw Error("the box measured from the tracers and the randoms has an infinite width on axis " +
+                    std::string(1, "xyz"[k]) + "; give the box limits");
     return box;
   }
 
@@ -134,13 +140,8 @@ namespace {
 
     randoms.resize(3 * (std::size_t)nRealizations * inside);
     std::mt19937 rng(seed);
-    for (std::size_t j = 0; j < randoms.size(); ++j) {
-      const std::uint64_t a = (std::uint64_t)(rng() >> 5);
-      const std::uint64_t b = (std::uint64_t)(rng() >> 6);
-      const double lo = box.lower[j%3], hi = box.upper[j%3];
-      const double x = lo + (double)((a << 26) + b) / 9007199254740992. * (hi - lo);
-      randoms[j] = x >= hi ? std::nextafter(hi, lo) : x;
-    }
+    for (std::size_t j = 0; j < randoms.size(); ++j)
+      randoms[j] = otswap::uniformReal(rng, box.lower[j%3], box.upper[j%3]);
     return randoms;
   }
 

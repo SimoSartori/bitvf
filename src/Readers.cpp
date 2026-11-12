@@ -65,18 +65,6 @@ namespace {
   }
 
   /**
-   *  @brief FITS for a name ending in .fits, .fit or .fits.gz, ignoring
-   *  case, as otswap::io decides.
-   */
-  bool is_fits (const std::string& file)
-  {
-    const std::string name = lower_case(file);
-    for (const std::string ext : {".fits", ".fit", ".fits.gz"})
-      if (name.size() >= ext.size() && name.compare(name.size() - ext.size(), ext.size(), ext) == 0) return true;
-    return false;
-  }
-
-  /**
    *  @brief The keywords of a table, looked up by name, with errors that
    *  name the file and the keyword.
    */
@@ -174,33 +162,15 @@ namespace {
     }
 
     /**
-     *  @brief Whether the table has a column of that name: in FITS from
-     *  the TTYPEn cards, ignoring case; in ASCII from the last line
-     *  starting with "###" before the first data row.
+     *  @brief Whether @p names, the columns of the table, holds that
+     *  name, ignoring case.
      */
-    bool has_column (const std::string& name) const
+    static bool has_column (const std::vector<std::string>& names, const std::string& name)
     {
-      if (is_fits(file)) {
-        const std::string wanted = lower_case(name);
-        for (const Keyword& k : keywords)
-          if (k.name.compare(0, 5, "TTYPE") == 0 && lower_case(k.value) == wanted) return true;
-        return false;
-      }
-
-      std::ifstream input(file);
-      if (!input) throw Error(file + ": cannot open the file");
-      std::vector<std::string> names;
-      std::string line;
-      while (std::getline(input, line)) {
-        if (line.compare(0, 3, "###") == 0) {
-          names.clear();
-          std::istringstream fields(line.substr(3));
-          for (std::string field; fields >> field; ) names.push_back(field);
-          continue;
-        }
-        if (!line.empty() && line[0] != '#') break;
-      }
-      return std::find(names.begin(), names.end(), name) != names.end();
+      const std::string wanted = lower_case(name);
+      for (const std::string& n : names)
+        if (lower_case(n) == wanted) return true;
+      return false;
     }
   };
 
@@ -222,7 +192,8 @@ bitvf::io::DisplacementMean bitvf::io::readDisplacementMean (const std::string& 
   m.mps = h.real("MPS");
   m.limits = h.limits(false);
 
-  const bool hasId = h.has_column("id");
+  const std::vector<std::string> names = internal::call_otswap([&file] { return otswap::io::columnNames(file); });
+  const bool hasId = Header::has_column(names, "id");
   std::vector<std::string> integerColumns = {"nValidRec"};
   if (hasId) integerColumns.push_back("id");
   const otswap::io::Table t = internal::call_otswap([&] {
@@ -242,7 +213,7 @@ bitvf::io::DisplacementMean bitvf::io::readDisplacementMean (const std::string& 
     }
     const std::int64_t nValid = t.integers[ni*i];
     if (nValid < 0 || nValid > (std::int64_t)m.nRealizationsAveraged)
-      throw Error(file + ": data row " + std::to_string(i+1) + " has nValidRec " + std::to_string(nValid) +
+      throw Error(file + ": data row " + std::to_string(i+1) + " (from 1) has nValidRec " + std::to_string(nValid) +
                   ", outside 0.." + std::to_string(m.nRealizationsAveraged));
     m.valid[i] = nValid > 0 ? 1 : 0;
     if (hasId) m.ids[i] = t.integers[ni*i+1];
@@ -285,8 +256,9 @@ bitvf::DivergenceGrid bitvf::io::readDivergence (const std::string& file)
     throw Error(file + ": " + e.what());
   }
 
-  const bool smoothed = h.has_column("divergenceSmoothed");
-  const bool weightSmoothed = h.has_column("weightSmoothed");
+  const std::vector<std::string> names = internal::call_otswap([&file] { return otswap::io::columnNames(file); });
+  const bool smoothed = Header::has_column(names, "divergenceSmoothed");
+  const bool weightSmoothed = Header::has_column(names, "weightSmoothed");
   std::vector<std::string> columns = {"cellX", "cellY", "cellZ", "divergence"};
   if (smoothed) columns.push_back("divergenceSmoothed");
   columns.push_back("volume");
@@ -316,13 +288,13 @@ bitvf::DivergenceGrid bitvf::io::readDivergence (const std::string& file)
     const double* v = &t.values[nc*c];
     const std::int64_t* k = &t.integers[5*c];
     if (k[0] != (std::int64_t)c)
-      throw Error(file + ": data row " + std::to_string(c+1) + " has index " + std::to_string(k[0]) +
+      throw Error(file + ": data row " + std::to_string(c+1) + " (from 1) has index " + std::to_string(k[0]) +
                   "; the rows must hold the cells 0 to NCELLS - 1 in order");
     if (k[1] < 0 || k[2] < 0)
-      throw Error(file + ": data row " + std::to_string(c+1) + " has a negative count (nDispl " +
+      throw Error(file + ": data row " + std::to_string(c+1) + " (from 1) has a negative count (nDispl " +
                   std::to_string(k[1]) + ", nTracers " + std::to_string(k[2]) + ")");
     if (k[3] < -1 || k[4] < -1)
-      throw Error(file + ": data row " + std::to_string(c+1) + " has a basin index below -1 (voidIndex " +
+      throw Error(file + ": data row " + std::to_string(c+1) + " (from 1) has a basin index below -1 (voidIndex " +
                   std::to_string(k[3]) + ", overdenseIndex " + std::to_string(k[4]) + ")");
     for (std::size_t a = 0; a < 3; ++a) grid.centre[3*c+a] = v[a];
     grid.divergence[c] = v[3];
@@ -357,7 +329,7 @@ bitvf::io::Field bitvf::io::readField (const std::string& file, const std::array
   for (std::size_t i = 0; i < nc * n; ++i)
     if (!std::isfinite(t.values[i])) {
       const double v = t.values[i];
-      throw Error(file + ": data row " + std::to_string(i / nc + 1) + " has " +
+      throw Error(file + ": data row " + std::to_string(i / nc + 1) + " (from 1) has " +
                   (v != v ? "nan" : v > 0. ? "inf" : "-inf") + " in column " + columns[i % nc] + "; every value must be finite");
     }
   Field f;

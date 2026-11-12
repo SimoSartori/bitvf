@@ -507,6 +507,16 @@ int main ()
     round_trip(f, "free", "no limits");
   }
 
+  group("a box limit written with 17 digits near zero, -1.2345678901234567e-05, through every writer: no refusal, "
+        "read back bit for bit");
+  {
+    Input tiny = in;
+    tiny.limits = box(-1.2345678901234567e-05, 102.);
+    const Result t = tiny.run();
+    check(t.limits && t.limits->lower[0] == -1.2345678901234567e-05, "the fixture: the tiny limit is kept");
+    round_trip(t, "tiny", "tiny negative box limit");
+  }
+
   group("optional columns: divergenceSmoothed, weightSmoothed, inBox, uncorrected, outsideGrid exactly when they "
         "apply");
   {

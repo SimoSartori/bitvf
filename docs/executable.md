@@ -130,6 +130,9 @@ The keys of a lightcone run (`units`, `random_recons_mode`,
 `random_file_recons`, `veto_mask_filename`, `z_min`, `z_max`, `bins`,
 `reject_mask_crossings`, `max_unobserved_pixels_crossed`, `bias_file`,
 `printMps`) are refused in a box run, as "does not apply to a box".
+`max_unobserved_pixels_crossed` is the longest run of unobserved pixels
+that a displacement may cross in a row; a displacement crossing a longer run
+is rejected.
 
 ## The keys of `bitvf-field`
 

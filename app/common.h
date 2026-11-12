@@ -273,7 +273,7 @@ namespace app {
   // ==========================================================================
 
   /// The first ID met twice, in row order, with both data rows counted
-  /// from 1.
+  /// from 1, stated "(from 1)" in the message.
   inline void check_ids (const std::vector<std::int64_t>& ids, const std::string& file, const std::string& column)
   {
     std::unordered_map<std::int64_t, std::size_t> first;
@@ -282,7 +282,7 @@ namespace app {
       if (!found.second)
         throw Error(file + ": the column " + column + " holds the ID " + std::to_string(ids[row]) +
                     " twice, at data rows " + std::to_string(found.first->second+1) + " and " +
-                    std::to_string(row+1));
+                    std::to_string(row+1) + " (from 1)");
     }
   }
 

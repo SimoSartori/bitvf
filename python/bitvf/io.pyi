@@ -311,7 +311,8 @@ def read_divergence(file: Path, *, angle_unit: Optional[str] = None) -> Divergen
     Error
         If the rows are not NCELLS, index is not 0 to NCELLS - 1 in order, a
         count is negative, or a basin index is below -1: the message names
-        the data row, from 1. If the grid fails the checks of a grid to
+        the data row, counted from 1 among the data rows (comment and blank
+        lines do not count), as "data row k (from 1)". If the grid fails the checks of a grid to
         reuse.
     """
 
@@ -348,7 +349,8 @@ def read_displacement_mean(file: Path) -> DisplacementMean:
         GEOMETRY is not box (only box files are read); if NREC or MPS is
         missing or not a number, NREC is 0, BOXLIM holds anything but 1, or
         BOXLIM = 1 comes without the six box keywords; if nValidRec lies
-        outside 0 to NREC in a row: the message names the data row, from 1.
+        outside 0 to NREC in a row: the message names the data row, counted from 1 among the data
+        rows (comment and blank lines do not count), as "data row k (from 1)".
 
     Notes
     -----

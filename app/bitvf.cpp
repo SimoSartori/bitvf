@@ -40,6 +40,7 @@
  */
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
@@ -288,6 +289,10 @@ namespace {
       if (!lower.empty()) {
         otswap::BoxLimits limits;
         for (std::size_t k = 0; k < 3; ++k) {
+          if (!std::isfinite(lower[k]))
+            p.fail("box_min", "element " + std::to_string(k+1) + ", " + p.written("box_min", k) + ", is not finite");
+          if (!std::isfinite(upper[k]))
+            p.fail("box_max", "element " + std::to_string(k+1) + ", " + p.written("box_max", k) + ", is not finite");
           if (!(upper[k] > lower[k]))
             p.fail("box_max", "element " + std::to_string(k+1) + ", " + p.written("box_max", k) +
                    ", is not above element " + std::to_string(k+1) + " of box_min, " +

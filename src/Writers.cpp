@@ -155,9 +155,9 @@ namespace {
       static const char* const axis[3] = {"X", "Y", "Z"};
       for (int c = 0; c < 3; ++c) {
         k.push_back({std::string("BOX") + axis[c] + "LO", number(result.limits->lower[c]),
-                     std::string("lower ") + (char)('x' + c) + " of the box limits, in coordinate units"});
+                     std::string("box limit, lower ") + (char)('x' + c) + ", coordinate units"});
         k.push_back({std::string("BOX") + axis[c] + "HI", number(result.limits->upper[c]),
-                     std::string("upper ") + (char)('x' + c) + " of the box limits, in coordinate units"});
+                     std::string("box limit, upper ") + (char)('x' + c) + ", coordinate units"});
       }
     }
     return k;
@@ -394,11 +394,10 @@ void bitvf::io::writeDivergence (const std::string& file, const Result& result)
   static const char* const axis[3] = {"X", "Y", "Z"};
   for (int c = 0; c < 3; ++c)
     k.push_back({std::string("LOWER") + axis[c], number(grid.lower[c]),
-                 std::string("lower ") + (char)('x' + c) + " of the grid, in coordinate units"});
+                 std::string(field ? "grid" : "padded box") + ", lower " + (char)('x' + c) + ", coordinate units"});
   for (int c = 0; c < 3; ++c)
     k.push_back({std::string("UPPER") + axis[c], number(grid.upper[c]),
-                 std::string("upper ") + (char)('x' + c) + (field ? " of the grid" : " of the padded box") +
-                 ", in coordinate units"});
+                 std::string(field ? "grid" : "padded box") + ", upper " + (char)('x' + c) + ", coordinate units"});
   k.push_back({"CELLSIDE", number(grid.cellSize), "cell side, in coordinate units"});
   for (int c = 0; c < 3; ++c)
     k.push_back({std::string("NCELL") + axis[c], std::to_string(grid.nCellsAxis[c]),

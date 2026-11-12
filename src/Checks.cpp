@@ -194,6 +194,12 @@ void bitvf::internal::check_limits (const otswap::BoxLimits& limits, const std::
                     kAxes[k] + "; every bound must be finite");
 
   for (std::size_t k = 0; k < 3; ++k)
+    if (!std::isfinite(limits.upper[k] - limits.lower[k]))
+      throw Error(at + name + " are [" + std::to_string(limits.lower[k]) + ", " +
+                  std::to_string(limits.upper[k]) + "] on axis " + kAxes[k] +
+                  "; their width must be finite");
+
+  for (std::size_t k = 0; k < 3; ++k)
     if (!(limits.lower[k] < limits.upper[k]))
       throw Error(at + name + " are [" + std::to_string(limits.lower[k]) + ", " +
                   std::to_string(limits.upper[k]) + "] on axis " + kAxes[k] +

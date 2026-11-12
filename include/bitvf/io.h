@@ -303,7 +303,8 @@ namespace bitvf::io {
    *  - if NREC or MPS is missing or not a number, NREC is 0, BOXLIM holds
    *    anything but 1, or BOXLIM = 1 comes without the six box keywords;
    *  - if nValidRec lies outside 0 to NREC in a row: the message names the
-   *    data row, from 1.
+   *    data row, counted from 1 among the data rows (comment and blank
+   *    lines do not count), as "data row k (from 1)".
    *
    *  @return the tracers, their mean displacement, its validity, the mps,
    *  the box limits and the IDs when the file holds them, and NREC.
@@ -337,7 +338,8 @@ namespace bitvf::io {
    *    together;
    *  - if the rows are not NCELLS, index is not 0 to NCELLS - 1 in order,
    *    a count is negative, or a basin index is below -1: the message
-   *    names the data row, from 1;
+   *    names the data row, counted from 1 among the data rows (comment
+   *    and blank lines do not count), as "data row k (from 1)";
    *  - if the grid fails the checks of a grid to reuse.
    *
    *  The divergence file of a field result has no NREC and is refused;
@@ -386,7 +388,9 @@ namespace bitvf::io {
    *  @exception Error if the file cannot be read, a column is missing or
    *  named twice: the message starts with "otswap: ", the otswap::Error
    *  nested; if a value read is not finite: the message names the file,
-   *  the data row, from 1, and the column as selected.
+   *  the data row, counted from 1 among the data rows (comment and blank
+   *  lines do not count), as "data row k (from 1)", and the column as
+   *  selected.
    *
    *  @return the centres, the values and the weights, one per row in the
    *  order of the rows; the weights empty without weightColumn.

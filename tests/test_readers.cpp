@@ -31,6 +31,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <fstream>
 #include <functional>
 #include <iomanip>
 #include <limits>
@@ -546,6 +547,41 @@ int main ()
                       std::string("RD2, a real complete file as a divergence ") + format);
         std::remove(file.c_str());
       }
+      group("the strict ASCII reader refuses a header line without the comment character and an NA, in a complete "
+            "displacement file: otswap's error names the line, from 1");
+      {
+        const std::string file = temporary("complete_strict.txt");
+        otswap::io::writeDisplacementComplete(file, rec);
+        std::vector<std::string> lines;
+        {
+          std::ifstream input(file);
+          for (std::string line; std::getline(input, line); ) lines.push_back(line);
+        }
+        std::size_t firstData = 0;
+        while (firstData < lines.size() && (lines[firstData].empty() || lines[firstData][0] == '#')) ++firstData;
+        check(firstData < lines.size(), "the complete file has data rows");
+        const struct { const char* what; bool header; } cases[] = {{"a header line without #", true}, {"an NA", false}};
+        for (const auto& c : cases) {
+          std::vector<std::string> edited = lines;
+          if (c.header) edited.insert(edited.begin() + firstData, "tracX tracY tracZ");
+          else edited[firstData].replace(0, edited[firstData].find(' '), "NA");
+          {
+            std::ofstream output(file);
+            for (const std::string& line : edited) output << line << '\n';
+          }
+          std::string message;
+          try {
+            otswap::io::readDisplacementComplete(file);
+          }
+          catch (const otswap::Error& e) {
+            message = e.what();
+          }
+          catch (...) {
+          }
+          check(message.find("(from 1)") != std::string::npos, std::string(c.what) + ": refused, naming a line from 1");
+        }
+        std::remove(file.c_str());
+      }
     }
     {
       Table t = mean;
@@ -640,20 +676,20 @@ int main ()
               std::to_string(r.divergence->nCells), "RD8, rows");
       d = div;
       std::swap(d.column("index").integers[3], d.column("index").integers[4]);
-      refused(d, read_divergence, ": data row 4 has index 4; the rows must hold the cells 0 to NCELLS - 1 in order",
+      refused(d, read_divergence, ": data row 4 (from 1) has index 4; the rows must hold the cells 0 to NCELLS - 1 in order",
               "RD8, index");
       d = div;
       d.column("nTracers").integers[5] = -1;
-      refused(d, read_divergence, ": data row 6 has a negative count (nDispl ", "RD8, nTracers negative");
+      refused(d, read_divergence, ": data row 6 (from 1) has a negative count (nDispl ", "RD8, nTracers negative");
       d = div;
       d.column("nDispl").integers[0] = -3;
-      refused(d, read_divergence, ": data row 1 has a negative count (nDispl -3", "RD8, nDispl negative");
+      refused(d, read_divergence, ": data row 1 (from 1) has a negative count (nDispl -3", "RD8, nDispl negative");
       d = div;
       d.column("overdenseIndex").integers[7] = -2;
-      refused(d, read_divergence, ": data row 8 has a basin index below -1 (voidIndex ", "RD8, overdenseIndex");
+      refused(d, read_divergence, ": data row 8 (from 1) has a basin index below -1 (voidIndex ", "RD8, overdenseIndex");
       d = div;
       d.column("voidIndex").integers[2] = -5;
-      refused(d, read_divergence, ": data row 3 has a basin index below -1 (voidIndex -5", "RD8, voidIndex");
+      refused(d, read_divergence, ": data row 3 (from 1) has a basin index below -1 (voidIndex -5", "RD8, voidIndex");
     }
     {
       std::ostringstream side;
@@ -669,9 +705,9 @@ int main ()
     {
       Table t = mean;
       t.column("nValidRec").data[1] = 3.;
-      refused(t, read_mean, ": data row 2 has nValidRec 3, outside 0..2", "RD10, above NREC");
+      refused(t, read_mean, ": data row 2 (from 1) has nValidRec 3, outside 0..2", "RD10, above NREC");
       t.column("nValidRec").data[1] = -1.;
-      refused(t, read_mean, ": data row 2 has nValidRec -1, outside 0..2", "RD10, negative");
+      refused(t, read_mean, ": data row 2 (from 1) has nValidRec -1, outside 0..2", "RD10, negative");
     }
   }
 
@@ -756,8 +792,32 @@ int main ()
       throws_naming([&] {
         if (byIndex) io::readField(file, {"0", "1", "2"}, "3", "4");
         else io::readField(file, {"x", "y", "z"}, "value", "weight");
-      }, file + ": data row 3 has " + c.word + " in column " + c.column + "; every value must be finite",
+      }, file + ": data row 3 (from 1) has " + c.word + " in column " + c.column + "; every value must be finite",
       std::string(c.word) + " in " + c.selector + (byIndex ? ", by index" : ""));
+    }
+    std::remove(file.c_str());
+  }
+
+  group("the strict ASCII reader refuses a header line without the comment character and an NA in readField, "
+        "naming the line from 1");
+  {
+    const std::string file = temporary("field_strict.txt");
+    const char* const texts[2] = {"### x y z value\nx y z value\n0.5 0.5 0.5 1\n", "### x y z value\n0.5 0.5 0.5 NA\n"};
+    for (int c = 0; c < 2; ++c) {
+      std::FILE* out = std::fopen(file.c_str(), "w");
+      std::fputs(texts[c], out);
+      std::fclose(out);
+      std::string message;
+      try {
+        io::readField(file, {"x", "y", "z"}, "value");
+      }
+      catch (const Error& e) {
+        message = e.what();
+      }
+      catch (...) {
+      }
+      check(message.compare(0, 8, "otswap: ") == 0 && message.find("(from 1)") != std::string::npos,
+            std::string(c == 0 ? "a header line without #" : "an NA") + ": refused, with the line from 1");
     }
     std::remove(file.c_str());
   }
