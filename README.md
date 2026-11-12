@@ -35,8 +35,8 @@ requirements below.
 ## Build from source
 
 Needs CMake 3.16 or later, GCC or Clang (C, and C++17) and cfitsio; OpenMP
-when found, from the same runtime family otswap was built with. otswap 0.2.1
-or a later 0.2.x is used when installed, and 0.2.1 is fetched from GitHub
+when found, from the same runtime family otswap was built with. otswap 0.3.x
+is used when installed, and 0.3.0 is fetched from GitHub
 otherwise, with meshsearch.
 
 ```

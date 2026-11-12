@@ -70,11 +70,29 @@ endif()
 # ---------------------------------------------------------------------------
 # OpenMP
 #
-# AppleClang needs to be pointed at a libomp; Homebrew's is the usual one,
-# used unless OpenMP_ROOT is set, as a CMake variable or in the environment.
-# otswap looks for it the same way, so both libraries use the same runtime.
-# bitvfConfig.cmake repeats this for consumers.
+# AppleClang needs to be pointed at a libomp. In a Python build (scikit-build-core),
+# the otswap package it builds against is imported with the interpreter that
+# configures the build, and if it bundles a libomp (its macOS wheels do,
+# otswap.openmp_root()) that one is used, so that bitvf and otswap load a
+# single runtime. Other builds never look at a Python package: they use
+# Homebrew's libomp, as the otswap they build or find does. OpenMP_ROOT, as a
+# CMake variable or in the environment, takes precedence over both.
+# bitvfConfig.cmake repeats the Homebrew lookup for consumers.
 # ---------------------------------------------------------------------------
+
+if (SKBUILD AND Python_EXECUTABLE AND
+    NOT DEFINED OpenMP_ROOT AND NOT DEFINED ENV{OpenMP_ROOT})
+  execute_process(
+    COMMAND "${Python_EXECUTABLE}" -c
+            "import otswap; print(otswap.openmp_root() or '')"
+    OUTPUT_VARIABLE bitvf_omp_root OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE bitvf_omp_status ERROR_QUIET)
+  if (bitvf_omp_status EQUAL 0 AND bitvf_omp_root AND
+      EXISTS "${bitvf_omp_root}/include/omp.h")
+    set(OpenMP_ROOT "${bitvf_omp_root}")
+    message(STATUS "bitvf: OpenMP from the otswap package, ${OpenMP_ROOT}")
+  endif()
+endif()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang" AND
     NOT DEFINED OpenMP_ROOT AND NOT DEFINED ENV{OpenMP_ROOT})
@@ -91,14 +109,14 @@ find_package(OpenMP COMPONENTS CXX)
 # ---------------------------------------------------------------------------
 # otswap
 #
-# An installed otswap 0.2.x, 0.2.1 or later, is used when found, through
+# An installed otswap 0.3.x is used when found, through
 # CMAKE_PREFIX_PATH or otswap_DIR; otherwise the pinned tag is fetched and
 # built from source, and brings meshsearch the same way. A parent project that already defines
 # otswap::otswap provides its own.
 # ---------------------------------------------------------------------------
 
-set(BITVF_OTSWAP_VERSION 0.2.1)
-set(BITVF_OTSWAP_TAG "v0.2.1" CACHE STRING
+set(BITVF_OTSWAP_VERSION 0.3)
+set(BITVF_OTSWAP_TAG "v0.3.0" CACHE STRING
     "otswap tag to fetch when no installed otswap is found")
 set(BITVF_OTSWAP_REPOSITORY "https://github.com/SimoSartori/otswap.git"
     CACHE STRING "otswap repository to fetch from; may be a local path")
@@ -298,6 +316,10 @@ if (BITVF_BUILD_PYTHON)
   set_target_properties(bitvf_python PROPERTIES OUTPUT_NAME _bitvf)
   target_include_directories(bitvf_python PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
   target_link_libraries(bitvf_python PRIVATE bitvf)
+  if (APPLE)
+    set_target_properties(bitvf_python PROPERTIES
+      INSTALL_RPATH "@loader_path/../otswap/openmp/lib")
+  endif()
   install(TARGETS bitvf_python LIBRARY DESTINATION bitvf)
 endif()
 
@@ -305,8 +327,8 @@ endif()
 # Install and export
 #
 # find_package(bitvf 0.1 CONFIG) then bitvf::bitvf. Its dependencies are
-# found again on the consumer's machine by bitvfConfig.cmake: otswap 0.2.x,
-# 0.2.1 or later, which brings meshsearch and cfitsio, and OpenMP when bitvf
+# found again on the consumer's machine by bitvfConfig.cmake: otswap 0.3.x,
+# which brings meshsearch and cfitsio, and OpenMP when bitvf
 # was built with it.
 # ---------------------------------------------------------------------------
 

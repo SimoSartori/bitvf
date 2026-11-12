@@ -6,7 +6,9 @@
 pip install bitvf
 ```
 
-installs the Python package, with otswap. For the C++ library and the
+installs the Python package, with otswap. On macOS the package uses the OpenMP
+runtime shipped inside otswap's wheel, found at `../otswap/openmp/lib` from
+the bitvf package: install both in the same `site-packages`. For the C++ library and the
 `bitvf` and `bitvf-field` executables, build and install with CMake; it needs
 GCC or Clang (C, and C++17) and cfitsio, uses OpenMP when found, and fetches
 otswap and meshsearch when they are not installed:

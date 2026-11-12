@@ -703,7 +703,7 @@ int main ()
 
   group("readField with a delimiter and a comment character: a comma-separated file with % comments, its columns in "
         "another order, reads as its space-separated twin; without the delimiter its names are not found, without "
-        "the comment character a comment line of numbers is read as a data row");
+        "the comment character a comment line that is not data is refused");
   {
     const fixtures::LatticeField lf;
     const std::size_t commentRow = 7;
@@ -732,11 +732,8 @@ int main ()
           fixtures::same_bits(b.weights, a.weights), "the comma-separated twin, bit for bit");
     otswap_nested([&] { io::readField(comma, {"x", "y", "z"}, "value", "weight"); },
                   "the default delimiter: the names are not found");
-    const io::Field d = io::readField(comma, {"x", "y", "z"}, "value", "weight", ',');
-    const std::size_t k = commentRow;
-    check(d.values.size() == lf.values.size()+1 && d.weights[k] == 1. && d.centres[3*k+2] == 2. &&
-          d.values[k] == 3. && d.centres[3*k] == 4. && d.centres[3*k+1] == 5. && d.values[k+1] == lf.values[k],
-          "the default comment character: the comment line is read as a data row");
+    otswap_nested([&] { io::readField(comma, {"x", "y", "z"}, "value", "weight", ','); },
+                  "the default comment character: the comment line is not data");
     std::remove(spaced.c_str());
     std::remove(comma.c_str());
   }
