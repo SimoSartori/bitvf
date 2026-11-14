@@ -639,6 +639,27 @@ namespace bitvf {
     /// Lightcone: N_r of delta2Mps, the randoms given and kept. 0 in a box.
     std::size_t randoms = 0;
 
+    /// Lightcone: tracers on unobserved pixels of the mask, and so skipped
+    /// (TracerAssignment::inMask), whether or not they lie inside the
+    /// redshift cut. 0 in a box.
+    std::size_t tracersOutsideMask = 0;
+
+    /// Lightcone: of the tracers on observed pixels, those outside the
+    /// redshift cut, and so skipped. A tracer both masked and outside the
+    /// cut counts only in tracersOutsideMask, where its flag
+    /// TracerAssignment::inMask is 0: the counts give the mask priority.
+    /// 0 in a box.
+    std::size_t tracersOutsideRedshiftCut = 0;
+
+    /// Lightcone: randoms on unobserved pixels of the mask, removed, whether
+    /// or not they lie inside the redshift cut. 0 in a box.
+    std::size_t randomsOutsideMask = 0;
+
+    /// Lightcone: of the randoms on observed pixels, those outside the
+    /// redshift cut, removed. A random both masked and outside the cut counts
+    /// only in randomsOutsideMask. 0 in a box.
+    std::size_t randomsOutsideRedshiftCut = 0;
+
     std::size_t randomsOutsideGrid = 0;  ///< lightcone, reused grid: randoms outside it, removed
     std::size_t displacements = 0;       ///< valid displacements given
 

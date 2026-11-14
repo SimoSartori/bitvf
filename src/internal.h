@@ -296,6 +296,19 @@ namespace bitvf {
                                    const std::string& fn);
 
     /**
+     *  @brief Check the shape of the displacements of N tracers and of their
+     *  validity flags.
+     *  @param fn the public function that starts the messages
+     *  @return the number of realizations
+     *  @exception Error if displacement is empty or not a whole number of
+     *  realizations of N tracers, if that number exceeds UINT_MAX, if valid
+     *  is neither empty nor one per displacement, or holds a value other than 0 and 1
+     */
+    std::size_t check_displacement_shape (const std::vector<double>& displacement,
+                                          const std::vector<std::uint8_t>& valid, std::size_t N,
+                                          const std::string& fn);
+
+    /**
      *  @brief Check the IDs of the tracers: one per tracer, or none, and no
      *  value twice.
      *  @param fn the public function that starts the messages
@@ -645,7 +658,62 @@ namespace bitvf {
     TracerAssignment box_assignment (const BoxSearch& search, const BoxDivergence& div, const DivergenceGrid& grid,
                                      const BasinCatalog& voids, const BasinCatalog& overdense);
 
+    /**
+     *  @brief The lightcone search both array overloads of
+     *  findVoidsLightcone converge into: the entry checks, the selection
+     *  and the conversion of what the search reads.
+     *
+     *  @param tracers the Cartesian positions of the tracers, or null to
+     *  convert the kept rows of tracersSky with otswap::toCartesian
+     *  @param randoms as tracers, for the randoms
+     *  @exception Error on every case of the entry of findVoidsLightcone;
+     *  once the entry has passed, always, since the search is not written
+     */
+    Result runLightcone (const std::vector<double>* tracers, const std::vector<double>& tracersSky,
+                         const std::vector<double>& displacement, const std::vector<std::uint8_t>& valid,
+                         const std::vector<double>* randoms, const std::vector<double>& randomsSky,
+                         const otswap::Mask& mask, const otswap::DistanceTable& distances,
+                         const otswap::MpsProfile& mps, const Config& config,
+                         const otswap::RedshiftCut& redshiftCut, const std::vector<std::int64_t>& ids,
+                         const DivergenceGrid* grid);
+
   }
+
+  /**
+   *  @brief Find the voids of a lightcone from sky positions.
+   *  Declared here until the pipeline runs end to end; it then moves to
+   *  VoidFinder.h.
+   */
+  Result findVoidsLightcone (const std::vector<double>& tracersSky,
+                             const std::vector<double>& displacement,
+                             const std::vector<std::uint8_t>& valid,
+                             const std::vector<double>& randomsSky,
+                             const otswap::Mask& mask,
+                             const otswap::DistanceTable& distances,
+                             const otswap::MpsProfile& mps,
+                             const Config& config,
+                             const otswap::RedshiftCut& redshiftCut = {},
+                             const std::vector<std::int64_t>& ids = {},
+                             const DivergenceGrid* grid = nullptr);
+
+  /**
+   *  @brief As the overload above, with Cartesian positions given beside
+   *  the sky ones; nothing checks that the two agree.
+   */
+  Result findVoidsLightcone (const std::vector<double>& tracers,
+                             const std::vector<double>& tracersSky,
+                             const std::vector<double>& displacement,
+                             const std::vector<std::uint8_t>& valid,
+                             const std::vector<double>& randoms,
+                             const std::vector<double>& randomsSky,
+                             const otswap::Mask& mask,
+                             const otswap::DistanceTable& distances,
+                             const otswap::MpsProfile& mps,
+                             const Config& config,
+                             const otswap::RedshiftCut& redshiftCut = {},
+                             const std::vector<std::int64_t>& ids = {},
+                             const DivergenceGrid* grid = nullptr);
+
 }
 
 #endif

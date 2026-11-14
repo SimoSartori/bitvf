@@ -163,6 +163,7 @@ add_library(bitvf STATIC
   src/Support.cpp
   src/VoidFinderBox.cpp
   src/VoidFinderField.cpp
+  src/VoidFinderLightcone.cpp
   src/Watershed.cpp
   src/Writers.cpp)
 add_library(bitvf::bitvf ALIAS bitvf)
@@ -229,7 +230,7 @@ if (BITVF_BUILD_TESTS)
   enable_testing()
 
   foreach (test_name test_checks test_box_grid test_divergence test_smoothing test_watershed test_basins test_writers test_readers
-                    test_from_divergence test_from_field test_report test_runbox)
+                    test_from_divergence test_from_field test_report test_runbox test_lightcone_entry)
     add_executable(${test_name} tests/${test_name}.cpp)
     target_include_directories(${test_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_link_libraries(${test_name} PRIVATE bitvf)

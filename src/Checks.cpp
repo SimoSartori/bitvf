@@ -290,18 +290,10 @@ void bitvf::internal::check_reconstruction_box (const otswap::Result& rec, const
 // ============================================================================
 
 
-bitvf::internal::BoxSearch bitvf::internal::check_box (const std::vector<double>& tracers,
-                                                       const std::vector<double>& displacement,
+std::size_t bitvf::internal::check_displacement_shape (const std::vector<double>& displacement,
                                                        const std::vector<std::uint8_t>& valid,
-                                                       const double mps,
-                                                       const Config& config,
-                                                       const std::optional<otswap::BoxLimits>& limits,
-                                                       const std::vector<std::int64_t>& ids,
-                                                       const DivergenceGrid* grid)
+                                                       const std::size_t N, const std::string& fn)
 {
-  const std::string fn = "findVoidsBox";
-  const std::size_t N = check_coordinates(tracers, "tracers", false, fn);
-
   if (displacement.empty() || displacement.size() % (3 * N) != 0)
     throw Error(fn + ": displacement holds " + std::to_string(displacement.size()) + " entries for " +
                 std::to_string(N) + " tracers; it must hold 3 * nRealizations * " +
@@ -317,6 +309,27 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const std::vector<double>
                 std::to_string(R) + " realizations of " + std::to_string(N) +
                 " tracers; give one per displacement, or none");
   check_valid(valid, fn, false);
+
+  return R;
+}
+
+
+// ============================================================================
+
+
+bitvf::internal::BoxSearch bitvf::internal::check_box (const std::vector<double>& tracers,
+                                                       const std::vector<double>& displacement,
+                                                       const std::vector<std::uint8_t>& valid,
+                                                       const double mps,
+                                                       const Config& config,
+                                                       const std::optional<otswap::BoxLimits>& limits,
+                                                       const std::vector<std::int64_t>& ids,
+                                                       const DivergenceGrid* grid)
+{
+  const std::string fn = "findVoidsBox";
+  const std::size_t N = check_coordinates(tracers, "tracers", false, fn);
+
+  const std::size_t R = check_displacement_shape(displacement, valid, N, fn);
 
   if (!std::isfinite(mps) || mps <= 0.)
     throw Error("the mean particle separation is " + std::to_string(mps) +
