@@ -273,8 +273,8 @@ namespace {
       std::vector<std::int64_t> out(c.size());
       for (std::size_t i = 0; i < c.size(); ++i) {
         if (!(c[i] >= -9223372036854775808. && c[i] < 9223372036854775808.) || c[i] != std::floor(c[i]))
-          throw bitvf::Error(name + " holds " + std::to_string(c[i]) + " at entry " + std::to_string(i) +
-                             "; every entry must be a 64-bit integer");
+          throw bitvf::Error(name + " holds " + std::to_string(c[i]) + " for object " + std::to_string(i) +
+                             " (from 0); every entry must be a 64-bit integer");
         out[i] = (std::int64_t)c[i];
       }
       return out;
@@ -321,8 +321,8 @@ namespace {
     for (std::size_t i = 0; i < a.size(); ++i) {
       const double v = a.data()[i];
       if (v != 0. && v != 1.)
-        throw bitvf::Error("the validity flags hold " + std::to_string(v) + " at entry " + std::to_string(i) +
-                           "; each must be 0 or 1");
+        throw bitvf::Error("the validity flags hold " + std::to_string(v) + " for object " + std::to_string(i) +
+                           " (from 0); each must be 0 or 1");
       out[i] = (std::uint8_t)v;
     }
     return out;

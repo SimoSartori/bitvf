@@ -191,20 +191,20 @@ int main ()
   {
     Case c;
     c.tracersSky[7] = kNaN;
-    fails_sky(c, "the sky positions of the tracers hold a non-finite value at entry 7 (object 2, component 1)", "NaN");
+    fails_sky(c, "the sky positions of the tracers hold a non-finite value for object 2 (from 0), component 1", "NaN");
     Case a;
     a.tracersSky[3 * 3 + 2] = kInf;
-    fails_sky(a, "the sky positions of the tracers hold a non-finite value at entry 11 (object 3, component 2)", "inf");
+    fails_sky(a, "the sky positions of the tracers hold a non-finite value for object 3 (from 0), component 2", "inf");
     Case d;
     d.tracersSky[4] = 1.75;
-    fails_sky(d, "the declination of tracer 1 is 1.75 radians; it must lie in [-pi/2, pi/2]", "declination");
+    fails_sky(d, "the sky positions of the tracers hold a declination of 1.75 radians for object 1 (from 0); it must lie in [-pi/2, pi/2]", "declination");
     Case r;
     r.randomsSky[1] = -2.;
-    fails_sky(r, "the declination of random 0 is -2 radians; it must lie in [-pi/2, pi/2]", "random declination");
+    fails_sky(r, "the sky positions of the randoms hold a declination of -2 radians for object 0 (from 0); it must lie in [-pi/2, pi/2]", "random declination");
     Case m;
     m.cut.min = 0.35;
     m.tracersSky[0] = kNaN;
-    fails_sky(m, "the sky positions of the tracers hold a non-finite value at entry 0", "row outside the cut");
+    fails_sky(m, "the sky positions of the tracers hold a non-finite value for object 0 (from 0), component 0", "row outside the cut");
   }
 
   // Cartesian arrays must hold one position per object of the sky arrays.
@@ -235,7 +235,7 @@ int main ()
     Case w;
     w.valid.assign(4, 1);
     w.valid[2] = 2;
-    fails(w, "the validity flags hold 2 at entry 2; each must be 0 or 1", "valid value");
+    fails(w, "the validity flags hold 2 for object 2 (from 0); each must be 0 or 1", "valid value");
   }
 
   // A redshift cut with a NaN bound or reversed bounds is refused.
@@ -261,16 +261,16 @@ int main ()
     fails(s, "findVoidsLightcone: the redshift and mps lists of the profile hold 2 and 1 entries", "sizes");
     Case z;
     z.profile.redshift[1] = kNaN;
-    fails(z, "the mps profile holds a redshift of nan at entry 1; it must be finite", "redshift not finite");
+    fails(z, "the mps profile holds a redshift of nan at entry 1 (from 0); it must be finite", "redshift not finite");
     Case m;
     m.profile.mps[0] = kInf;
-    fails(m, "the mps profile holds a mean particle separation of inf at entry 0; it must be finite", "mps not finite");
+    fails(m, "the mps profile holds a mean particle separation of inf at entry 0 (from 0); it must be finite", "mps not finite");
     Case i;
     i.profile.redshift = {0.5, 0.5};
     fails(i, "the redshifts must increase strictly", "not increasing");
     Case p;
     p.profile.mps[1] = 0.;
-    fails(p, "the mps profile holds a mean particle separation of 0 at entry 1; it must be positive", "mps not positive");
+    fails(p, "the mps profile holds a mean particle separation of 0 at entry 1 (from 0); it must be positive", "mps not positive");
     Case b;
     b.profile.mps[1] = -1.;
     fails(b, "it must be positive", "negative mps");
@@ -306,10 +306,10 @@ int main ()
   {
     Case c;
     c.tracersSky[2] = 3.;
-    fails(c, "the redshift of tracer 0 is 3, outside the distance table [0, 2]", "tracer redshift");
+    fails(c, "the sky positions of the tracers hold a redshift of 3 for object 0 (from 0), outside the distance table [0, 2]", "tracer redshift");
     Case r;
     r.randomsSky[8] = -0.5;
-    fails(r, "the redshift of random 2 is -0.5, outside the distance table [0, 2]", "random redshift");
+    fails(r, "the sky positions of the randoms hold a redshift of -0.5 for object 2 (from 0), outside the distance table [0, 2]", "random redshift");
     Case m;
     m.tracersSky[2] = 3.;
     m.cut.max = 1.;
@@ -321,11 +321,11 @@ int main ()
   {
     Case c;
     c.tracers[4] = kNaN;
-    throws_naming([&] { c.cartesian(); }, "the tracers hold a non-finite value at entry 4 (object 1, component 1)",
+    throws_naming([&] { c.cartesian(); }, "the tracers hold a non-finite value for object 1 (from 0), component 1",
                   "tracers NaN");
     Case r;
     r.randoms[17] = kInf;
-    throws_naming([&] { r.cartesian(); }, "the randoms hold a non-finite value at entry 17 (object 5, component 2)",
+    throws_naming([&] { r.cartesian(); }, "the randoms hold a non-finite value for object 5 (from 0), component 2",
                   "randoms inf");
     Case m;
     m.cut.min = 0.28;
@@ -338,7 +338,7 @@ int main ()
   {
     Case c;
     c.displacement[5] = kNaN;
-    fails(c, "the displacements hold a non-finite value at entry 5 (realization 0, tracer 1, component 2)",
+    fails(c, "the displacements hold a non-finite value for realization 0 (from 0), object 1 (from 0), component 2",
           "valid displacement");
     Case i;
     i.displacement[5] = kNaN;
@@ -481,7 +481,7 @@ int main ()
     fails(s, malformed + "validRealizations holds 3 entries for 4 objects", "count size");
     FromResult a = mean_read_back();
     a.rec.validRealizations[2] = 4;
-    fails(a, malformed + "validRealizations holds 4 for object 2, above nRealizations * nRealizationsMean = 3",
+    fails(a, malformed + "validRealizations holds 4 for object 2 (from 0), above nRealizations * nRealizationsMean = 3",
           "count above the mean");
   }
 
@@ -490,7 +490,7 @@ int main ()
   {
     FromResult v;
     v.rec.valid[3] = 2;
-    fails(v, "findVoidsLightcone: the reconstruction's validity flags hold 2 at entry 3; each must be 0 or 1",
+    fails(v, "findVoidsLightcone: the reconstruction's validity flags hold 2 for object 3 (from 0); each must be 0 or 1",
           "valid value");
     FromResult i;
     i.rec.ids = {5, 6, 5, 7};
@@ -520,7 +520,7 @@ int main ()
              "(from 0); it must lie in [-pi/2, pi/2]", "declination");
     FromResult p;
     p.rec.mpsProfile.mps[0] = 0.;
-    fails(p, "the mps profile holds a mean particle separation of 0 at entry 0; it must be positive", "profile");
+    fails(p, "the mps profile holds a mean particle separation of 0 at entry 0 (from 0); it must be positive", "profile");
     FromResult e;
     e.randomsSky.clear();
     fails(e, "findVoidsLightcone: randomsSky is empty", "no randoms");
@@ -529,7 +529,7 @@ int main ()
     fails(s, "findVoidsLightcone: randomsSky holds 23 entries; it must hold 3 per object", "randoms size");
     FromResult r;
     r.randomsSky[4] = 2.;
-    fails(r, "the declination of random 1 is 2 radians; it must lie in [-pi/2, pi/2]", "random declination");
+    fails(r, "the sky positions of the randoms hold a declination of 2 radians for object 1 (from 0); it must lie in [-pi/2, pi/2]", "random declination");
   }
 
   // The redshift cut a reconstruction records must have no NaN bound and its lower bound not above the upper one.
@@ -550,7 +550,7 @@ int main ()
   {
     FromResult r;
     r.rec.outsideMask[1] = 1;
-    fails(r, "findVoidsLightcone: the mask given allows tracer 1, which the reconstruction excluded as outside its "
+    fails(r, "findVoidsLightcone: the mask given allows object 1 (from 0) of tracers, which the reconstruction excluded as outside its "
              "mask (Result::outsideMask); the mask must not be more permissive than the reconstruction's", "mask");
   }
 
@@ -562,14 +562,14 @@ int main ()
     fails(c, "the divergence cell size is", "cell size");
     FromResult z;
     z.rec.tracersSky[5] = 2.5;
-    fails(z, "the redshift of tracer 1 is 2.5, outside the distance table [0, 2]", "tracer redshift");
+    fails(z, "the sky positions of the tracers hold a redshift of 2.5 for object 1 (from 0), outside the distance table [0, 2]", "tracer redshift");
     FromResult t;
     t.rec.tracers[6] = kNaN;
     fails(t, "findVoidsLightcone: the reconstruction's tracers hold a non-finite value for object 2 (from 0), "
              "component 0", "tracers NaN");
     FromResult d;
     d.rec.displacement[10] = kInf;
-    fails(d, "the displacements hold a non-finite value at entry 10 (realization 0, tracer 3, component 1)",
+    fails(d, "the displacements hold a non-finite value for realization 0 (from 0), object 3 (from 0), component 1",
           "displacement");
     FromResult k;
     k.rec.outsideRedshiftCut = {1, 1, 0, 0};

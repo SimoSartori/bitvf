@@ -61,8 +61,8 @@ namespace {
     for (std::size_t i = 0; i < valid.size(); ++i)
       if (valid[i] > 1)
         throw bitvf::Error((fromResult ? fn + ": the reconstruction's validity flags hold "
-                                       : std::string("the validity flags hold ")) + std::to_string(valid[i]) + " at entry " +
-                           std::to_string(i) + "; each must be 0 or 1");
+                                       : std::string("the validity flags hold ")) + std::to_string(valid[i]) + " for object " +
+                           std::to_string(i) + " (from 0); each must be 0 or 1");
   }
 
   /**
@@ -159,11 +159,10 @@ namespace {
     if (firstNonFinite != none) {
       const std::size_t row = firstNonFinite / 3;
       throw bitvf::Error((fromResult ? fn + ": the reconstruction's displacements hold " : std::string("the displacements hold ")) +
-                         "a non-finite value at entry " +
-                         std::to_string(firstNonFinite) + " (realization " +
-                         std::to_string(row / N) + ", tracer " + std::to_string(row % N) +
-                         ", component " + std::to_string(firstNonFinite % 3) +
-                         "), a valid displacement of a tracer the search reads");
+                         "a non-finite value for realization " +
+                         std::to_string(row / N) + " (from 0), object " + std::to_string(row % N) +
+                         " (from 0), component " + std::to_string(firstNonFinite % 3) +
+                         ", a valid displacement of a tracer the search reads");
     }
     search.counts.displacements = nValid;
     search.maxDisplacement = maxDisplacement;
@@ -225,8 +224,8 @@ std::size_t bitvf::internal::check_coordinates (const std::vector<double>& a, co
   for (std::size_t i = 0; i < a.size(); ++i)
     if (!std::isfinite(a[i]))
       throw Error((name.compare(0, 4, "the ") == 0 ? name : "the " + name) + (name.back() == 's' ? " hold" : " holds") +
-                  " a non-finite value at entry " + std::to_string(i) + " (object " + std::to_string(i/3) + ", component " +
-                  std::to_string(i%3) + ")");
+                  " a non-finite value for object " + std::to_string(i/3) + " (from 0), component " +
+                  std::to_string(i%3));
 
   return a.size() / 3;
 }
@@ -308,7 +307,7 @@ void bitvf::internal::check_reconstruction_shape (const otswap::Result& rec, con
     for (std::size_t i = 0; i < N; ++i)
       if ((std::size_t)rec.validRealizations[i] > R * rec.nRealizationsMean)
         throw Error(malformed + "validRealizations holds " + std::to_string(rec.validRealizations[i]) +
-                    " for object " + std::to_string(i) + ", above nRealizations * nRealizationsMean = " +
+                    " for object " + std::to_string(i) + " (from 0), above nRealizations * nRealizationsMean = " +
                     std::to_string(R * rec.nRealizationsMean));
   }
 
@@ -449,9 +448,8 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const otswap::Result& rec
     if (search.inBox[i])
       for (std::size_t k = 0; k < 3; ++k)
         if (!std::isfinite(rec.tracers[3*i+k]))
-          throw Error(fn + ": the reconstruction's tracers hold a non-finite value at entry " +
-                      std::to_string(3*i+k) + " (object " + std::to_string(i) + ", component " +
-                      std::to_string(k) + ")");
+          throw Error(fn + ": the reconstruction's tracers hold a non-finite value for object " +
+                      std::to_string(i) + " (from 0), component " + std::to_string(k));
 
   if (grid == nullptr) {
     if (!std::isfinite(rec.mps) || rec.mps <= 0.)
@@ -475,7 +473,7 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const otswap::Result& rec
         const double bound = x < box.lower[k] ? box.lower[k] : box.upper[k];
         const double tolerance = 1e-8 * std::max(std::abs(x), std::abs(bound));
         if (rec.selection.boxLimits || !(std::abs(x - bound) <= tolerance))
-          throw Error(malformed + "tracer " + std::to_string(i) + " lies outside its box "
+          throw Error(malformed + "object " + std::to_string(i) + " (from 0) of tracers lies outside its box "
                       "(otswap::Result::box) and is not flagged in outsideBox");
         if (moved.empty()) moved = rec.tracers;
         moved[3*i+k] = x < box.lower[k] ? box.lower[k] : std::nextafter(box.upper[k], box.lower[k]);
@@ -615,7 +613,7 @@ bitvf::internal::BoxSearch bitvf::internal::check_box_from_divergence (const Div
     for (std::size_t c = 0; c < C; ++c)
       if (!std::isfinite((*field.first)[c]))
         throw Error(fn + ": the grid's " + std::string(field.second) + " holds a non-finite value at cell " +
-                    std::to_string(c));
+                    std::to_string(c) + " (from 0)");
   }
   if (!grid.nTracers.empty() && grid.nTracers.size() != C)
     throw Error(fn + ": the grid's nTracers holds " + std::to_string(grid.nTracers.size()) + " entries for " +
@@ -669,15 +667,15 @@ double bitvf::internal::check_box_from_field (const std::vector<double>& centres
                 " centres; it must hold one per centre");
   for (std::size_t c = 0; c < N; ++c)
     if (!std::isfinite(values[c]))
-      throw Error("the field values hold a non-finite value at entry " + std::to_string(c));
+      throw Error("the field values hold a non-finite value at cell " + std::to_string(c) + " (from 0)");
 
   if (!weights.empty() && weights.size() != N)
     throw Error(fn + ": weights holds " + std::to_string(weights.size()) + " entries for " + std::to_string(N) +
                 " centres; it must hold one per centre, or none");
   for (std::size_t c = 0; c < weights.size(); ++c)
     if (!std::isfinite(weights[c]) || weights[c] < 0.)
-      throw Error("the weights hold " + exact(weights[c]) + " at entry " + std::to_string(c) +
-                  "; every weight must be finite and non-negative");
+      throw Error("the weights hold " + exact(weights[c]) + " at cell " + std::to_string(c) +
+                  " (from 0); every weight must be finite and non-negative");
 
   if (mps && (!std::isfinite(*mps) || *mps <= 0.))
     throw Error("the mean particle separation is " + std::to_string(*mps) +

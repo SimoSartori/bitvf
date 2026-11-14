@@ -314,7 +314,7 @@ void bitvf::internal::box_basins (const BoxSearch* search, const BoxDivergence* 
     const std::size_t b = isVoid ? (std::size_t)failed : (std::size_t)failed - nVoid;
     const double* x = &cat.centre[3 * b];
     const std::string what = std::string("internal error: counting the tracers within 2 mps of the centre of ") +
-      (isVoid ? "void " : "overdense basin ") + std::to_string(b);
+      (isVoid ? "void " : "overdense basin ") + std::to_string(b) + " (from 0)";
     try {
       mesh->closeObjects(x[0], x[1], x[2], radius2Mps);
     }

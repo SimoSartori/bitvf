@@ -632,10 +632,10 @@ int main ()
     malformed([] (Result& b) { b.overdense.nTracers.pop_back(); }, write_overdense,
               "writeOverdense: cannot write overdense.nTracers", "overdense nTracers");
     malformed([] (Result& b) { b.voids.nTracers[1] = (std::size_t)std::numeric_limits<std::int64_t>::max() + 1; },
-              write_voids, "writeVoids: cannot write voids.nTracers: entry 1 is 9223372036854775808, above the largest",
+              write_voids, "writeVoids: cannot write voids.nTracers: basin 1 (from 0) is 9223372036854775808, above the largest",
               "a count above 2^63 - 1");
     malformed([] (Result& b) { b.divergence->nDisplacements[2] = std::numeric_limits<std::uint64_t>::max(); },
-              write_divergence, "writeDivergence: cannot write divergence.nDisplacements: entry 2 is", "nDispl too large");
+              write_divergence, "writeDivergence: cannot write divergence.nDisplacements: cell 2 (from 0) is", "nDispl too large");
     malformed([] (Result& b) { b.ids.pop_back(); }, write_galaxies, "writeGalaxies: cannot write ids: it holds", "ids");
     malformed([] (Result& b) { b.uncorrected = {0}; }, write_galaxies, "writeGalaxies: cannot write uncorrected", "uncorrected");
     malformed([] (Result& b) { b.outsideGrid = {0, 1}; }, write_galaxies, "writeGalaxies: cannot write outsideGrid",

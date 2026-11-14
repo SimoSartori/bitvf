@@ -181,7 +181,7 @@ int main ()
                   "the grid's divergence holds 0 entries", "no divergence");
     throws_naming([&] { DivergenceGrid x = d; x.weight[7] = std::numeric_limits<double>::quiet_NaN();
                         findVoidsBoxFromDivergence(x, in.tracers, c); },
-                  "the grid's weight holds a non-finite value at cell 7", "weight");
+                  "the grid's weight holds a non-finite value at cell 7 (from 0)", "weight");
     throws_naming([&] { DivergenceGrid x = d; x.nTracers.pop_back(); findVoidsBoxFromDivergence(x, in.tracers, c); },
                   "the grid's nTracers holds ", "the grid's nTracers holds ");
     throws_naming([&] { Config x = c; x.smoothing.sigma = 1e-200; findVoidsBoxFromDivergence(d, in.tracers, x); },

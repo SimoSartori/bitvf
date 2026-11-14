@@ -265,7 +265,7 @@ int main ()
 
     Input nan;
     nan.tracers[5] = kNaN;
-    throws_naming([&] { nan.run(); }, "the tracers hold a non-finite value at entry 5", "the tracers hold a non-finite value at entry 5");
+    throws_naming([&] { nan.run(); }, "the tracers hold a non-finite value for object 1 (from 0), component 2", "the tracers hold a non-finite value for object 1 (from 0), component 2");
 
     Input outside;
     outside.limits = box(0., 50.);
@@ -287,7 +287,7 @@ int main ()
 
     Input nan;
     nan.displacement[3 * kN + 4] = kNaN;
-    throws_naming([&] { nan.run(); }, "realization 1, tracer 1, component 1", "realization 1, tracer 1, component 1");
+    throws_naming([&] { nan.run(); }, "realization 1 (from 0), object 1 (from 0), component 1", "realization 1 (from 0), object 1 (from 0), component 1");
 
     Input invalid;
     invalid.displacement[3 * kN + 4] = kNaN;
@@ -309,7 +309,7 @@ int main ()
 
     Input two;
     two.valid[7] = 2;
-    throws_naming([&] { two.run(); }, "the validity flags hold 2 at entry 7", "the validity flags hold 2 at entry 7");
+    throws_naming([&] { two.run(); }, "the validity flags hold 2 for object 7 (from 0)", "the validity flags hold 2 for object 7 (from 0)");
   }
 
   group("mps: finite and positive");
@@ -539,7 +539,7 @@ int main ()
       findVoidsBox(tracers, displacement, {}, 1., config, std::nullopt, {}, &cells);
     };
     throws_naming([&] { run({1., 1., 0., 2.5, 0., 0.}); },
-                  "displacement of tracer 1 in realization 0 ends outside every cell", "displacement of tracer 1 in realization 0 ends outside every cell");
+                  "displacement of object 1 (from 0) in realization 0 (from 0) ends outside every cell", "displacement of object 1 (from 0) in realization 0 (from 0) ends outside every cell");
     throws_naming([&] { run({1., 0., 0., 0.1, 0., 0.}); },
                   "cannot reach 62 empty cells: the last pass filled none", "cannot reach 62 empty cells: the last pass filled none");
   }
@@ -606,7 +606,7 @@ int main ()
     with([] (otswap::Result& r) { r.selection.boxLimits = box(-10., 110.); },
          "differs from its box limits", "box not the limits");
     with([] (otswap::Result& r) { r.tracers[3] = r.box->upper[0] + 1.; },
-         "tracer 1 lies outside its box", "tracer 1 lies outside its box");
+         "object 1 (from 0) of tracers lies outside its box", "object 1 (from 0) of tracers lies outside its box");
 
     otswap::Result plane = in.reconstruction();
     for (std::size_t i = 0; i < kN; ++i) plane.tracers[3*i+2] = 50.;

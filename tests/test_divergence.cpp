@@ -527,7 +527,7 @@ int main ()
     outside.add({1.5, 0.5, 0.5}, {stay, {2.5, 0., 0.}});
     outside.add({3.5, 0.5, 0.5}, {{0.5, 0., 0.}, stay});
     throws_naming([&] { DivergenceGrid g; outside.run(g); },
-                  "the valid displacement of tracer 1 in realization 1 ends outside every cell",
+                  "the valid displacement of object 1 (from 0) in realization 1 (from 0) ends outside every cell",
                   "on the last face of the grid, the first in tracer-major order");
 
     Case two(4, 1.);

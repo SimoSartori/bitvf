@@ -102,11 +102,12 @@ namespace {
   }
 
   template <typename T>
-  void check_int64 (const std::vector<T>& values, const std::string& field, const std::string& writer)
+  void check_int64 (const std::vector<T>& values, const std::string& field, const std::string& index,
+                    const std::string& writer)
   {
     for (std::size_t i = 0; i < values.size(); ++i)
       if (values[i] > (T)std::numeric_limits<std::int64_t>::max())
-        throw Error(writer + ": cannot write " + field + ": entry " + std::to_string(i) + " is " +
+        throw Error(writer + ": cannot write " + field + ": " + index + " " + std::to_string(i) + " (from 0) is " +
                     std::to_string(values[i]) + ", above the largest 64-bit integer");
   }
 
@@ -208,7 +209,7 @@ namespace {
     check_size(cat.contamination.size(), n, name + ".contamination", writer);
     check_size(cat.nTracers.size(), nt, name + ".nTracers", writer);
     check_size(cat.fieldCentre.size(), field ? n : 0, name + ".fieldCentre", writer);
-    check_int64(cat.nTracers, name + ".nTracers", writer);
+    check_int64(cat.nTracers, name + ".nTracers", "basin", writer);
 
     std::vector<Source> sources = {
       integer("index", "row of the basin", [] (std::size_t b) { return (std::int64_t)b; }),
@@ -332,8 +333,8 @@ void bitvf::io::writeDivergence (const std::string& file, const Result& result)
   check_size(grid.nTracers.size(), nt, "divergence.nTracers", "writeDivergence");
   check_size(grid.voidIndex.size(), n, "divergence.voidIndex", "writeDivergence");
   check_size(grid.overdenseIndex.size(), n, "divergence.overdenseIndex", "writeDivergence");
-  check_int64(grid.nDisplacements, "divergence.nDisplacements", "writeDivergence");
-  check_int64(grid.nTracers, "divergence.nTracers", "writeDivergence");
+  check_int64(grid.nDisplacements, "divergence.nDisplacements", "cell", "writeDivergence");
+  check_int64(grid.nTracers, "divergence.nTracers", "cell", "writeDivergence");
 
   const std::string malformed = "writeDivergence: the result is malformed: ";
   if (!field) {

@@ -222,15 +222,15 @@ bitvf::internal::BoxDivergence bitvf::internal::box_divergence (const BoxSearch&
   const SweepErrors errors = sweep(search, grid, result, numerator, q, true);
 
   if (errors.outside != kNone)
-    throw Error("findVoidsBox: the valid displacement of tracer " + std::to_string(errors.outside / R) +
-                " in realization " + std::to_string(errors.outside % R) + " ends outside every "
+    throw Error("findVoidsBox: the valid displacement of object " + std::to_string(errors.outside / R) +
+                " (from 0) in realization " + std::to_string(errors.outside % R) + " (from 0) ends outside every "
                 "cell of the grid, which spans the box limits (with an otswap result, its box) or "
                 "the reused grid; the tracers and the displacement do not come from one "
                 "reconstruction in that box: pass the box limits the reconstruction used, or none");
   if (errors.noFace != kNone)
-    throw Error("internal error: no face of its cell is crossed by the displacement of tracer " +
-                std::to_string(errors.noFace / R) + " in realization " +
-                std::to_string(errors.noFace % R) + ", which leaves that cell");
+    throw Error("internal error: no face of its cell is crossed by the displacement of object " +
+                std::to_string(errors.noFace / R) + " (from 0) in realization " +
+                std::to_string(errors.noFace % R) + " (from 0), which leaves that cell");
 
   std::uint64_t K = 0;
 #pragma omp parallel for schedule(static) reduction(max:K)

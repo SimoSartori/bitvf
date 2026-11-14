@@ -135,17 +135,17 @@ namespace {
         const std::size_t i = t <= 0. ? 0 : t >= (double)(L.n[a] - 1) ? L.n[a] - 1 : (std::size_t)t;
         const double offset = std::abs(centres[3*r+a] - (L.min[a] + spacing[a] * (double)i));
         if (!(offset <= 1e-6 * L.s))
-          throw bitvf::Error("centre " + std::to_string(r) + " lies " + std::to_string(offset) +
+          throw bitvf::Error("the centre of cell " + std::to_string(r) + " (from 0) lies " + std::to_string(offset) +
                              " from its node along " + kAxes[a] + ", more than 1e-6 of the cell side " +
                              std::to_string(L.s) + "; the centres must lie on a lattice");
         node[a] = i;
       }
       const std::size_t c = (node[0] * L.n[1] + node[1]) * L.n[2] + node[2];
       if (L.row[c] != none)
-        throw bitvf::Error("centres " + std::to_string(L.row[c]) + " and " + std::to_string(r) +
-                           " lie at the same node (" + std::to_string(node[0]) + ", " + std::to_string(node[1]) +
+        throw bitvf::Error("the centres of cells " + std::to_string(L.row[c]) + " and " + std::to_string(r) +
+                           " (from 0) lie at the same node (" + std::to_string(node[0]) + ", " + std::to_string(node[1]) +
                            ", " + std::to_string(node[2]) + ") of the " + shape +
-                           " lattice; every node must hold one centre");
+                           " lattice, counted from 0 along each axis; every node must hold one centre");
       L.row[c] = r;
     }
 

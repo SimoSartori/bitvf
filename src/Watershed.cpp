@@ -282,7 +282,7 @@ bitvf::Partition bitvf::watershedBox (const std::vector<double>& field, const st
 
   for (std::size_t c = 0; c < field.size(); ++c)
     if (!std::isfinite(field[c]))
-      throw Error("the field holds a non-finite value at entry " + std::to_string(c));
+      throw Error("the field holds a non-finite value at cell " + std::to_string(c) + " (from 0)");
 
   DivergenceGrid grid;
   grid.nCellsAxis = n;

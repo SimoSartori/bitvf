@@ -75,22 +75,21 @@ namespace {
     return sky.size() / 3;
   }
 
-  void check_sky_rows (const std::vector<double>& sky, const std::string& noun, const std::string& plural,
+  void check_sky_rows (const std::vector<double>& sky, const std::string& plural,
                        const std::string& fromResult)
   {
     for (std::size_t i = 0; i < sky.size() / 3; ++i) {
       for (std::size_t k = 0; k < 3; ++k)
         if (!std::isfinite(sky[3*i+k]))
           throw bitvf::Error(fromResult.empty()
-                             ? "the sky positions of the " + plural + " hold a non-finite value at entry " +
-                               std::to_string(3*i+k) + " (object " + std::to_string(i) + ", component " +
-                               std::to_string(k) + ")"
+                             ? "the sky positions of the " + plural + " hold a non-finite value for object " +
+                               std::to_string(i) + " (from 0), component " + std::to_string(k)
                              : fromResult + ": the reconstruction's tracersSky holds a non-finite value for object " +
                                std::to_string(i) + " (from 0), component " + std::to_string(k));
       if (!(sky[3*i+1] >= -kPi/2 && sky[3*i+1] <= kPi/2))
         throw bitvf::Error(fromResult.empty()
-                           ? "the declination of " + noun + " " + std::to_string(i) + " is " + num(sky[3*i+1]) +
-                             " radians; it must lie in [-pi/2, pi/2]"
+                           ? "the sky positions of the " + plural + " hold a declination of " + num(sky[3*i+1]) +
+                             " radians for object " + std::to_string(i) + " (from 0); it must lie in [-pi/2, pi/2]"
                            : fromResult + ": the reconstruction's tracersSky holds a declination of " +
                              num(sky[3*i+1]) + " radians for object " + std::to_string(i) +
                              " (from 0); it must lie in [-pi/2, pi/2]");
@@ -109,19 +108,19 @@ namespace {
     for (std::size_t i = 0; i < z.size(); ++i) {
       if (!std::isfinite(z[i]))
         throw bitvf::Error("the mps profile holds a redshift of " + num(z[i]) + " at entry " +
-                           std::to_string(i) + "; it must be finite");
+                           std::to_string(i) + " (from 0); it must be finite");
       if (!std::isfinite(m[i]))
         throw bitvf::Error("the mps profile holds a mean particle separation of " + num(m[i]) + " at entry " +
-                           std::to_string(i) + "; it must be finite");
+                           std::to_string(i) + " (from 0); it must be finite");
     }
     for (std::size_t i = 1; i < z.size(); ++i)
       if (!(z[i] > z[i-1]))
         throw bitvf::Error("the mps profile holds a redshift of " + num(z[i]) + " at entry " + std::to_string(i) +
-                           ", not above the " + num(z[i-1]) + " before it; the redshifts must increase strictly");
+                           " (from 0), not above the " + num(z[i-1]) + " before it; the redshifts must increase strictly");
     for (std::size_t i = 0; i < m.size(); ++i)
       if (!(m[i] > 0.))
         throw bitvf::Error("the mps profile holds a mean particle separation of " + num(m[i]) + " at entry " +
-                           std::to_string(i) + "; it must be positive");
+                           std::to_string(i) + " (from 0); it must be positive");
   }
 
   void fold_right_ascension (std::vector<double>& sky)
@@ -177,7 +176,7 @@ namespace {
   }
 
   void check_usable (const std::vector<double>& sky, const std::vector<double>* cartesian, const Selection& selection,
-                     const otswap::DistanceTable& distances, const std::string& noun, const std::string& plural,
+                     const otswap::DistanceTable& distances, const std::string& plural,
                      const std::string& fromResult)
   {
     const double lo = distances.minRedshift(), hi = distances.maxRedshift();
@@ -185,8 +184,8 @@ namespace {
       if (!selection.inMask[i] || !selection.inCut[i]) continue;
       const double z = sky[3*i+2];
       if (!(z >= lo && z <= hi))
-        throw bitvf::Error("the redshift of " + noun + " " + std::to_string(i) + " is " + num(z) +
-                           ", outside the distance table [" + num(lo) + ", " + num(hi) + "]");
+        throw bitvf::Error("the sky positions of the " + plural + " hold a redshift of " + num(z) + " for object " +
+                           std::to_string(i) + " (from 0), outside the distance table [" + num(lo) + ", " + num(hi) + "]");
     }
     if (cartesian == nullptr) return;
     for (std::size_t i = 0; i < sky.size() / 3; ++i) {
@@ -194,8 +193,8 @@ namespace {
       for (std::size_t k = 0; k < 3; ++k)
         if (!std::isfinite((*cartesian)[3*i+k]))
           throw bitvf::Error(fromResult.empty()
-                             ? "the " + plural + " hold a non-finite value at entry " + std::to_string(3*i+k) +
-                               " (object " + std::to_string(i) + ", component " + std::to_string(k) + ")"
+                             ? "the " + plural + " hold a non-finite value for object " + std::to_string(i) +
+                               " (from 0), component " + std::to_string(k)
                              : fromResult + ": the reconstruction's tracers hold a non-finite value for object " +
                                std::to_string(i) + " (from 0), component " + std::to_string(k));
     }
@@ -319,8 +318,8 @@ namespace {
     if (rec == nullptr) bitvf::internal::check_ids(ids, N, fn, false);
     bitvf::internal::check_config(config, grid != nullptr);
 
-    check_sky_rows(tracersSky, "tracer", "tracers", rec == nullptr ? "" : fn);
-    check_sky_rows(randomsSky, "random", "randoms", "");
+    check_sky_rows(tracersSky, "tracers", rec == nullptr ? "" : fn);
+    check_sky_rows(randomsSky, "randoms", "");
 
     Entry entry;
     entry.nTracers = N;
@@ -336,8 +335,8 @@ namespace {
       selection = select_rows(entry.tracersSky, mask, otswap::RedshiftCut{});
       for (std::size_t i = 0; i < rec->outsideMask.size(); ++i)
         if (rec->outsideMask[i] && selection.inMask[i])
-          throw Error(fn + ": the mask given allows tracer " + std::to_string(i) +
-                      ", which the reconstruction excluded as outside its mask (Result::outsideMask); "
+          throw Error(fn + ": the mask given allows object " + std::to_string(i) +
+                      " (from 0) of tracers, which the reconstruction excluded as outside its mask (Result::outsideMask); "
                       "the mask must not be more permissive than the reconstruction's");
       for (std::size_t i = 0; i < rec->outsideRedshiftCut.size(); ++i)
         if (rec->outsideRedshiftCut[i]) {
@@ -347,9 +346,9 @@ namespace {
     }
     entry.randomSelection = select_rows(randomsFolded, mask, cut);
 
-    check_usable(entry.tracersSky, tracers, entry.tracerSelection, distances, "tracer", "tracers",
+    check_usable(entry.tracersSky, tracers, entry.tracerSelection, distances, "tracers",
                  rec == nullptr ? "" : fn);
-    check_usable(randomsFolded, randoms, entry.randomSelection, distances, "random", "randoms", "");
+    check_usable(randomsFolded, randoms, entry.randomSelection, distances, "randoms", "");
 
     const Selection& ts = entry.tracerSelection;
     const std::int64_t rows = (std::int64_t)(R * N);
@@ -377,10 +376,9 @@ namespace {
     }
     if (firstNonFinite != kNone) {
       const std::size_t row = firstNonFinite / 3;
-      throw Error("the displacements hold a non-finite value at entry " + std::to_string(firstNonFinite) +
-                  " (realization " + std::to_string(row / N) + ", tracer " + std::to_string(row % N) +
-                  ", component " + std::to_string(firstNonFinite % 3) +
-                  "), a valid displacement of a tracer the search reads");
+      throw Error("the displacements hold a non-finite value for realization " + std::to_string(row / N) +
+                  " (from 0), object " + std::to_string(row % N) + " (from 0), component " +
+                  std::to_string(firstNonFinite % 3) + ", a valid displacement of a tracer the search reads");
     }
 
     const std::size_t keptTracers = N - ts.outsideMask - ts.outsideCut;

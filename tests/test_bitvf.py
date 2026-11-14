@@ -709,9 +709,9 @@ def test_argument_errors(tmp_path):
     error(lambda: bitvf.find_voids_box_from_field(np.zeros((4, 3)), np.zeros(4), weights=[]),
           "weights is empty; omit it for unit weights")
     error(lambda: f(tracers, displacement, valid * 2, mps=7.0),
-          "the validity flags hold 2.000000 at entry 1; each must be 0 or 1")
+          "the validity flags hold 2.000000 for object 1 (from 0); each must be 0 or 1")
     error(lambda: f(tracers, displacement, mps=7.0, ids=np.full(n, 0.5)),
-          "ids holds 0.500000 at entry 0; every entry must be a 64-bit integer")
+          "ids holds 0.500000 for object 0 (from 0); every entry must be a 64-bit integer")
     error(lambda: f(tracers, displacement, mps=7.0, ids=["a"] * n),
           "ids must hold integers; its dtype is dtype('<U1')")
     error(lambda: bitvf.Config(keep_divergence=1), "keep_divergence must be True or False; got 1")

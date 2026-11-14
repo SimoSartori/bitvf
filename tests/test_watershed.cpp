@@ -672,7 +672,7 @@ int main ()
                   "a product that overflows");
     std::vector<double> bad = field;
     bad[9] = std::numeric_limits<double>::infinity();
-    throws_naming([&] { watershedBox(bad, {2, 3, 4}); }, "the field holds a non-finite value at entry 9", "the field holds a non-finite value at entry 9");
+    throws_naming([&] { watershedBox(bad, {2, 3, 4}); }, "the field holds a non-finite value at cell 9 (from 0)", "the field holds a non-finite value at cell 9 (from 0)");
   }
 
   return report("test_watershed");

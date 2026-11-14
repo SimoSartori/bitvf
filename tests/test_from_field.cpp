@@ -407,10 +407,10 @@ int main ()
     throws_naming([&] { auto w = v; w.pop_back(); findVoidsBoxFromField(x, w, c); },
                   "findVoidsBoxFromField: values holds " + std::to_string(v.size() - 1) + " entries for", "size");
     throws_naming([&] { auto w = v; w[3] = nan; findVoidsBoxFromField(x, w, c); },
-                  "the field values hold a non-finite value at entry 3", "non-finite");
+                  "the field values hold a non-finite value at cell 3 (from 0)", "non-finite");
     throws_naming([&] { findVoidsBoxFromField(x, v, c, {1., 2.}); }, "or none", "size");
     throws_naming([&] { auto w = lf.weights; w[4] = -1.; findVoidsBoxFromField(x, v, c, w); },
-                  "at entry 4; every weight must be finite and non-negative", "negative");
+                  "at cell 4 (from 0); every weight must be finite and non-negative", "negative");
     throws_naming([&] { findVoidsBoxFromField(x, v, c, {}, 0.); }, "the mean particle separation is ", "the mean particle separation is ");
     throws_naming([&] { Config y = c; y.divergenceCellSize = 1.; findVoidsBoxFromField(x, v, y); },
                   "the divergence cell size is set for a search on a field", "cell size");
@@ -434,10 +434,10 @@ int main ()
                         findVoidsBoxFromField(y, w, c); },
                   "the centres form a lattice of (12, 17, 9) nodes but are only", "hole");
     throws_naming([&] { auto y = x; y[3*7] += 0.3 * lf.s; findVoidsBoxFromField(y, v, c); },
-                  "centre 7 lies ", "off node");
+                  "the centre of cell 7 (from 0) lies ", "off node");
     throws_naming([&] { auto y = x; for (std::size_t a = 0; a < 3; ++a) y[3*7+a] = y[3*8+a];
                         findVoidsBoxFromField(y, v, c); },
-                  "centres 7 and 8 lie at the same node", "duplicate");
+                  "the centres of cells 7 and 8 (from 0) lie at the same node", "duplicate");
     throws_naming([&] { findVoidsBoxFromField(x, std::vector<double>(v.size(), 0.5), c); },
                   "no void found: the field is 0 or positive in every cell", "no void found: the field is 0 or positive in every cell");
   }

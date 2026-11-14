@@ -421,9 +421,9 @@ int main ()
     fails(c, {1., 2.}, {}, {}, "tracers holds 2 entries, which is not a multiple of three", "size");
     std::vector<double> bad = t;
     bad[5] = kNaN;
-    fails(c, bad, {}, {}, "the tracers hold a non-finite value at entry 5", "finite");
+    fails(c, bad, {}, {}, "the tracers hold a non-finite value for object 1 (from 0), component 2", "finite");
     fails(c, t, {1., 2., 3., 4.}, {}, "the random array holds 4 entries, which is not a multiple of three", "size");
-    fails(c, t, {1., 2., kNaN}, {}, "the random array holds a non-finite value at entry 2", "finite");
+    fails(c, t, {1., 2., kNaN}, {}, "the random array holds a non-finite value for object 0 (from 0), component 2", "finite");
     fails(c, t, {}, {1, 2}, "ids holds 2 entries for 2004 tracers", "size");
     std::vector<std::int64_t> twice = in.ids;
     twice[3] = twice[1];
