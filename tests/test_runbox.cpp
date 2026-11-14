@@ -417,54 +417,54 @@ int main ()
                       const std::vector<std::int64_t>& id, const std::string& text, const std::string& what) {
       throws_naming([&] { runBox(tr, rd, distances, conf, id); }, text, what);
     };
-    fails(c, {}, {}, {}, "tracers is empty", "PB1 empty");
-    fails(c, {1., 2.}, {}, {}, "tracers holds 2 entries, which is not a multiple of three", "PB1 size");
+    fails(c, {}, {}, {}, "tracers is empty", "empty");
+    fails(c, {1., 2.}, {}, {}, "tracers holds 2 entries, which is not a multiple of three", "size");
     std::vector<double> bad = t;
     bad[5] = kNaN;
-    fails(c, bad, {}, {}, "the tracers hold a non-finite value at entry 5", "PB1 finite");
-    fails(c, t, {1., 2., 3., 4.}, {}, "the random array holds 4 entries, which is not a multiple of three", "PB2 size");
-    fails(c, t, {1., 2., kNaN}, {}, "the random array holds a non-finite value at entry 2", "PB2 finite");
-    fails(c, t, {}, {1, 2}, "ids holds 2 entries for 2004 tracers", "PB3 size");
+    fails(c, bad, {}, {}, "the tracers hold a non-finite value at entry 5", "finite");
+    fails(c, t, {1., 2., 3., 4.}, {}, "the random array holds 4 entries, which is not a multiple of three", "size");
+    fails(c, t, {1., 2., kNaN}, {}, "the random array holds a non-finite value at entry 2", "finite");
+    fails(c, t, {}, {1, 2}, "ids holds 2 entries for 2004 tracers", "size");
     std::vector<std::int64_t> twice = in.ids;
     twice[3] = twice[1];
-    fails(c, t, {}, twice, "twice, at entries 1 and 3", "PB3 twice");
+    fails(c, t, {}, twice, "twice, at entries 1 and 3", "twice");
     BoxConfig l = c;
     l.limits->upper[1] = -1.;
-    fails(l, t, {}, {}, "the box limits are [0.000000, -1.000000] on axis y", "PB4");
+    fails(l, t, {}, {}, "the box limits are [0.000000, -1.000000] on axis y", "");
     BoxConfig m = c;
     m.mps = -1.;
-    fails(m, t, {}, {}, "the mean particle separation is -1.000000 in coordinate units; it must be finite and positive", "PB5");
+    fails(m, t, {}, {}, "the mean particle separation is -1.000000 in coordinate units; it must be finite and positive", "");
     BoxConfig r0 = c;
     r0.ot.nRealizations = 0;
-    fails(r0, t, {}, {}, "the number of realizations is 0; it must be at least 1", "PB6");
+    fails(r0, t, {}, {}, "the number of realizations is 0; it must be at least 1", "");
     BoxConfig s = c;
     s.voids.smoothing.sigma = -1.;
-    fails(s, t, {}, {}, "the smoothing sigma is", "PB7 C1");
+    fails(s, t, {}, {}, "the smoothing sigma is", "");
     throws_naming([&] { runBox(t, {}, c, in.ids); }, "needs a distance table that carries the growth rate, and none was given",
-                  "PB8");
+                  "");
     BoxConfig a = c;
     a.rsd->axis.reset();
-    fails(a, t, {}, {}, "the line-of-sight axis is not set; it must be 0, 1 or 2", "PB9 empty");
+    fails(a, t, {}, {}, "the line-of-sight axis is not set; it must be 0, 1 or 2", "empty");
     a.rsd->axis = 3;
-    fails(a, t, {}, {}, "the line-of-sight axis is 3; it must be 0, 1 or 2", "PB9 above 2");
+    fails(a, t, {}, {}, "the line-of-sight axis is 3; it must be 0, 1 or 2", "above 2");
     BoxConfig w = c;
     w.rsd->sigma = kNaN;
-    fails(w, t, {}, {}, "the smoothing width is nan in coordinate units; it must be finite and non-negative", "PB10");
+    fails(w, t, {}, {}, "the smoothing width is nan in coordinate units; it must be finite and non-negative", "");
     BoxConfig b = c;
     b.rsd->bias = 0.;
-    fails(b, t, {}, {}, "otswap: ", "PB11 bias 0");
-    check(nests_otswap([&] { runBox(t, {}, distances, b); }), "PB11: the otswap::Error nested");
+    fails(b, t, {}, {}, "otswap: ", "bias 0");
+    check(nests_otswap([&] { runBox(t, {}, distances, b); }), ": the otswap::Error nested");
     b.rsd->bias = 1.;
     b.rsd->redshift = kNaN;
-    fails(b, t, {}, {}, "otswap: ", "PB11 redshift NaN");
+    fails(b, t, {}, {}, "otswap: ", "redshift NaN");
     const otswap::DistanceTable noGrowth({0., 1.}, {0., 3000.});
-    throws_naming([&] { runBox(t, {}, noGrowth, c); }, "otswap: ", "PB11 no growth rate");
+    throws_naming([&] { runBox(t, {}, noGrowth, c); }, "otswap: ", "no growth rate");
     std::vector<double> flat = in.inner();
     for (std::size_t i = 0; i < Pipeline::kN; ++i) flat[3*i+2] = 4.;
     BoxConfig f = in.config;
     fails(f, flat, {}, {}, "the tracers span no volume (all of them in one plane, on one line or at one point), so they "
-          "fix no box; give the box limits", "PB12");
-    fails(f, flat, {1., 1., 4., 2., 2., 4.}, {}, "the tracers and the given randoms span no volume", "PB12 randoms");
+          "fix no box; give the box limits", "");
+    fails(f, flat, {1., 1., 4., 2., 2., 4.}, {}, "the tracers and the given randoms span no volume", "randoms");
     check(otLog.str().empty(), "no reconstruction ran before these errors");
   }
 
@@ -473,12 +473,12 @@ int main ()
     BoxConfig c = in.config;
     c.limits = box(200., 300.);
     throws_naming([&] { runBox(in.tracers, {}, c); }, "keeps 0 of 2004 tracers; at least one is needed to draw the randoms",
-                  "PB13");
+                  "");
     c = in.config;
-    throws_naming([&] { runBox(in.inner(), {1., 2., 3.}, c); }, "otswap: ", "PB15 first reconstruction");
-    check(nests_otswap([&] { runBox(in.inner(), {1., 2., 3.}, c); }), "PB15: the otswap::Error nested");
+    throws_naming([&] { runBox(in.inner(), {1., 2., 3.}, c); }, "otswap: ", "first reconstruction");
+    check(nests_otswap([&] { runBox(in.inner(), {1., 2., 3.}, c); }), ": the otswap::Error nested");
     c.voids.smoothing.sigma = 1e200;
-    throws_naming([&] { runBox(in.inner(), {}, c); }, "too large to build the kernel", "PB16 C4");
+    throws_naming([&] { runBox(in.inner(), {}, c); }, "too large to build the kernel", "");
 
     std::vector<double> corner, far;
     std::mt19937 rng(5);
@@ -492,7 +492,7 @@ int main ()
     e.rsd->sigma = 0.;
     throws_naming([&] { runBox(corner, far, distances, e); },
                   "no tracer is left for the real-space reconstruction: of 150 tracers, 0 were left uncorrected and 150 "
-                  "were moved outside the first pass's grid", "PB17");
+                  "were moved outside the first pass's grid", "");
   }
 
   group("the report: the pipeline's lines at config.voids.verbosity, the call line last");

@@ -257,66 +257,66 @@ int main ()
   {
     Input in;
     in.tracers.clear();
-    throws_naming([&] { in.run(); }, "findVoidsBox: tracers is empty", "T1");
+    throws_naming([&] { in.run(); }, "findVoidsBox: tracers is empty", "findVoidsBox: tracers is empty");
 
     Input bad;
     bad.tracers.push_back(1.);
-    throws_naming([&] { bad.run(); }, "findVoidsBox: tracers holds", "T2");
+    throws_naming([&] { bad.run(); }, "findVoidsBox: tracers holds", "findVoidsBox: tracers holds");
 
     Input nan;
     nan.tracers[5] = kNaN;
-    throws_naming([&] { nan.run(); }, "the tracers hold a non-finite value at entry 5", "T3");
+    throws_naming([&] { nan.run(); }, "the tracers hold a non-finite value at entry 5", "the tracers hold a non-finite value at entry 5");
 
     Input outside;
     outside.limits = box(0., 50.);
     outside.tracers[0] = 200.;
     outside.tracers[1] = kNaN;
     throws_naming([&] { outside.run(); }, "the tracers hold a non-finite",
-                  "T3 reads the rows outside the limits");
+                  "reads the rows outside the limits");
   }
 
   group("the displacements: their count, and finite where read");
   {
     Input empty;
     empty.displacement.clear();
-    throws_naming([&] { empty.run(); }, "findVoidsBox: displacement holds 0 entries", "D1, empty");
+    throws_naming([&] { empty.run(); }, "findVoidsBox: displacement holds 0 entries", "empty");
 
     Input partial;
     partial.displacement.push_back(0.);
-    throws_naming([&] { partial.run(); }, "whole nRealizations", "D1, not whole");
+    throws_naming([&] { partial.run(); }, "whole nRealizations", "not whole");
 
     Input nan;
     nan.displacement[3 * kN + 4] = kNaN;
-    throws_naming([&] { nan.run(); }, "realization 1, tracer 1, component 1", "D3");
+    throws_naming([&] { nan.run(); }, "realization 1, tracer 1, component 1", "realization 1, tracer 1, component 1");
 
     Input invalid;
     invalid.displacement[3 * kN + 4] = kNaN;
     invalid.valid[kN + 1] = 0;
-    accepted([&] { invalid.run(); }, "D3 skips an invalid displacement");
+    accepted([&] { invalid.run(); }, "skips an invalid displacement");
 
     Input skipped;
     skipped.limits = box(-1., 101.);
     skipped.tracers[3] = 200.;
     skipped.displacement[3] = kNaN;
-    accepted([&] { skipped.run(); }, "D3 skips a tracer outside the limits");
+    accepted([&] { skipped.run(); }, "skips a tracer outside the limits");
   }
 
   group("valid: its size and its values");
   {
     Input in;
     in.valid.pop_back();
-    throws_naming([&] { in.run(); }, "findVoidsBox: valid holds 399 entries", "V1");
+    throws_naming([&] { in.run(); }, "findVoidsBox: valid holds 399 entries", "findVoidsBox: valid holds 399 entries");
 
     Input two;
     two.valid[7] = 2;
-    throws_naming([&] { two.run(); }, "the validity flags hold 2 at entry 7", "V2");
+    throws_naming([&] { two.run(); }, "the validity flags hold 2 at entry 7", "the validity flags hold 2 at entry 7");
   }
 
   group("mps: finite and positive");
   for (const double mps : {0., -1., kNaN, std::numeric_limits<double>::infinity()}) {
     Input in;
     in.mps = mps;
-    throws_naming([&] { in.run(); }, "the mean particle separation is", "M1");
+    throws_naming([&] { in.run(); }, "the mean particle separation is", "the mean particle separation is");
   }
 
   group("the limits: finite, lower below upper; a point on a face is inside");
@@ -324,12 +324,12 @@ int main ()
     Input nan;
     nan.limits = box(0., 100.);
     nan.limits->upper[1] = kNaN;
-    throws_naming([&] { nan.run(); }, "every bound must be finite", "L1, not finite");
+    throws_naming([&] { nan.run(); }, "every bound must be finite", "not finite");
 
     Input flat;
     flat.limits = box(0., 100.);
     flat.limits->upper[2] = 0.;
-    throws_naming([&] { flat.run(); }, "the lower bound must be below the upper one", "L1, order");
+    throws_naming([&] { flat.run(); }, "the lower bound must be below the upper one", "order");
 
     Input face;
     face.limits = box(0., 100.);
@@ -344,12 +344,12 @@ int main ()
   {
     Input in;
     in.ids.assign(kN - 1, 0);
-    throws_naming([&] { in.run(); }, "findVoidsBox: ids holds 199 entries", "I1");
+    throws_naming([&] { in.run(); }, "findVoidsBox: ids holds 199 entries", "findVoidsBox: ids holds 199 entries");
 
     Input twice;
     for (std::size_t i = 0; i < kN; ++i) twice.ids.push_back((std::int64_t)i - 100);
     twice.ids[150] = twice.ids[3];
-    throws_naming([&] { twice.run(); }, "twice, at entries 3 and 150", "I2");
+    throws_naming([&] { twice.run(); }, "twice, at entries 3 and 150", "twice, at entries 3 and 150");
   }
 
   group("the configuration");
@@ -357,16 +357,16 @@ int main ()
     for (const double sigma : {-1., kNaN}) {
       Input in;
       in.config.smoothing.sigma = sigma;
-      throws_naming([&] { in.run(); }, "smoothing sigma", "C1");
+      throws_naming([&] { in.run(); }, "smoothing sigma", "smoothing sigma");
     }
     Input zero;
     zero.config.smoothing.sigma = 0.;
-    accepted([&] { zero.run(); }, "C1 accepts sigma 0");
+    accepted([&] { zero.run(); }, "accepts sigma 0");
 
     for (const double cell : {0., -1., std::numeric_limits<double>::infinity()}) {
       Input in;
       in.config.divergenceCellSize = cell;
-      throws_naming([&] { in.run(); }, "divergence cell size is", "C2");
+      throws_naming([&] { in.run(); }, "divergence cell size is", "divergence cell size is");
     }
 
     Input mps;
@@ -379,15 +379,15 @@ int main ()
 
     Input averaged;
     averaged.config.nRealizationsMean = 0;
-    throws_naming([&] { averaged.run(); }, "the number of realizations averaged is 0", "C5");
+    throws_naming([&] { averaged.run(); }, "the number of realizations averaged is 0", "the number of realizations averaged is 0");
     throws_naming([&] { findVoidsBox(averaged.reconstruction(), averaged.config); },
-                  "the number of realizations averaged is 0", "C5, reconstruction");
+                  "the number of realizations averaged is 0", "reconstruction");
     averaged.config.nRealizationsMean = 7;
     check(averaged.run().config.nRealizationsMean == 7, "nRealizationsMean copied into the Result");
   }
 
   group("the smoothing sigma in coordinate units, (2 sigma) sigma positive and finite: both "
-        "overloads, both units, both sides of both limits (C4)");
+        "overloads, both units, both sides of both limits");
   {
     const double tiny = std::ldexp(1., -538);
     double big = std::sqrt(std::numeric_limits<double>::max() / 2);
@@ -423,7 +423,7 @@ int main ()
       in.config.smoothing.unit = c.unit;
       const otswap::Result rec = in.reconstruction();
       std::ostringstream label;
-      label << std::setprecision(17) << "C4, sigma " << c.sigma << " ("
+      label << std::setprecision(17) << "sigma " << c.sigma << " ("
             << (c.unit == LengthUnit::Mps ? "Mps" : "Coordinate") << "), mps " << c.mps;
       const std::string what = label.str();
       if (c.fails == nullptr) {
@@ -453,27 +453,27 @@ int main ()
     };
 
     with([] (DivergenceGrid& g) { g.geometry = otswap::Geometry::Lightcone; },
-         "is not a box grid", "G1");
-    with([] (DivergenceGrid& g) { g.cellSize = 0.; }, "has a cell size of", "G2");
-    with([] (DivergenceGrid& g) { g.lower[0] = kNaN; }, "every bound must be finite", "G3");
-    with([] (DivergenceGrid& g) { g.upper[2] = g.lower[2]; }, "lower bound must be below", "G3");
-    with([] (DivergenceGrid& g) { g.nCellsAxis[1] += 1; }, "three counts must be equal", "G4");
+         "is not a box grid", "is not a box grid");
+    with([] (DivergenceGrid& g) { g.cellSize = 0.; }, "has a cell size of", "has a cell size of");
+    with([] (DivergenceGrid& g) { g.lower[0] = kNaN; }, "every bound must be finite", "every bound must be finite");
+    with([] (DivergenceGrid& g) { g.upper[2] = g.lower[2]; }, "lower bound must be below", "lower bound must be below");
+    with([] (DivergenceGrid& g) { g.nCellsAxis[1] += 1; }, "three counts must be equal", "three counts must be equal");
     with([] (DivergenceGrid& g) { g.nCellsAxis = {0, 0, 0}; g.nCells = 0; },
-         "three counts must be equal and positive", "G4, zero");
-    with([] (DivergenceGrid& g) { g.nCells += 1; }, "it must have their cube", "G5");
-    with([] (DivergenceGrid& g) { g.mps = kNaN; }, "has an mps of", "G6");
+         "three counts must be equal and positive", "zero");
+    with([] (DivergenceGrid& g) { g.nCells += 1; }, "it must have their cube", "it must have their cube");
+    with([] (DivergenceGrid& g) { g.mps = kNaN; }, "has an mps of", "has an mps of");
     for (const double c : {0., -1., kNaN, kInf})
       with([c] (DivergenceGrid& g) { g.cellSizeMps = c; }, "mps (cellSizeMps); it must be finite and positive",
-           "G8");
+           "a cell size and an mps that disagree");
     with([] (DivergenceGrid& g) { g.cellSizeMps = std::nextafter(g.cellSizeMps, 2.); },
-         "but cellSizeMps * mps is", "G9, one ulp of cellSizeMps");
+         "but cellSizeMps * mps is", "one ulp of cellSizeMps");
     with([] (DivergenceGrid& g) { g.cellSize = std::nextafter(g.cellSize, 0.); },
-         "but cellSizeMps * mps is", "G9, one ulp of cellSize");
-    with([] (DivergenceGrid& g) { g.raMin = 0.; }, "field of a lightcone grid", "G7");
+         "but cellSizeMps * mps is", "one ulp of cellSize");
+    with([] (DivergenceGrid& g) { g.raMin = 0.; }, "field of a lightcone grid", "field of a lightcone grid");
     with([] (DivergenceGrid& g) { g.mpsProfile.redshift = {0.5}; }, "field of a lightcone grid",
-         "G7, the profile");
+         "the profile");
     with([] (DivergenceGrid& g) { g.mps = std::nextafter(g.mps, 20.); }, "they must be equal",
-         "X2, one ulp");
+         "one ulp");
 
     DivergenceGrid reused = good;
     reused.divergence = {1., 2.};
@@ -482,18 +482,18 @@ int main ()
 
     Input in;
     in.grid = &good;
-    accepted([&] { in.run(); }, "a box grid with cellSizeMps set is no G7");
+    accepted([&] { in.run(); }, "a box grid with cellSizeMps set is not a lightcone grid");
 
     in.grid = &reused;
     accepted([&] { in.run(); }, "per-cell fields are ignored");
 
     in.config.divergenceCellSize = 1.;
-    throws_naming([&] { in.run(); }, "set together with a grid", "X1");
+    throws_naming([&] { in.run(); }, "set together with a grid", "set together with a grid");
 
     Input limited;
     limited.grid = &good;
     limited.limits = box(0., 100.);
-    accepted([&] { limited.run(); }, "X3: limits with a grid");
+    accepted([&] { limited.run(); }, "limits with a grid");
 
     Input small;
     DivergenceGrid half = good;
@@ -509,15 +509,15 @@ int main ()
   {
     Input none;
     none.valid.assign(kR * kN, 0);
-    throws_naming([&] { none.run(); }, "no valid displacement is left", "E1, all invalid");
+    throws_naming([&] { none.run(); }, "no valid displacement is left", "all invalid");
 
     Input away;
     away.limits = box(200., 300.);
-    throws_naming([&] { away.run(); }, "no valid displacement is left", "E1, all outside");
+    throws_naming([&] { away.run(); }, "no valid displacement is left", "all outside");
 
     Input huge;
     huge.config.divergenceCellSize = 1e-9;
-    throws_naming([&] { huge.run(); }, "an int64 cell index can address", "E3");
+    throws_naming([&] { huge.run(); }, "an int64 cell index can address", "an int64 cell index can address");
   }
 
   group("the divergence: an endpoint outside every cell, a fill that stalls");
@@ -539,9 +539,9 @@ int main ()
       findVoidsBox(tracers, displacement, {}, 1., config, std::nullopt, {}, &cells);
     };
     throws_naming([&] { run({1., 1., 0., 2.5, 0., 0.}); },
-                  "displacement of tracer 1 in realization 0 ends outside every cell", "E6");
+                  "displacement of tracer 1 in realization 0 ends outside every cell", "displacement of tracer 1 in realization 0 ends outside every cell");
     throws_naming([&] { run({1., 0., 0., 0.1, 0., 0.}); },
-                  "cannot reach 62 empty cells: the last pass filled none", "E4");
+                  "cannot reach 62 empty cells: the last pass filled none", "cannot reach 62 empty cells: the last pass filled none");
   }
 
   group("the otswap::Result overload: its own checks, and the same selection");
@@ -558,21 +558,21 @@ int main ()
     accepted([&] { findVoidsBox(in.reconstruction(), config); }, "a valid reconstruction");
 
     with([] (otswap::Result& r) { r.geometry = otswap::Geometry::Lightcone; },
-         "not a box result", "O1");
-    with([] (otswap::Result& r) { r.nObjects = 0; }, "holds no objects", "O2, no objects");
+         "not a box result", "not a box result");
+    with([] (otswap::Result& r) { r.nObjects = 0; }, "holds no objects", "no objects");
     with([] (otswap::Result& r) { r.nRealizations = 0; }, "holds no realizations",
-         "O2, no realizations");
-    with([] (otswap::Result& r) { r.nRealizationsMean = 0; }, "nRealizationsMean is 0", "O2, mean 0");
+         "no realizations");
+    with([] (otswap::Result& r) { r.nRealizationsMean = 0; }, "nRealizationsMean is 0", "mean 0");
     with([] (otswap::Result& r) { r.nRealizations = 2; r.nRealizationsMean = 3; },
-         "a mean holds one realization", "O2, a mean of several realizations");
+         "a mean holds one realization", "a mean of several realizations");
     with([] (otswap::Result& r) { r.validRealizations.assign(3, 1); }, "malformed: validRealizations holds 3 entries",
-         "O2, validRealizations size");
+         "validRealizations size");
     with([] (otswap::Result& r) {
            r.nRealizations = 1;
            r.nRealizationsMean = 4;
            r.validRealizations.assign(r.nObjects, 1);
            r.validRealizations[2] = 5;
-         }, "above nRealizations * nRealizationsMean = 4", "O2, validRealizations above the mean");
+         }, "above nRealizations * nRealizationsMean = 4", "validRealizations above the mean");
     accepted([&] {
                otswap::Result r = in.reconstruction();
                r.nRealizations = 1;
@@ -582,38 +582,38 @@ int main ()
                r.validRealizations.assign(r.nObjects, 4);
                findVoidsBox(r, config);
              }, "a mean of 4 realizations, validRealizations in [0, 4]");
-    with([] (otswap::Result& r) { r.tracers.pop_back(); }, "malformed: tracers", "O2, tracers");
+    with([] (otswap::Result& r) { r.tracers.pop_back(); }, "malformed: tracers", "tracers");
     with([] (otswap::Result& r) { r.displacement.pop_back(); }, "malformed: displacement",
-         "O2, displacement");
-    with([] (otswap::Result& r) { r.valid.clear(); }, "malformed: valid", "O2, valid");
+         "displacement");
+    with([] (otswap::Result& r) { r.valid.clear(); }, "malformed: valid", "valid");
     with([] (otswap::Result& r) { r.outsideBox.assign(3, 0); }, "malformed: outsideBox",
-         "O2, outsideBox");
-    with([] (otswap::Result& r) { r.ids.assign(3, 0); }, "malformed: ids", "O2, ids");
-    with([] (otswap::Result& r) { r.valid[0] = 3; }, "findVoidsBox: the reconstruction's validity flags hold 3", "O3");
-    with([] (otswap::Result& r) { r.ids.assign(kN, 5); }, "twice", "O3, ids");
+         "outsideBox");
+    with([] (otswap::Result& r) { r.ids.assign(3, 0); }, "malformed: ids", "ids");
+    with([] (otswap::Result& r) { r.valid[0] = 3; }, "findVoidsBox: the reconstruction's validity flags hold 3", "findVoidsBox: the reconstruction's validity flags hold 3");
+    with([] (otswap::Result& r) { r.ids.assign(kN, 5); }, "twice", "ids");
     with([] (otswap::Result& r) { r.tracers[4] = kNaN; }, "the reconstruction's tracers",
-         "O4, tracers");
+         "tracers");
     with([] (otswap::Result& r) { r.displacement[4] = kNaN; },
-         "findVoidsBox: the reconstruction's displacements hold a non-finite", "O4, displacement");
-    with([] (otswap::Result& r) { r.mps = kNaN; }, "the reconstruction's mps", "O5");
+         "findVoidsBox: the reconstruction's displacements hold a non-finite", "displacement");
+    with([] (otswap::Result& r) { r.mps = kNaN; }, "the reconstruction's mps", "the reconstruction's mps");
     with([] (otswap::Result& r) { r.selection.boxLimits = box(5., 1.); },
-         "the reconstruction's box limits", "O6");
-    with([] (otswap::Result& r) { r.box.reset(); }, "it holds no box", "O6, no box");
+         "the reconstruction's box limits", "the reconstruction's box limits");
+    with([] (otswap::Result& r) { r.box.reset(); }, "it holds no box", "no box");
     with([] (otswap::Result& r) { r.box->upper[1] = kNaN; }, "every bound must be finite",
-         "O6, box not finite");
+         "box not finite");
     with([] (otswap::Result& r) { r.box = box(5., 1.); }, "must not be above the upper one",
-         "O6, box reversed");
+         "box reversed");
     with([] (otswap::Result& r) { r.selection.boxLimits = box(-10., 110.); },
-         "differs from its box limits", "O6, box not the limits");
+         "differs from its box limits", "box not the limits");
     with([] (otswap::Result& r) { r.tracers[3] = r.box->upper[0] + 1.; },
-         "tracer 1 lies outside its box", "O7");
+         "tracer 1 lies outside its box", "tracer 1 lies outside its box");
 
     otswap::Result plane = in.reconstruction();
     for (std::size_t i = 0; i < kN; ++i) plane.tracers[3*i+2] = 50.;
     plane.selection.boxLimits.reset();
     plane.box->lower[2] = plane.box->upper[2] = 50.;
     check(internal::check_box(plane, config, nullptr, unmoved).box->upper[2] == 50.,
-          "O6 accepts a flat box");
+          "accepts a flat box");
 
     otswap::Result flagged = in.reconstruction();
     flagged.selection.boxLimits = box(-10., 110.);
@@ -622,13 +622,13 @@ int main ()
     flagged.outsideBox[1] = 1;
     flagged.tracers[4] = kNaN;
     flagged.displacement[4] = kNaN;
-    accepted([&] { findVoidsBox(flagged, config); }, "O4 skips a flagged row unread");
+    accepted([&] { findVoidsBox(flagged, config); }, "skips a flagged row unread");
 
     const DivergenceGrid grid = internal::box_grid(in.search(), 1.);
     otswap::Result other = in.reconstruction();
     other.mps = kNaN;
     accepted([&] { findVoidsBox(other, config, &grid); },
-             "O5 and X2: with a grid, the grid's mps wins");
+             "with a grid, the grid's mps wins");
 
     Input seven;
     seven.mps = 7.;
@@ -663,19 +663,19 @@ int main ()
           "the grid is built on the reconstruction's box, wider than its tracers");
   }
 
-  group("an endpoint beyond the box: E6 from a reconstruction, none from arrays without limits");
+  group("an endpoint beyond the box: an error from a reconstruction, none from arrays without limits");
   {
     Input far;
     far.displacement[0] = 150. - far.tracers[0];
     otswap::Result rec = far.reconstruction();
     throws_naming([&] { findVoidsBox(rec, far.config); },
-                  "ends outside every cell of the grid, which spans the box limits", "E6, box");
+                  "ends outside every cell of the grid, which spans the box limits", "box");
     accepted([&] { far.run(); }, "arrays without limits cover the endpoints");
     far.limits = rec.box;
-    throws_naming([&] { far.run(); }, "pass the box limits the reconstruction used", "E6, limits");
+    throws_naming([&] { far.run(); }, "pass the box limits the reconstruction used", "limits");
   }
 
-  group("an otswap reconstruction on given randoms beyond the tracers, without limits: no E6");
+  group("an otswap reconstruction on given randoms beyond the tracers, without limits: no endpoint error");
   {
     const Input in;
     std::mt19937 rng(7);
@@ -712,7 +712,7 @@ int main ()
       arrays.mps = rec.mps;
       arrays.limits = tracersBox;
       throws_naming([&] { arrays.run(); }, "ends outside every cell of the grid",
-                    what + ": E6 on the tracers' bounding box");
+                    what + ": the endpoint error on the tracers' bounding box");
       accepted([&] { findVoidsBox(rec, in.config); }, what + ": the reconstruction accepted");
       arrays.limits = rec.box;
       check(result_hash(arrays.run()) == result_hash(findVoidsBox(rec, in.config)),

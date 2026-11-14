@@ -687,7 +687,6 @@ def test_argument_errors(tmp_path):
     tracers, displacement, valid, ids, box = translated()
     n = len(tracers)
     f = bitvf.find_voids_box
-    # PY1, PY2
     with pytest.raises(bitvf.Error, match="^tracers cannot be converted to a float64 array: "):
         f("abc", displacement, mps=7.0)
     error(lambda: f(tracers[:, :2], displacement, mps=7.0),
@@ -703,21 +702,18 @@ def test_argument_errors(tmp_path):
     error(lambda: bitvf.find_voids_box_from_field(np.zeros((4, 3)), np.zeros((2, 2))),
           "values must be one-dimensional; it has shape (2, 2)")
     error(lambda: bitvf.watershed_box(np.zeros(8)), "field must have shape (nx, ny, nz); it has shape (8,)")
-    # PY3
     error(lambda: f(tracers, displacement, np.zeros((0,)), mps=7.0),
           "valid is empty; omit it to take every displacement as valid")
     error(lambda: bitvf.run_box(tracers, np.zeros((0, 3))),
           "randoms is empty; omit it to have bitvf draw the randoms in the box")
     error(lambda: bitvf.find_voids_box_from_field(np.zeros((4, 3)), np.zeros(4), weights=[]),
           "weights is empty; omit it for unit weights")
-    # PY4, PY5
     error(lambda: f(tracers, displacement, valid * 2, mps=7.0),
           "the validity flags hold 2.000000 at entry 1; each must be 0 or 1")
     error(lambda: f(tracers, displacement, mps=7.0, ids=np.full(n, 0.5)),
           "ids holds 0.500000 at entry 0; every entry must be a 64-bit integer")
     error(lambda: f(tracers, displacement, mps=7.0, ids=["a"] * n),
           "ids must hold integers; its dtype is dtype('<U1')")
-    # PY6, PY7
     error(lambda: bitvf.Config(keep_divergence=1), "keep_divergence must be True or False; got 1")
     error(lambda: bitvf.Config(n_realizations_mean=-1),
           "n_realizations_mean is -1; it must be a non-negative integer")
@@ -726,7 +722,6 @@ def test_argument_errors(tmp_path):
           "verbosity must be \"silent\", \"normal\" or \"detailed\"; got 'loud'")
     error(lambda: bitvf.io.read_divergence(tmp_path / "x.fits", angle_unit="degrees"),
           "angle_unit must be \"deg\" or \"rad\"; got 'degrees'")
-    # PY14
     divergence_file = tmp_path / "py14.fits"
     bitvf.io.write_divergence(divergence_file, bitvf.find_voids_box(tracers, displacement, mps=7.0, config=kept("silent")))
     error(lambda: bitvf.io.read_divergence(divergence_file, angle_unit="deg"),
@@ -736,7 +731,6 @@ def test_argument_errors(tmp_path):
     error(lambda: bitvf.io.read_field("x.dat", centres="abc", value="v"),
           "centres must be a sequence of three column names (str); got 'abc'")
     error(lambda: bitvf.io.write_voids(3, None), "file must be a str or an os.PathLike; got 3")
-    # PY8
     error(lambda: f(tracers, displacement, mps=7.0, config=otswap.Config()),
           "config must be a bitvf.Config; got " + repr(otswap.Config()))
     error(lambda: f(tracers, displacement, mps=7.0, grid=3), "grid must be a bitvf.DivergenceGrid; got 3")
@@ -747,7 +741,6 @@ def test_argument_errors(tmp_path):
     error(lambda: bitvf.run_box(tracers, distances=1), "distances must be an otswap.DistanceTable; got 1")
     error(lambda: bitvf.io.file_name("voids", "d", "n.fits", zspace=False),
           "product must be a bitvf.io.Product; got 'voids'")
-    # PY9, PY10
     error(lambda: f(tracers, mps=7.0), "find_voids_box: displacement is required with arrays")
     error(lambda: f(tracers, displacement), "find_voids_box: mps is required with arrays")
     error(lambda: bitvf.box_grid(box=box, mps=1.0), "box_grid: give a reconstruction, or box, mps and cell_size")

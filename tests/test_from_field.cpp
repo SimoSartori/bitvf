@@ -395,51 +395,51 @@ int main ()
           "the Translated grid");
   }
 
-  group("errors FF1-FF15");
+  group("errors of a search on a field");
   {
     const std::vector<double>& x = lf.centres;
     const std::vector<double>& v = lf.values;
     const Config c = coordinate(1.5);
     const double nan = std::numeric_limits<double>::quiet_NaN();
-    throws_naming([&] { findVoidsBoxFromField({}, {}, c); }, "findVoidsBoxFromField: centres is empty", "FF1 empty");
-    throws_naming([&] { findVoidsBoxFromField({1., 2.}, {1.}, c); }, "centres", "FF1 size");
-    throws_naming([&] { auto y = x; y[5] = nan; findVoidsBoxFromField(y, v, c); }, "centres", "FF1 non-finite");
+    throws_naming([&] { findVoidsBoxFromField({}, {}, c); }, "findVoidsBoxFromField: centres is empty", "empty");
+    throws_naming([&] { findVoidsBoxFromField({1., 2.}, {1.}, c); }, "centres", "size");
+    throws_naming([&] { auto y = x; y[5] = nan; findVoidsBoxFromField(y, v, c); }, "centres", "non-finite");
     throws_naming([&] { auto w = v; w.pop_back(); findVoidsBoxFromField(x, w, c); },
-                  "findVoidsBoxFromField: values holds " + std::to_string(v.size() - 1) + " entries for", "FF2 size");
+                  "findVoidsBoxFromField: values holds " + std::to_string(v.size() - 1) + " entries for", "size");
     throws_naming([&] { auto w = v; w[3] = nan; findVoidsBoxFromField(x, w, c); },
-                  "the field values hold a non-finite value at entry 3", "FF2 non-finite");
-    throws_naming([&] { findVoidsBoxFromField(x, v, c, {1., 2.}); }, "or none", "FF3 size");
+                  "the field values hold a non-finite value at entry 3", "non-finite");
+    throws_naming([&] { findVoidsBoxFromField(x, v, c, {1., 2.}); }, "or none", "size");
     throws_naming([&] { auto w = lf.weights; w[4] = -1.; findVoidsBoxFromField(x, v, c, w); },
-                  "at entry 4; every weight must be finite and non-negative", "FF3 negative");
-    throws_naming([&] { findVoidsBoxFromField(x, v, c, {}, 0.); }, "the mean particle separation is ", "FF4");
+                  "at entry 4; every weight must be finite and non-negative", "negative");
+    throws_naming([&] { findVoidsBoxFromField(x, v, c, {}, 0.); }, "the mean particle separation is ", "the mean particle separation is ");
     throws_naming([&] { Config y = c; y.divergenceCellSize = 1.; findVoidsBoxFromField(x, v, y); },
-                  "the divergence cell size is set for a search on a field", "FF5 cell size");
+                  "the divergence cell size is set for a search on a field", "cell size");
     throws_naming([&] { Config y = c; y.keepAssignment = true; findVoidsBoxFromField(x, v, y); },
-                  "a search on a field has no tracers to assign to cells; do not ask for the assignment", "FF5 keepAssignment");
+                  "a search on a field has no tracers to assign to cells; do not ask for the assignment", "keepAssignment");
     throws_naming([&] { Config y = c; y.nRealizationsMean = 2; findVoidsBoxFromField(x, v, y); },
-                  "for a search on a field, which has no realizations", "FF5 nRealizationsMean");
+                  "for a search on a field, which has no realizations", "nRealizationsMean");
     throws_naming([&] { Config y = c; y.smoothing.unit = LengthUnit::Mps; findVoidsBoxFromField(x, v, y); },
-                  "no mps is given", "FF6");
-    throws_naming([&] { findVoidsBoxFromField(x, v, coordinate(1e-200)); }, "too small to build the kernel", "FF7");
+                  "no mps is given", "no mps is given");
+    throws_naming([&] { findVoidsBoxFromField(x, v, coordinate(1e-200)); }, "too small to build the kernel", "too small to build the kernel");
     throws_naming([&] { findVoidsBoxFromField(x, v, c, std::vector<double>(v.size(), 0.)); },
-                  "every weight is 0", "FF8");
+                  "every weight is 0", "every weight is 0");
     throws_naming([&] { findVoidsBoxFromField({-1e308, 0., 0., 0., 0., 0., 1e308, 0., 0.}, {-1., 1., 1.}, c); },
-                  "too wide a range for the cell side to be finite", "FF9");
+                  "too wide a range for the cell side to be finite", "too wide a range for the cell side to be finite");
     throws_naming([&] { findVoidsBoxFromField({1., 2., 3.}, {-1.}, c); },
-                  "the centres span one node on every axis", "FF10");
+                  "the centres span one node on every axis", "the centres span one node on every axis");
     throws_naming([&] { auto y = x; for (std::size_t i = 0; i < v.size(); ++i) y[3*i+2] *= 1.01;
                         findVoidsBoxFromField(y, v, c); },
-                  "the cells are not cubic", "FF11");
+                  "the cells are not cubic", "the cells are not cubic");
     throws_naming([&] { auto y = x; auto w = v; y.erase(y.begin() + 30, y.begin() + 33); w.erase(w.begin() + 10);
                         findVoidsBoxFromField(y, w, c); },
-                  "the centres form a lattice of (12, 17, 9) nodes but are only", "FF12 hole");
+                  "the centres form a lattice of (12, 17, 9) nodes but are only", "hole");
     throws_naming([&] { auto y = x; y[3*7] += 0.3 * lf.s; findVoidsBoxFromField(y, v, c); },
-                  "centre 7 lies ", "FF13 off node");
+                  "centre 7 lies ", "off node");
     throws_naming([&] { auto y = x; for (std::size_t a = 0; a < 3; ++a) y[3*7+a] = y[3*8+a];
                         findVoidsBoxFromField(y, v, c); },
-                  "centres 7 and 8 lie at the same node", "FF14 duplicate");
+                  "centres 7 and 8 lie at the same node", "duplicate");
     throws_naming([&] { findVoidsBoxFromField(x, std::vector<double>(v.size(), 0.5), c); },
-                  "no void found: the field is 0 or positive in every cell", "FF15");
+                  "no void found: the field is 0 or positive in every cell", "no void found: the field is 0 or positive in every cell");
   }
 
   group("non-cubic lattices with an axis of one cell or two, the field lowered by 2");

@@ -158,39 +158,39 @@ int main ()
           "no nTracers: the same catalogues with the same tracers");
   }
 
-  group("errors FD1-FD11");
+  group("errors of a search from a divergence grid");
   {
     const Config& c = in.config;
-    throws_naming([&] { findVoidsBoxFromDivergence(d, {}, c); }, "tracers is empty", "FD1 no tracer");
-    throws_naming([&] { findVoidsBoxFromDivergence(d, {1., 2.}, c); }, "tracers", "FD1 size");
-    throws_naming([&] { findVoidsBoxFromDivergence(d, in.tracers, c, {1, 2}); }, "ids", "FD1 ids");
+    throws_naming([&] { findVoidsBoxFromDivergence(d, {}, c); }, "tracers is empty", "no tracer");
+    throws_naming([&] { findVoidsBoxFromDivergence(d, {1., 2.}, c); }, "tracers", "size");
+    throws_naming([&] { findVoidsBoxFromDivergence(d, in.tracers, c, {1, 2}); }, "ids", "ids");
     throws_naming([&] { Config x = c; x.smoothing.sigma = -1.; findVoidsBoxFromDivergence(d, in.tracers, x); },
-                  "sigma", "FD2 config");
+                  "sigma", "config");
     throws_naming([&] { Config x = c; x.divergenceCellSize = 1.; findVoidsBoxFromDivergence(d, in.tracers, x); },
-                  "the divergence cell size is set for a search from a divergence", "FD2 cell size");
+                  "the divergence cell size is set for a search from a divergence", "cell size");
     throws_naming([&] { DivergenceGrid x = d; x.nCellsAxis[2] -= 1; findVoidsBoxFromDivergence(x, in.tracers, c); },
-                  "findVoidsBoxFromDivergence: the divergence grid has ", "FD3 non-cubic");
+                  "findVoidsBoxFromDivergence: the divergence grid has ", "non-cubic");
     throws_naming([&] { DivergenceGrid x = d; x.geometry = otswap::Geometry::Lightcone;
                         findVoidsBoxFromDivergence(x, in.tracers, c); },
-                  "the divergence grid is not a box grid", "FD3 lightcone");
+                  "the divergence grid is not a box grid", "lightcone");
     throws_naming([&] { DivergenceGrid x = d; x.limits->upper[1] = x.limits->lower[1];
                         findVoidsBoxFromDivergence(x, in.tracers, c); },
-                  "the grid's box limits are ", "FD4");
+                  "the grid's box limits are ", "the grid's box limits are ");
     throws_naming([&] { DivergenceGrid x = d; x.divergence.clear();
                         findVoidsBoxFromDivergence(x, in.tracers, c); },
-                  "the grid's divergence holds 0 entries", "FD5 no divergence");
+                  "the grid's divergence holds 0 entries", "no divergence");
     throws_naming([&] { DivergenceGrid x = d; x.weight[7] = std::numeric_limits<double>::quiet_NaN();
                         findVoidsBoxFromDivergence(x, in.tracers, c); },
-                  "the grid's weight holds a non-finite value at cell 7", "FD5 weight");
+                  "the grid's weight holds a non-finite value at cell 7", "weight");
     throws_naming([&] { DivergenceGrid x = d; x.nTracers.pop_back(); findVoidsBoxFromDivergence(x, in.tracers, c); },
-                  "the grid's nTracers holds ", "FD6");
+                  "the grid's nTracers holds ", "the grid's nTracers holds ");
     throws_naming([&] { Config x = c; x.smoothing.sigma = 1e-200; findVoidsBoxFromDivergence(d, in.tracers, x); },
-                  "too small to build the kernel", "FD7");
+                  "too small to build the kernel", "too small to build the kernel");
     throws_naming([&] { findVoidsBoxFromDivergence(d, {200., 0., 0., 0., 200., 0.}, c); },
-                  "no tracer is left to read: of 2 tracers, 2 lie outside the grid's box limits", "FD9");
+                  "no tracer is left to read: of 2 tracers, 2 lie outside the grid's box limits", "no tracer is left to read: of 2 tracers, 2 lie outside the grid's box limits");
     throws_naming([&] { DivergenceGrid x = d; for (double& v : x.divergence) v = 1.;
                         findVoidsBoxFromDivergence(x, in.tracers, c); },
-                  "no void found: the divergence is 0 or positive in every cell", "FD11");
+                  "no void found: the divergence is 0 or positive in every cell", "no void found: the divergence is 0 or positive in every cell");
   }
 
   return report("test_from_divergence");

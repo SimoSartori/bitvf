@@ -519,7 +519,7 @@ int main ()
           "a neighbour fills from the three counted cells in its 3x3x3 window, its weight 0");
   }
 
-  group("errors: E6, naming the first case in tracer-major order; E4");
+  group("errors: the first case is named in tracer-major order; a pass that fills no cell");
   {
     const Vec stay = {0.1, 0., 0.};
     Case outside(4, 1., 2);
@@ -528,13 +528,13 @@ int main ()
     outside.add({3.5, 0.5, 0.5}, {{0.5, 0., 0.}, stay});
     throws_naming([&] { DivergenceGrid g; outside.run(g); },
                   "the valid displacement of tracer 1 in realization 1 ends outside every cell",
-                  "E6, on the last face of the grid, the first in tracer-major order");
+                  "on the last face of the grid, the first in tracer-major order");
 
     Case two(4, 1.);
     two.add({0.5, 0.5, 0.5}, {{1., 0., 0.}});
     throws_naming([&] { DivergenceGrid g; two.run(g); },
                   "cannot reach 62 empty cells: the last pass filled none",
-                  "E4, two counted cells only");
+                  "two counted cells only");
   }
 
   group("scale: a cell counting 2^20 + 2 reruns at q = 61 - e - 21, one counting 2^20 does not");

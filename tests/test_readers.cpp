@@ -468,11 +468,11 @@ int main ()
           (nRec <= 20 || expected < 1.), "R = " + std::to_string(nRec));
   }
 
-  group("errors RD1-RD10, on files written with otswap::io::write; complete and lightcone files named");
+  group("errors of the divergence reader, on files written with otswap::io::write; complete and lightcone files named");
   {
     for (const char* format : kFormats) {
       const std::string missing = std::string("/nonexistent_bitvf_directory/x") + format;
-      otswap_nested([&] { io::readDivergence(missing); }, std::string("RD1, divergence, no file ") + format);
+      otswap_nested([&] { io::readDivergence(missing); }, std::string("divergence, no file ") + format);
     }
     {
       Table d = divergence_table(p);
@@ -480,7 +480,7 @@ int main ()
       for (const char* format : kFormats) {
         const std::string file = temporary(std::string("rd1") + format);
         d.write(file);
-        otswap_nested([&] { io::readDivergence(file); }, std::string("RD1, divergence, a missing column ") + format);
+        otswap_nested([&] { io::readDivergence(file); }, std::string("divergence, a missing column ") + format);
         std::remove(file.c_str());
       }
     }
@@ -490,9 +490,9 @@ int main ()
       Table d = div;
       d.set("PRODUCT", "displacements");
       refused(d, read_divergence, " is not a divergence file: its PRODUCT is 'displacements', where 'divergence' "
-              "is expected", "RD2, divergence");
+              "is expected", "divergence");
       d.erase("PRODUCT");
-      refused(d, read_divergence, " has no PRODUCT keyword: not a bitvf divergence file", "RD2, divergence, none");
+      refused(d, read_divergence, " has no PRODUCT keyword: not a bitvf divergence file", "divergence, none");
     }
     {
       otswap::Config ot;
@@ -506,7 +506,7 @@ int main ()
         otswap::io::writeDisplacementComplete(file, rec);
         throws_naming([&] { io::readDivergence(file); },
                       "is not a divergence file: its PRODUCT is 'complete displacements'",
-                      std::string("RD2, a real complete file as a divergence ") + format);
+                      std::string("a real complete file as a divergence ") + format);
         std::remove(file.c_str());
       }
       group("the strict ASCII reader refuses a header line without the comment character and an NA, in a complete "
@@ -548,40 +548,40 @@ int main ()
     {
       Table d = div;
       d.set("GEOMETRY", "lightcone");
-      refused(d, read_divergence, "reading a lightcone divergence file is not implemented", "RD3, divergence");
+      refused(d, read_divergence, "reading a lightcone divergence file is not implemented", "divergence");
       d.set("GEOMETRY", "Box");
-      refused(d, read_divergence, ": GEOMETRY is 'Box'; it must be box or lightcone", "RD4, divergence");
+      refused(d, read_divergence, ": GEOMETRY is 'Box'; it must be box or lightcone", "divergence");
     }
     {
       for (const char* key : {"NCELLS", "NRECMEAN", "CELLSIZE", "CELLSIDE", "LOWERY", "UPPERZ", "NCELLX"}) {
         Table d = div;
         d.erase(key);
         refused(d, read_divergence, std::string(": keyword ") + key + " is missing",
-                std::string("RD5, divergence ") + key + " missing");
+                std::string("divergence ") + key + " missing");
       }
       Table d = div;
       d.set("NCELLY", "x");
-      refused(d, read_divergence, ": keyword NCELLY is 'x', not a whole number", "RD5, NCELLY");
+      refused(d, read_divergence, ": keyword NCELLY is 'x', not a whole number", "NCELLY");
     }
     {
       Table d = div;
       d.set("BOXLIM", "0");
-      refused(d, read_divergence, ": keyword BOXLIM is '0', where only 1 is written", "RD6, divergence BOXLIM 0");
+      refused(d, read_divergence, ": keyword BOXLIM is '0', where only 1 is written", "divergence BOXLIM 0");
       d = div;
       d.erase("BOXXHI");
       refused(d, read_divergence, ": BOXLIM = 1 records box limits, but keyword BOXXHI is missing",
-              "RD6, divergence BOXXHI");
+              "divergence BOXXHI");
       d = div;
       d.erase("BOXLIM");
-      refused(d, read_divergence, ": keyword BOXXLO is present without BOXLIM = 1", "RD6, divergence no BOXLIM");
+      refused(d, read_divergence, ": keyword BOXXLO is present without BOXLIM = 1", "divergence no BOXLIM");
     }
     {
       Table d = div;
       d.set("NREC", "0");
-      refused(d, read_divergence, ": NREC is 0; it must be at least 1", "RD7, divergence NREC");
+      refused(d, read_divergence, ": NREC is 0; it must be at least 1", "divergence NREC");
       d = div;
       d.set("NRECMEAN", "0");
-      refused(d, read_divergence, ": NRECMEAN is 0; it must be at least 1", "RD7, divergence NRECMEAN");
+      refused(d, read_divergence, ": NRECMEAN is 0; it must be at least 1", "divergence NRECMEAN");
     }
     {
       Table d = div;
@@ -590,23 +590,23 @@ int main ()
         if (!c.integers.empty()) c.integers.pop_back();
       }
       refused(d, read_divergence, ": it holds " + std::to_string(r.divergence->nCells - 1) + " rows, but NCELLS is " +
-              std::to_string(r.divergence->nCells), "RD8, rows");
+              std::to_string(r.divergence->nCells), "rows");
       d = div;
       std::swap(d.column("index").integers[3], d.column("index").integers[4]);
       refused(d, read_divergence, ": data row 4 (from 1) has index 4; the rows must hold the cells 0 to NCELLS - 1 in order",
-              "RD8, index");
+              "index");
       d = div;
       d.column("nTracers").integers[5] = -1;
-      refused(d, read_divergence, ": data row 6 (from 1) has a negative count (nDispl ", "RD8, nTracers negative");
+      refused(d, read_divergence, ": data row 6 (from 1) has a negative count (nDispl ", "nTracers negative");
       d = div;
       d.column("nDispl").integers[0] = -3;
-      refused(d, read_divergence, ": data row 1 (from 1) has a negative count (nDispl -3", "RD8, nDispl negative");
+      refused(d, read_divergence, ": data row 1 (from 1) has a negative count (nDispl -3", "nDispl negative");
       d = div;
       d.column("overdenseIndex").integers[7] = -2;
-      refused(d, read_divergence, ": data row 8 (from 1) has a basin index below -1 (voidIndex ", "RD8, overdenseIndex");
+      refused(d, read_divergence, ": data row 8 (from 1) has a basin index below -1 (voidIndex ", "overdenseIndex");
       d = div;
       d.column("voidIndex").integers[2] = -5;
-      refused(d, read_divergence, ": data row 3 (from 1) has a basin index below -1 (voidIndex -5", "RD8, voidIndex");
+      refused(d, read_divergence, ": data row 3 (from 1) has a basin index below -1 (voidIndex -5", "voidIndex");
     }
     {
       std::ostringstream side;
@@ -614,10 +614,10 @@ int main ()
       side << std::setprecision(17) << std::nextafter(r.divergence->cellSize, 100.);
       Table d = div;
       d.set("CELLSIDE", side.str());
-      refused(d, read_divergence, ": the grid to reuse has a cell side of", "RD9, G9");
+      refused(d, read_divergence, ": the grid to reuse has a cell side of", ": the grid to reuse has a cell side of");
       d = div;
       d.set("NCELLS", std::to_string(r.divergence->nCells + 1));
-      refused(d, read_divergence, ": the grid to reuse has", "RD9, G5");
+      refused(d, read_divergence, ": the grid to reuse has", ": the grid to reuse has");
     }
   }
 
@@ -639,12 +639,12 @@ int main ()
             fixtures::same_bits(i.weights, f.weights), "ASCII by 0-based index");
     }
     otswap_nested([&] { io::readField(file, {"cellX", "cellY", "nope"}, "divergence"); },
-                  std::string("RF1, a missing column ") + format);
+                  std::string("a missing column ") + format);
     otswap_nested([&] { io::readField(file, {"cellX", "cellX", "cellZ"}, "divergence"); },
-                  std::string("RF1, a column named twice ") + format);
+                  std::string("a column named twice ") + format);
     std::remove(file.c_str());
     otswap_nested([&] { io::readField(file, {"cellX", "cellY", "cellZ"}, "divergence"); },
-                  std::string("RF1, no file ") + format);
+                  std::string("no file ") + format);
   }
 
   group("readField with a delimiter and a comment character: a comma-separated file with % comments, its columns in "

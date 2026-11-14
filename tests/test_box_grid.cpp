@@ -328,44 +328,44 @@ int main ()
           "a reconstruction");
   }
 
-  group("errors GB1-GB9");
+  group("errors of the box grid builders");
   {
     const double nan = std::numeric_limits<double>::quiet_NaN();
     otswap::BoxLimits bad = limits;
     bad.lower[1] = nan;
-    throws_naming([&] { boxGrid(bad, 1., 1.); }, "the box limits hold a bound of", "GB1 not finite");
+    throws_naming([&] { boxGrid(bad, 1., 1.); }, "the box limits hold a bound of", "not finite");
     bad = limits;
     bad.upper[2] = bad.lower[2];
-    throws_naming([&] { boxGrid(bad, 1., 1.); }, "the box limits are [", "GB1 lower not below upper");
-    throws_naming([&] { boxGrid(limits, -1., 1.); }, "the mean particle separation is ", "GB2");
-    throws_naming([&] { boxGrid(limits, 1., 0.); }, "the divergence cell size is ", "GB3");
+    throws_naming([&] { boxGrid(bad, 1., 1.); }, "the box limits are [", "lower not below upper");
+    throws_naming([&] { boxGrid(limits, -1., 1.); }, "the mean particle separation is ", "the mean particle separation is ");
+    throws_naming([&] { boxGrid(limits, 1., 0.); }, "the divergence cell size is ", "the divergence cell size is ");
     auto from = [&rec] (auto&& change) {
       otswap::Result r = rec;
       change(r);
       return r;
     };
     throws_naming([&] { boxGrid(from([] (otswap::Result& r) { r.geometry = otswap::Geometry::Lightcone; })); },
-                  "boxGrid: the reconstruction is not a box result", "GB4");
+                  "boxGrid: the reconstruction is not a box result", "boxGrid: the reconstruction is not a box result");
     throws_naming([&] { boxGrid(from([] (otswap::Result& r) { r.nRealizations = 0; })); },
-                  "boxGrid: the reconstruction is malformed: it holds no realizations", "GB5");
+                  "boxGrid: the reconstruction is malformed: it holds no realizations", "boxGrid: the reconstruction is malformed: it holds no realizations");
     throws_naming([&] { boxGrid(from([] (otswap::Result& r) { r.box.reset(); })); },
-                  "boxGrid: the reconstruction is malformed: it holds no box", "GB6 no box");
+                  "boxGrid: the reconstruction is malformed: it holds no box", "no box");
     throws_naming([&] { boxGrid(from([&nan] (otswap::Result& r) { r.box->upper[0] = nan; })); },
-                  "has a bound of", "GB6 not finite");
+                  "has a bound of", "not finite");
     throws_naming([&] { boxGrid(from([] (otswap::Result& r) { r.box->lower[2] = r.box->upper[2] + 1.;
                                                                r.selection.boxLimits.reset(); })); },
-                  "the lower bound must not be above the upper one", "GB6 lower above upper");
+                  "the lower bound must not be above the upper one", "lower above upper");
     throws_naming([&] { boxGrid(from([] (otswap::Result& r) { r.box->upper[1] += 1.; })); },
-                  "differs from its box limits", "GB6 differs from the limits");
+                  "differs from its box limits", "differs from the limits");
     throws_naming([&] { boxGrid(from([&nan] (otswap::Result& r) { r.mps = nan; })); },
-                  "boxGrid: the reconstruction's mps is ", "GB7");
-    throws_naming([&] { boxGrid(rec, -2.); }, "the divergence cell size is ", "GB8");
+                  "boxGrid: the reconstruction's mps is ", "boxGrid: the reconstruction's mps is ");
+    throws_naming([&] { boxGrid(rec, -2.); }, "the divergence cell size is ", "the divergence cell size is ");
     otswap::BoxLimits huge;
     huge.lower = {0., 0., 0.};
     huge.upper = {1e7, 1., 1.};
-    throws_naming([&] { boxGrid(huge, 1., 1.); }, "the grid would need ", "GB9, limits form");
+    throws_naming([&] { boxGrid(huge, 1., 1.); }, "the grid would need ", "limits form");
     throws_naming([&] { boxGrid(from([] (otswap::Result& r) { r.mps = 1e-6; })); },
-                  "the grid would need ", "GB9, reconstruction form");
+                  "the grid would need ", "reconstruction form");
   }
 
   return report("test_box_grid");
