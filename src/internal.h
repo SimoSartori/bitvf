@@ -326,6 +326,19 @@ namespace bitvf {
     void check_reconstruction_box (const otswap::Result& reconstruction, const std::string& fn);
 
     /**
+     *  @brief Check what a box and a lightcone reconstruction share, for
+     *  the public function fn: at least one object and one realization;
+     *  nRealizationsMean at least 1, and above 1 only with one
+     *  realization; validRealizations empty or one per object, each at
+     *  most nRealizations * nRealizationsMean; tracers, displacement and
+     *  valid of their layout's size, ids empty or one per object; every
+     *  valid entry 0 or 1, no ID twice. The fields of one geometry are
+     *  left to its caller.
+     *  @exception Error, as a malformed reconstruction
+     */
+    void check_reconstruction_shape (const otswap::Result& reconstruction, const std::string& fn);
+
+    /**
      *  @brief Check the configuration of a search.
      *  @param gridGiven whether a grid is reused, with which
      *  Config::divergenceCellSize must be empty
@@ -666,6 +679,10 @@ namespace bitvf {
      *  @param tracers the Cartesian positions of the tracers, or null to
      *  convert the kept rows of tracersSky with otswap::toCartesian
      *  @param randoms as tracers, for the randoms
+     *  @param reconstruction the result the other arrays come from, already
+     *  checked for consistency, or null for the array overloads; its
+     *  outsideMask and outsideRedshiftCut flags then leave tracers out, and
+     *  its profile is not read with a grid
      *  @exception Error on every case of the entry of findVoidsLightcone;
      *  once the entry has passed, always, since the search is not written
      */
@@ -675,7 +692,7 @@ namespace bitvf {
                          const otswap::Mask& mask, const otswap::DistanceTable& distances,
                          const otswap::MpsProfile& mps, const Config& config,
                          const otswap::RedshiftCut& redshiftCut, const std::vector<std::int64_t>& ids,
-                         const DivergenceGrid* grid);
+                         const DivergenceGrid* grid, const otswap::Result* reconstruction);
 
   }
 
@@ -712,6 +729,24 @@ namespace bitvf {
                              const Config& config,
                              const otswap::RedshiftCut& redshiftCut = {},
                              const std::vector<std::int64_t>& ids = {},
+                             const DivergenceGrid* grid = nullptr);
+
+  /**
+   *  @brief As the overloads above, from a lightcone reconstruction: its
+   *  tracers, tracersSky, displacement, valid, ids, distance table and,
+   *  without a grid, its mps profile.
+   *
+   *  A tracer is read only if neither outsideMask nor outsideRedshiftCut
+   *  flags it and the mask given allows it; the mask must not be more
+   *  permissive than the reconstruction's. The randoms are converted with
+   *  the reconstruction's distance table and cut by its redshift cut
+   *  (selection.redshiftCut). A mean read with
+   *  otswap::io::readDisplacementMean is accepted.
+   */
+  Result findVoidsLightcone (const otswap::Result& reconstruction,
+                             const std::vector<double>& randomsSky,
+                             const otswap::Mask& mask,
+                             const Config& config,
                              const DivergenceGrid* grid = nullptr);
 
 }

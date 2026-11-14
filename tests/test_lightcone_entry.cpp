@@ -19,13 +19,17 @@
  ********************************************************************/
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "bitvf/VoidFinder.h"
+#include "otswap/io.h"
 
 #include "check.h"
 #include "internal.h"
@@ -83,6 +87,70 @@ namespace {
   void fails_sky (const Case& c, const std::string& text, const std::string& what)
   {
     throws_naming([&] { c.sky(); }, text, what);
+  }
+
+  struct FromResult {
+
+    otswap::Result rec;
+    std::vector<double> randomsSky;
+    otswap::Mask mask {std::vector<double>(12, 1.), otswap::PixelOrdering::Ring};
+    Config config;
+
+    FromResult ()
+    {
+      const Case c;
+      rec.geometry = otswap::Geometry::Lightcone;
+      rec.nObjects = 4;
+      rec.nRealizations = 1;
+      rec.config.nRealizations = 1;
+      rec.tracersSky = c.tracersSky;
+      rec.tracers = c.tracers;
+      rec.displacement = c.displacement;
+      rec.valid.assign(4, 1);
+      rec.outsideMask.assign(4, 0);
+      rec.outsideRedshiftCut.assign(4, 0);
+      rec.mpsProfile = c.profile;
+      rec.mpsProfile.count = {2, 2};
+      rec.distances = std::make_shared<const otswap::DistanceTable>(c.distances);
+      otswap::recomputeMeans(rec);
+      randomsSky = c.randomsSky;
+      config.verbosity = otswap::Verbosity::Silent;
+    }
+
+    void run () const
+    {
+      findVoidsLightcone(rec, randomsSky, mask, config);
+    }
+  };
+
+  void fails (const FromResult& r, const std::string& text, const std::string& what)
+  {
+    throws_naming([&] { r.run(); }, text, what);
+  }
+
+  std::string temporary (const std::string& name)
+  {
+    const char* dir = std::getenv("TMPDIR");
+    std::string base = dir != nullptr ? dir : "/tmp";
+    if (!base.empty() && base.back() != '/') base += '/';
+    return base + "bitvf_test_lightcone_entry_" + name;
+  }
+
+  FromResult mean_read_back ()
+  {
+    FromResult r;
+    r.rec.nRealizations = 3;
+    r.rec.config.nRealizations = 3;
+    r.rec.displacement = std::vector<double>(36, 0.1);
+    r.rec.valid.assign(12, 1);
+    r.rec.valid[1] = 0;
+    otswap::recomputeMeans(r.rec);
+    const std::string file = temporary("mean.fits");
+    std::remove(file.c_str());
+    otswap::io::writeDisplacementMean(file, r.rec);
+    r.rec = otswap::io::readDisplacementMean(file);
+    std::remove(file.c_str());
+    return r;
   }
 
 }
@@ -324,6 +392,199 @@ int main ()
           std::string::npos, "tracer selection line: " + log.str());
     check(log.str().find("bitvf: kept 7 of 8 randoms: 0 on unobserved pixels, 1 outside the redshift cut\n") !=
           std::string::npos, "random selection line: " + log.str());
+  }
+
+  // A consistent lightcone reconstruction, or a mean read back from its file, passes every check and reaches the search.
+  group("a valid reconstruction or mean passes every check and stops at the search");
+  {
+    FromResult r;
+    fails(r, "not implemented yet", "valid reconstruction");
+    const FromResult m = mean_read_back();
+    check(m.rec.nRealizations == 1 && m.rec.nRealizationsMean == 3, "mean read back as one realization of 3");
+    fails(m, "not implemented yet", "valid mean");
+  }
+
+  // A box reconstruction is refused by the lightcone void finder.
+  group("a reconstruction that is not a lightcone is refused");
+  {
+    FromResult r;
+    r.rec.geometry = otswap::Geometry::Box;
+    fails(r, "findVoidsLightcone: the reconstruction is not a lightcone result; use the box void finder", "box result");
+  }
+
+  // A reconstruction without sky positions, distance table or, without a grid, mps profile is refused, naming what is missing.
+  group("a reconstruction lacking the sky positions, the distance table or the profile is refused");
+  {
+    FromResult r;
+    r.rec.tracersSky.clear();
+    r.rec.distances.reset();
+    r.rec.mpsProfile = {};
+    fails(r, "findVoidsLightcone: the reconstruction has no tracersSky, distances and mpsProfile, which a lightcone "
+             "search needs", "all missing");
+    FromResult d;
+    d.rec.distances.reset();
+    d.rec.nObjects = 0;
+    fails(d, "findVoidsLightcone: the reconstruction has no distances, which a lightcone search needs",
+          "missing before sizes");
+    FromResult p;
+    p.rec.mpsProfile = {};
+    fails(p, "findVoidsLightcone: the reconstruction has no mpsProfile, which a lightcone search needs; give a grid to "
+             "search without mpsProfile", "profile only");
+  }
+
+  // Every array of a reconstruction must match its numbers of objects and realizations.
+  group("a reconstruction whose sizes disagree is refused as malformed");
+  {
+    const std::string malformed = "findVoidsLightcone: the reconstruction is malformed: ";
+    FromResult n;
+    n.rec.nObjects = 0;
+    fails(n, malformed + "it holds no objects", "no objects");
+    FromResult z;
+    z.rec.nRealizations = 0;
+    fails(z, malformed + "it holds no realizations", "no realizations");
+    FromResult t;
+    t.rec.tracers.pop_back();
+    fails(t, malformed + "tracers holds 11 entries for 1 realizations of 4 objects", "tracers");
+    FromResult s;
+    s.rec.tracersSky.resize(15, 0.);
+    fails(s, malformed + "tracersSky holds 15 entries", "tracersSky");
+    FromResult d;
+    d.rec.displacement.push_back(0.);
+    fails(d, malformed + "displacement holds 13 entries", "displacement");
+    FromResult v;
+    v.rec.valid.pop_back();
+    fails(v, malformed + "valid holds 3 entries", "valid");
+    FromResult m;
+    m.rec.outsideMask.assign(3, 0);
+    fails(m, malformed + "outsideMask holds 3 entries", "outsideMask");
+    FromResult c;
+    c.rec.outsideRedshiftCut.assign(5, 0);
+    fails(c, malformed + "outsideRedshiftCut holds 5 entries", "outsideRedshiftCut");
+    FromResult i;
+    i.rec.ids = {1, 2};
+    fails(i, malformed + "ids holds 2 entries", "ids");
+  }
+
+  // A mean holds one realization, averages at least one, and counts at most that many valid realizations per tracer.
+  group("a mean with inconsistent counts of realizations is refused as malformed");
+  {
+    const std::string malformed = "findVoidsLightcone: the reconstruction is malformed: ";
+    FromResult z = mean_read_back();
+    z.rec.nRealizationsMean = 0;
+    fails(z, malformed + "nRealizationsMean is 0; it must be at least 1", "nothing averaged");
+    FromResult r;
+    r.rec.nRealizations = 2;
+    r.rec.nRealizationsMean = 3;
+    fails(r, malformed + "it holds 2 realizations, each the mean of 3; a mean holds one realization", "two means");
+    FromResult s = mean_read_back();
+    s.rec.validRealizations.pop_back();
+    fails(s, malformed + "validRealizations holds 3 entries for 4 objects", "count size");
+    FromResult a = mean_read_back();
+    a.rec.validRealizations[2] = 4;
+    fails(a, malformed + "validRealizations holds 4 for object 2, above nRealizations * nRealizationsMean = 3",
+          "count above the mean");
+  }
+
+  // Validity flags of a reconstruction must be 0 or 1 and its identities distinct.
+  group("a reconstruction with a validity flag other than 0 and 1 or a repeated identity is refused");
+  {
+    FromResult v;
+    v.rec.valid[3] = 2;
+    fails(v, "findVoidsLightcone: the reconstruction's validity flags hold 2 at entry 3; each must be 0 or 1",
+          "valid value");
+    FromResult i;
+    i.rec.ids = {5, 6, 5, 7};
+    fails(i, "findVoidsLightcone: the reconstruction's ids hold 5 twice, at entries 0 and 2", "ids repeated");
+  }
+
+  // A reconstruction filtered against a mask must be searched with a mask of the same resolution.
+  group("a reconstruction filtered at another mask resolution is refused");
+  {
+    FromResult r;
+    r.rec.filteredNside = 2;
+    fails(r, "findVoidsLightcone: the reconstruction was filtered against a mask of NSIDE 2 "
+             "(otswap::Result::filteredNside), and the mask given has NSIDE 1", "NSIDE");
+  }
+
+  // Sky positions of a reconstruction, its profile when read, and the randoms are checked as in the array overloads.
+  group("the sky positions, the profile and the randoms are checked on every row");
+  {
+    FromResult n;
+    n.rec.tracersSky[5] = kNaN;
+    n.rec.outsideRedshiftCut[1] = 1;
+    fails(n, "findVoidsLightcone: the reconstruction's tracersSky holds a non-finite value for object 1 (from 0), "
+             "component 2", "NaN on a cut row");
+    FromResult d;
+    d.rec.tracersSky[7] = -1.75;
+    fails(d, "findVoidsLightcone: the reconstruction's tracersSky holds a declination of -1.75 radians for object 2 "
+             "(from 0); it must lie in [-pi/2, pi/2]", "declination");
+    FromResult p;
+    p.rec.mpsProfile.mps[0] = 0.;
+    fails(p, "the mps profile holds a mean particle separation of 0 at entry 0; it must be positive", "profile");
+    FromResult e;
+    e.randomsSky.clear();
+    fails(e, "findVoidsLightcone: randomsSky is empty", "no randoms");
+    FromResult s;
+    s.randomsSky.pop_back();
+    fails(s, "findVoidsLightcone: randomsSky holds 23 entries; it must hold 3 per object", "randoms size");
+    FromResult r;
+    r.randomsSky[4] = 2.;
+    fails(r, "the declination of random 1 is 2 radians; it must lie in [-pi/2, pi/2]", "random declination");
+  }
+
+  // The redshift cut a reconstruction records must have no NaN bound and its lower bound not above the upper one.
+  group("a reconstruction whose redshift cut is NaN or reversed is refused as malformed");
+  {
+    FromResult n;
+    n.rec.selection.redshiftCut = otswap::RedshiftCut{kNaN, 1.};
+    fails(n, "findVoidsLightcone: the reconstruction is malformed: its redshift cut (otswap::Result::selection) "
+             "is [nan, 1]", "NaN bound");
+    FromResult r;
+    r.rec.selection.redshiftCut = otswap::RedshiftCut{0.5, 0.25};
+    fails(r, "its redshift cut (otswap::Result::selection) is [0.5, 0.25]",
+          "reversed");
+  }
+
+  // The mask given must leave out every tracer the reconstruction left out as unobserved.
+  group("a mask that allows a tracer the reconstruction masked is refused");
+  {
+    FromResult r;
+    r.rec.outsideMask[1] = 1;
+    fails(r, "findVoidsLightcone: the mask given allows tracer 1, which the reconstruction excluded as outside its "
+             "mask (Result::outsideMask); the mask must not be more permissive than the reconstruction's", "mask");
+  }
+
+  // The configuration and the rows the search reads are checked as in the array overloads, with the reconstruction's table.
+  group("the configuration and the kept rows are checked as in the array overloads");
+  {
+    FromResult c;
+    c.config.divergenceCellSize = -1.;
+    fails(c, "the divergence cell size is", "cell size");
+    FromResult z;
+    z.rec.tracersSky[5] = 2.5;
+    fails(z, "the redshift of tracer 1 is 2.5, outside the distance table [0, 2]", "tracer redshift");
+    FromResult t;
+    t.rec.tracers[6] = kNaN;
+    fails(t, "findVoidsLightcone: the reconstruction's tracers hold a non-finite value for object 2 (from 0), "
+             "component 0", "tracers NaN");
+    FromResult d;
+    d.rec.displacement[10] = kInf;
+    fails(d, "the displacements hold a non-finite value at entry 10 (realization 0, tracer 3, component 1)",
+          "displacement");
+    FromResult k;
+    k.rec.outsideRedshiftCut = {1, 1, 0, 0};
+    k.rec.outsideMask = {0, 0, 1, 1};
+    k.mask = otswap::Mask(std::vector<double>(12, 0.), otswap::PixelOrdering::Ring);
+    fails(k, "no tracer is left to read: of 4 tracers, 4 lie on unobserved pixels and 0 outside the redshift cut",
+          "no tracer kept");
+    FromResult v;
+    v.rec.outsideRedshiftCut = {1, 1, 1, 0};
+    v.rec.valid[3] = 0;
+    fails(v, "no valid displacement is left to read: of 3 valid displacements", "no displacement read");
+    FromResult r;
+    r.rec.selection.redshiftCut = otswap::RedshiftCut{0.5, 1.};
+    fails(r, "no random is left: of 8 randoms, 0 lie on unobserved pixels and 8 outside the redshift cut",
+          "no random kept");
   }
 
   return report("test_lightcone_entry");

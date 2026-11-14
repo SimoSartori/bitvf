@@ -290,6 +290,47 @@ void bitvf::internal::check_reconstruction_box (const otswap::Result& rec, const
 // ============================================================================
 
 
+void bitvf::internal::check_reconstruction_shape (const otswap::Result& rec, const std::string& fn)
+{
+  const std::size_t N = rec.nObjects;
+  const std::size_t R = rec.nRealizations;
+  const std::string malformed = fn + ": the reconstruction is malformed: ";
+  if (N == 0) throw Error(malformed + "it holds no objects");
+  if (R == 0) throw Error(malformed + "it holds no realizations");
+  if (rec.nRealizationsMean == 0) throw Error(malformed + "nRealizationsMean is 0; it must be at least 1");
+  if (rec.nRealizationsMean > 1 && R != 1)
+    throw Error(malformed + "it holds " + std::to_string(R) + " realizations, each the mean of " +
+                std::to_string(rec.nRealizationsMean) + "; a mean holds one realization");
+  if (!rec.validRealizations.empty()) {
+    if (rec.validRealizations.size() != N)
+      throw Error(malformed + "validRealizations holds " + std::to_string(rec.validRealizations.size()) +
+                  " entries for " + std::to_string(N) + " objects");
+    for (std::size_t i = 0; i < N; ++i)
+      if ((std::size_t)rec.validRealizations[i] > R * rec.nRealizationsMean)
+        throw Error(malformed + "validRealizations holds " + std::to_string(rec.validRealizations[i]) +
+                    " for object " + std::to_string(i) + ", above nRealizations * nRealizationsMean = " +
+                    std::to_string(R * rec.nRealizationsMean));
+  }
+
+  auto check_size = [&] (const std::size_t size, const std::size_t expected,
+                         const std::string& name, const bool allowEmpty) {
+    if (size != expected && !(allowEmpty && size == 0))
+      throw Error(malformed + name + " holds " + std::to_string(size) + " entries for " +
+                  std::to_string(R) + " realizations of " + std::to_string(N) + " objects");
+  };
+  check_size(rec.tracers.size(), 3 * N, "tracers", false);
+  check_size(rec.displacement.size(), 3 * R * N, "displacement", false);
+  check_size(rec.valid.size(), R * N, "valid", false);
+  check_size(rec.ids.size(), N, "ids", true);
+
+  check_valid(rec.valid, fn, true);
+  check_ids(rec.ids, N, fn, true);
+}
+
+
+// ============================================================================
+
+
 std::size_t bitvf::internal::check_displacement_shape (const std::vector<double>& displacement,
                                                        const std::vector<std::uint8_t>& valid,
                                                        const std::size_t N, const std::string& fn)
@@ -383,37 +424,10 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const otswap::Result& rec
   const std::size_t N = rec.nObjects;
   const std::size_t R = rec.nRealizations;
   const std::string malformed = fn + ": the reconstruction is malformed: ";
-  if (N == 0) throw Error(malformed + "it holds no objects");
-  if (R == 0) throw Error(malformed + "it holds no realizations");
-  if (rec.nRealizationsMean == 0) throw Error(malformed + "nRealizationsMean is 0; it must be at least 1");
-  if (rec.nRealizationsMean > 1 && R != 1)
-    throw Error(malformed + "it holds " + std::to_string(R) + " realizations, each the mean of " +
-                std::to_string(rec.nRealizationsMean) + "; a mean holds one realization");
-  if (!rec.validRealizations.empty()) {
-    if (rec.validRealizations.size() != N)
-      throw Error(malformed + "validRealizations holds " + std::to_string(rec.validRealizations.size()) +
-                  " entries for " + std::to_string(N) + " objects");
-    for (std::size_t i = 0; i < N; ++i)
-      if ((std::size_t)rec.validRealizations[i] > R * rec.nRealizationsMean)
-        throw Error(malformed + "validRealizations holds " + std::to_string(rec.validRealizations[i]) +
-                    " for object " + std::to_string(i) + ", above nRealizations * nRealizationsMean = " +
-                    std::to_string(R * rec.nRealizationsMean));
-  }
-
-  auto check_size = [&] (const std::size_t size, const std::size_t expected,
-                         const std::string& name, const bool allowEmpty) {
-    if (size != expected && !(allowEmpty && size == 0))
-      throw Error(malformed + name + " holds " + std::to_string(size) + " entries for " +
-                  std::to_string(R) + " realizations of " + std::to_string(N) + " objects");
-  };
-  check_size(rec.tracers.size(), 3 * N, "tracers", false);
-  check_size(rec.displacement.size(), 3 * R * N, "displacement", false);
-  check_size(rec.valid.size(), R * N, "valid", false);
-  check_size(rec.outsideBox.size(), N, "outsideBox", true);
-  check_size(rec.ids.size(), N, "ids", true);
-
-  check_valid(rec.valid, fn, true);
-  check_ids(rec.ids, N, fn, true);
+  check_reconstruction_shape(rec, fn);
+  if (!rec.outsideBox.empty() && rec.outsideBox.size() != N)
+    throw Error(malformed + "outsideBox holds " + std::to_string(rec.outsideBox.size()) + " entries for " +
+                std::to_string(R) + " realizations of " + std::to_string(N) + " objects");
 
   BoxSearch search;
   search.nTracers = N;
