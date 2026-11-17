@@ -85,9 +85,9 @@ namespace {
     while (v > current && !a.compare_exchange_weak(current, v, std::memory_order_relaxed)) {}
   }
 
-  std::string limit_message (const std::string& what)
+  std::string limit_message (const std::string& grid, const std::string& what)
   {
-    return "the grid would need more than " + std::to_string(bitvf::internal::kMaxCellsAxis) + " " + what +
+    return grid + " would need more than " + std::to_string(bitvf::internal::kMaxCellsAxis) + " " + what +
            "; increase the divergence cell size";
   }
 
@@ -184,15 +184,17 @@ bitvf::internal::LightconeExtent bitvf::internal::lightcone_extent (const std::v
 
 bitvf::internal::LightconeGrid bitvf::internal::lightcone_grid (const DivergenceGrid& record,
                                                                 const otswap::DistanceTable& distances,
-                                                                const otswap::Mask& mask)
+                                                                const otswap::Mask& mask, const bool reused)
 {
+  const std::string name = reused ? "the grid to reuse" : "the grid";
+  const std::string of = reused ? " of the grid to reuse" : "";
   const otswap::MpsProfile& profile = record.mpsProfile;
   const double s = record.cellSizeMps;
   const double d0 = distances.distance().front(), d1 = distances.distance().back();
 
   auto redshift = [&] (const double d) {
     if (!(d >= d0 && d <= d1))
-      throw Error("the grid reaches distance " + num(d) + ", outside the distance table [" + num(d0) + ", " +
+      throw Error(name + " reaches distance " + num(d) + ", outside the distance table [" + num(d0) + ", " +
                   num(d1) + "]; extend the table");
     return call_otswap([&] { return distances.redshiftAt(d); });
   };
@@ -203,7 +205,7 @@ bitvf::internal::LightconeGrid bitvf::internal::lightcone_grid (const Divergence
       return profile.at(z);
     }
     catch (const otswap::Error&) {
-      throw Error("the mps profile is not positive at redshift " + num(z) + ", inside the grid's range [" +
+      throw Error("the mps profile" + of + " is not positive at redshift " + num(z) + ", inside the grid's range [" +
                   num(std::min(rangeLo, z)) + ", " + num(std::max(rangeHi, z)) + "]");
     }
   };
@@ -234,7 +236,7 @@ bitvf::internal::LightconeGrid bitvf::internal::lightcone_grid (const Divergence
   double width = s * mps(redshift(edge.back()));
   const double outer = record.distanceMax + marginOut;
   while (edge.back() < outer) {
-    if (g.shellCentre.size() == kMaxCellsAxis) throw Error(limit_message("shells"));
+    if (g.shellCentre.size() == kMaxCellsAxis) throw Error(limit_message(name, "shells"));
     const double previous = edge.back();
     const double zStep = redshift(previous + width / 2.);
     rangeHi = std::max(rangeHi, zStep);
@@ -293,10 +295,10 @@ bitvf::internal::LightconeGrid bitvf::internal::lightcone_grid (const Divergence
     const int caps = (down ? 1 : 0) + (up ? 1 : 0);
     const double middle = std::round(((decHi - decLo) * R - caps * axisCell) / cell);
     if (!(middle >= 0.) || middle + caps == 0.)
-      throw Error("shell " + std::to_string(i) + " (from 0) holds no declination ring; use a smaller cell or a "
-                  "central sphere");
+      throw Error("shell " + std::to_string(i) + " (from 0)" + of +
+                  " holds no declination ring; use a smaller cell or a central sphere");
     if (middle + caps > (double)kMaxCellsAxis)
-      throw Error(limit_message("rings in shell " + std::to_string(i) + " (from 0)"));
+      throw Error(limit_message(name, "rings in shell " + std::to_string(i) + " (from 0)"));
     const std::int64_t nMiddle = (std::int64_t)middle;
     const std::int64_t nRings = nMiddle + caps;
     const double step = ((decHi - decLo) - caps * capWidth) / (double)std::max<std::int64_t>(1, nMiddle);
@@ -321,10 +323,10 @@ bitvf::internal::LightconeGrid bitvf::internal::lightcone_grid (const Divergence
           const double sectors = std::round((RcosDec * kTwoPi) / cell);
           if (sectors == 0.)
             throw Error("ring " + std::to_string(j) + " (from 0) of shell " + std::to_string(i) +
-                        " (from 0) is a full circle with no right-ascension sector; use a smaller cell or a central "
-                        "sphere");
+                        " (from 0)" + of + " is a full circle with no right-ascension sector; use a smaller cell "
+                        "or a central sphere");
           if (sectors > (double)kMaxCellsAxis)
-            throw Error(limit_message("sectors in ring " + std::to_string(j) + " (from 0) of shell " +
+            throw Error(limit_message(name, "sectors in ring " + std::to_string(j) + " (from 0) of shell " +
                                       std::to_string(i) + " (from 0)"));
           add_ring(lower, upper, centre, false, true, 0., kTwoPi / sectors, (std::int64_t)sectors);
         }
@@ -332,7 +334,7 @@ bitvf::internal::LightconeGrid bitvf::internal::lightcone_grid (const Divergence
           const double ratio = (RcosDec * arc) / cell;
           const double sectors = std::ceil(ratio);
           if (sectors > (double)kMaxCellsAxis)
-            throw Error(limit_message("sectors in ring " + std::to_string(j) + " (from 0) of shell " +
+            throw Error(limit_message(name, "sectors in ring " + std::to_string(j) + " (from 0) of shell " +
                                       std::to_string(i) + " (from 0)"));
           const double raStep = arc / sectors;
           add_ring(lower, upper, centre, false, false, (raMin - pad) - (sectors * raStep - arc) / 2., raStep,

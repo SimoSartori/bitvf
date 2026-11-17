@@ -21,9 +21,12 @@
 #include <cstdint>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <random>
+#include <regex>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #ifdef _OPENMP
@@ -112,7 +115,9 @@ namespace {
     std::vector<double> randomsSky = objects(200, 0.5, 2., -0.3, 0.3, 0.25, 0.4, 2);
     otswap::DistanceTable distances = table();
     otswap::MpsProfile profile = flat_profile();
+    const otswap::Mask* mask = &full_mask();
     Config config;
+    const DivergenceGrid* grid = nullptr;
     Case ()
     {
       config.verbosity = otswap::Verbosity::Silent;
@@ -120,9 +125,73 @@ namespace {
     }
     void run () const
     {
-      findVoidsLightcone(tracersSky, displacement, {}, randomsSky, full_mask(), distances, profile, config, {}, {});
+      findVoidsLightcone(tracersSky, displacement, {}, randomsSky, *mask, distances, profile, config, {}, {}, grid);
+    }
+    DivergenceGrid built () const
+    {
+      return lightconeGrid(tracersSky, randomsSky, *mask, distances, profile, *config.divergenceCellSize);
     }
   };
+
+  otswap::Result reconstruction (const Case& c)
+  {
+    otswap::Result rec;
+    const std::size_t n = c.tracersSky.size() / 3;
+    rec.geometry = otswap::Geometry::Lightcone;
+    rec.nObjects = n;
+    rec.nRealizations = 1;
+    rec.config.nRealizations = 1;
+    rec.tracersSky = c.tracersSky;
+    rec.tracers = otswap::toCartesian(c.tracersSky, c.distances);
+    rec.displacement = c.displacement;
+    rec.valid.assign(n, 1);
+    rec.outsideMask.assign(n, 0);
+    rec.outsideRedshiftCut.assign(n, 0);
+    rec.mpsProfile = c.profile;
+    rec.mpsProfile.count = {2, 2};
+    rec.distances = std::make_shared<const otswap::DistanceTable>(c.distances);
+    otswap::recomputeMeans(rec);
+    return rec;
+  }
+
+  std::string grid_lines (const std::string& log, const bool built)
+  {
+    static const std::regex time(" in [0-9]+\\.[0-9]+ s$");
+    std::istringstream in(log);
+    std::string line, kept;
+    while (std::getline(in, line)) {
+      if (line.find("bitvf: kept ") != 0 && line.find("bitvf: grid") != 0) continue;
+      line = std::regex_replace(line, time, "");
+      if (built) {
+        for (const auto& swap : {std::pair<std::string, std::string>{" mps (given)", " mps (reused)"},
+                                 std::pair<std::string, std::string>{"(from the tracers and randoms)",
+                                                                     "(from the reused grid)"}}) {
+          const std::size_t at = line.find(swap.first);
+          if (at != std::string::npos) line.replace(at, swap.first.size(), swap.second);
+        }
+      }
+      kept += line + "\n";
+    }
+    return kept;
+  }
+
+  std::string run_log (const Case& c)
+  {
+    Case d = c;
+    std::ostringstream log;
+    d.config.verbosity = otswap::Verbosity::Detailed;
+    d.config.log = &log;
+    throws_naming([&] { d.run(); }, "not implemented yet", "run to the grid");
+    return log.str();
+  }
+
+  bool same_record (const DivergenceGrid& a, const DivergenceGrid& b)
+  {
+    return a.geometry == b.geometry && a.nCells == b.nCells && a.distanceMin == b.distanceMin &&
+           a.distanceMax == b.distanceMax && a.raMin == b.raMin && a.raMax == b.raMax && a.decMin == b.decMin &&
+           a.decMax == b.decMax && a.cellSizeMps == b.cellSizeMps && a.mpsProfile.redshift == b.mpsProfile.redshift &&
+           a.mpsProfile.mps == b.mpsProfile.mps;
+  }
 
   void fails (const Case& c, const std::string& text, const std::string& what)
   {
@@ -565,6 +634,213 @@ int main ()
     fails(s, "not implemented yet", "central sphere case");
     check(sphere.str().find(" shells, central sphere included, cell size ") != std::string::npos,
           "central sphere: " + sphere.str());
+  }
+
+  // The grid builder gives the grid a search builds from the same data, with only the fields that define its cells.
+  group("the grid builder gives the search's grid, defining fields only");
+  {
+    const Case c;
+    const DivergenceGrid g = c.built();
+    const Built b = build(c.tracersSky, c.randomsSky, 4., full_mask());
+    check(same_record(g, b.grid.cells), "the array overload builds the grid of the data");
+    check(g.cellRaMin.empty() && g.centre.empty() && g.volume.empty() && g.masked.empty() && std::isnan(g.cellSize) &&
+          std::isnan(g.mps) && g.nCellsAxis[0] == 0, "no per-cell or box field is set");
+    check(run_log(c).find("grid of " + std::to_string(g.nCells) + " cells in ") != std::string::npos,
+          "the search's grid has the same cells");
+    const otswap::Result rec = reconstruction(c);
+    const DivergenceGrid r = lightconeGrid(rec, c.randomsSky, full_mask(), 4.);
+    check(same_record(r, g) && r.mpsProfile.count == rec.mpsProfile.count, "the result overload builds the same grid");
+    Case d;
+    d.config.divergenceCellSize = 1.;
+    check(same_record(lightconeGrid(rec, c.randomsSky, full_mask()), d.built()),
+          "without a cell size, the default for the reconstruction's realizations");
+    otswap::Result bad = rec;
+    bad.displacement[4] = std::numeric_limits<double>::quiet_NaN();
+    throws_naming([&] { lightconeGrid(bad, c.randomsSky, full_mask()); }, "the displacements hold a non-finite value",
+                  "the displacements are checked although the grid does not read them");
+    bad = rec;
+    bad.geometry = otswap::Geometry::Box;
+    throws_naming([&] { lightconeGrid(bad, c.randomsSky, full_mask()); },
+                  "lightconeGrid: the reconstruction is not a lightcone result; use boxGrid", "geometry");
+    bad = rec;
+    bad.mpsProfile = {};
+    throws_naming([&] { lightconeGrid(bad, c.randomsSky, full_mask()); },
+                  "lightconeGrid: the reconstruction has no mpsProfile, which a lightcone search needs", "no profile");
+    throws_naming([&] { lightconeGrid({}, c.randomsSky, full_mask(), table(), flat_profile(), 4.); },
+                  "lightconeGrid: tracersSky is empty", "array overload prefix");
+    throws_naming([&] { lightconeGrid(c.tracersSky, c.randomsSky, full_mask(), table(), flat_profile(), 0.); },
+                  "the divergence cell size is 0", "cell size");
+  }
+
+  // A grid passed for reuse gives the search the same cells and the same selection as the grid it would build, with any number of threads.
+  group("a reused grid gives the same grid and entry as one built in the call, with 1 and 4 threads");
+  {
+    std::vector<double> pixels(12, 1.);
+    pixels[4] = 0.;
+    const otswap::Mask mask(pixels, otswap::PixelOrdering::Ring);
+    Case c;
+    c.mask = &mask;
+    c.tracersSky = objects(400, 0.2, 2., -0.3, 0.3, 0.25, 0.4, 27);
+    c.displacement.assign(1200, 0.1);
+    c.randomsSky = objects(2000, 0.2, 2., -0.3, 0.3, 0.25, 0.4, 28);
+    c.profile.redshift = {0.1, 0.3, 0.5};
+    c.profile.mps = {5., 5.5, 6.};
+    std::string built[2], reused[2], fromResult[2];
+    DivergenceGrid grids[2];
+    for (int t = 0; t < 2; ++t) {
+#ifdef _OPENMP
+      omp_set_num_threads(t == 0 ? 1 : 4);
+#endif
+      built[t] = grid_lines(run_log(c), true);
+      grids[t] = c.built();
+      Case r = c;
+      r.config.divergenceCellSize.reset();
+      r.grid = &grids[t];
+      reused[t] = grid_lines(run_log(r), false);
+      const otswap::Result rec = reconstruction(c);
+      const DivergenceGrid g = lightconeGrid(rec, c.randomsSky, mask, 4.);
+      otswap::Result noProfile = rec;
+      noProfile.mpsProfile = {};
+      std::ostringstream log;
+      Config config;
+      config.verbosity = otswap::Verbosity::Detailed;
+      config.log = &log;
+      throws_naming([&] { findVoidsLightcone(noProfile, c.randomsSky, mask, config, &g); }, "not implemented yet",
+                    "result overload with a grid");
+      fromResult[t] = grid_lines(log.str(), false);
+    }
+    check(built[0].find("bitvf: kept ") != std::string::npos && built[0].find("bitvf: grid of ") != std::string::npos &&
+          built[0].find("bitvf: grid: ") != std::string::npos && built[0].find(" 0 on unobserved") == std::string::npos,
+          "the lines compared hold the selection and the grid: " + built[0]);
+    check(reused[0] == built[0], "reused and built agree: " + reused[0] + " against " + built[0]);
+    check(fromResult[0] == built[0], "the result overload reuses it without a profile: " + fromResult[0]);
+    check(built[1] == built[0] && reused[1] == reused[0] && fromResult[1] == fromResult[0] &&
+          same_record(grids[0], grids[1]), "1 and 4 threads agree");
+  }
+
+  // Every inconsistent field of a grid to reuse is refused before any row of data is read, naming the field.
+  group("a grid to reuse with an inconsistent record is refused");
+  {
+    const Case base;
+    const DivergenceGrid good = base.built();
+    const std::string bad = "findVoidsLightcone: the grid to reuse ";
+    auto refused = [&] (DivergenceGrid g, const std::string& text, const std::string& what) {
+      Case c;
+      c.config.divergenceCellSize.reset();
+      c.tracersSky[1] = std::numeric_limits<double>::quiet_NaN();
+      c.grid = &g;
+      fails(c, text, what);
+    };
+    DivergenceGrid g = good;
+    g.geometry = otswap::Geometry::Box;
+    refused(g, bad + "is not a lightcone grid", "geometry");
+    g = good;
+    g.distanceMin = -1.;
+    refused(g, bad + "has a distance range [-1, ", "negative distance");
+    g = good;
+    g.distanceMax = std::numeric_limits<double>::infinity();
+    refused(g, "] in coordinate units; both bounds must be finite, with 0 <= min <= max", "infinite distance");
+    g = good;
+    g.raMax = g.raMin + 7.;
+    refused(g, bad + "has an RA range [", "RA wider than 2 pi");
+    g = good;
+    g.raMax = g.raMin - 0.1;
+    refused(g, "] radians; both bounds must be finite, with min <= max and a width of at most 2 pi", "RA reversed");
+    g = good;
+    g.decMax = 2.;
+    refused(g, bad + "has a declination range [", "declination beyond the pole");
+    g = good;
+    g.decMin = g.decMax + 0.1;
+    refused(g, "] radians; it must lie in [-pi/2, pi/2], with min <= max", "declination reversed");
+    g = good;
+    g.cellSizeMps = 0.;
+    refused(g, bad + "has a cell size of 0 mps (cellSizeMps); it must be finite and positive", "cell size");
+    g = good;
+    g.mpsProfile = {};
+    refused(g, "findVoidsLightcone: the mps profile of the grid to reuse is empty", "empty profile");
+    g = good;
+    g.mpsProfile.mps.pop_back();
+    refused(g, "findVoidsLightcone: the redshift and mps lists of the profile of the grid to reuse hold 2 and 1 entries",
+            "profile sizes");
+    g = good;
+    g.mpsProfile.mps[1] = -1.;
+    refused(g, "findVoidsLightcone: the mps profile of the grid to reuse holds a mean particle separation of -1 at "
+            "entry 1 (from 0); it must be positive", "profile value");
+    const char* const fields[] = {"cellSize", "lower", "upper", "mps", "nCellsAxis"};
+    for (const char* field : fields) {
+      g = good;
+      if (std::string(field) == "cellSize") g.cellSize = 1.;
+      if (std::string(field) == "lower") g.lower[2] = 0.;
+      if (std::string(field) == "upper") g.upper[0] = 0.;
+      if (std::string(field) == "mps") g.mps = 1.;
+      if (std::string(field) == "nCellsAxis") g.nCellsAxis[1] = 1;
+      refused(g, bad + "is a lightcone grid but holds the box field " + field, field);
+    }
+  }
+
+  // In the array overloads the profile given must be the grid's, bit for bit, in redshift and mps.
+  group("a profile that differs from the reused grid's is refused");
+  {
+    Case c;
+    const DivergenceGrid g = c.built();
+    c.config.divergenceCellSize.reset();
+    c.grid = &g;
+    c.profile.mps[1] = 6.5;
+    fails(c, "findVoidsLightcone: the mps profile given differs from the grid's at entry 1 (from 0): mps 6.5 against 6; "
+          "pass the grid's profile", "mps");
+    c.profile = flat_profile();
+    c.profile.redshift[0] = std::nextafter(0.1, 1.);
+    fails(c, "at entry 0 (from 0): redshift 0.10000000000000002 against 0.10000000000000001", "redshift");
+    c.profile.redshift = {0.1, 0.5, 0.6};
+    c.profile.mps = {5., 6., 6.};
+    fails(c, "findVoidsLightcone: the mps profile given holds 3 entries and the grid's 2; pass the grid's profile",
+          "sizes");
+    c.profile = flat_profile();
+    c.profile.count = {1, 2};
+    c.profile.representative = 5.5;
+    fails(c, "not implemented yet", "the other fields are not compared");
+    c.config.divergenceCellSize = 4.;
+    fails(c, "the divergence cell size is set together with a grid to reuse", "cell size and grid");
+  }
+
+  // A grid to reuse is rebuilt with the call's table and must give its recorded cell count; a rebuild that fails names the grid to reuse.
+  group("the rebuild of a grid to reuse: its cell count, and its failures naming it");
+  {
+    const Case base;
+    const DivergenceGrid good = base.built();
+    auto refused = [&] (const DivergenceGrid& g, const std::string& text, const std::string& what,
+                        const otswap::DistanceTable* distances = nullptr) {
+      Case c;
+      c.config.divergenceCellSize.reset();
+      c.profile = g.mpsProfile;
+      if (distances) c.distances = *distances;
+      c.grid = &g;
+      fails(c, text, what);
+    };
+    DivergenceGrid g = good;
+    g.nCells += 1;
+    refused(g, "findVoidsLightcone: the grid to reuse holds " + std::to_string(good.nCells + 1) +
+            " cells but the rebuild gives " + std::to_string(good.nCells) +
+            ": the record was modified or the distance table differs", "cell count");
+    const otswap::DistanceTable shortTable(0.3, 0.7, -1., 0., 0., 0.4, 1000);
+    refused(good, "the grid to reuse reaches distance ", "distance table", &shortTable);
+    g = good;
+    g.mpsProfile.redshift = {0.3, 0.4};
+    g.mpsProfile.mps = {1., 6.};
+    refused(g, "the mps profile of the grid to reuse is not positive at redshift ", "profile range");
+    g = good;
+    g.decMin = 0.2;
+    g.decMax = 0.2;
+    refused(g, "shell 0 (from 0) of the grid to reuse holds no declination ring", "no ring");
+    g = good;
+    g.cellSizeMps = 1e-6;
+    refused(g, "the grid to reuse would need more than 2097151 shells", "cell limit");
+    Case far;
+    far.config.divergenceCellSize.reset();
+    far.randomsSky = objects(200, 0.5, 2., -0.3, 0.3, 0.6, 0.7, 29);
+    far.grid = &good;
+    fails(far, "no random is left: of 200 randoms, 0 lie on unobserved pixels and 0 outside the redshift cut, 200 "
+          "outside the reused grid", "randoms outside the reused grid");
   }
 
   return report("test_lightcone_grid");

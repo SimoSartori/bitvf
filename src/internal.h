@@ -803,6 +803,8 @@ namespace bitvf {
      *  masked is 1 where the cell centre, right ascension folded into
      *  [0, 2 pi), falls on an unobserved pixel of @p mask.
      *
+     *  @param reused whether the record is a grid given for reuse; the
+     *  messages then name "the grid to reuse"
      *  @exception Error, raised serially before any cell is filled: if an
      *  edge, a shell centre or a point where mps(z) is evaluated lies
      *  outside the distance table; if mps(z) is not positive inside the
@@ -811,7 +813,7 @@ namespace bitvf {
      *  of a ring would exceed kMaxCellsAxis
      */
     LightconeGrid lightcone_grid (const DivergenceGrid& record, const otswap::DistanceTable& distances,
-                                  const otswap::Mask& mask);
+                                  const otswap::Mask& mask, bool reused = false);
 
     /**
      *  @brief The cell of a lightcone grid that holds a point.
@@ -843,6 +845,12 @@ namespace bitvf {
      *  checked for consistency, or null for the array overloads; its
      *  outsideMask and outsideRedshiftCut flags then leave tracers out, and
      *  its profile is not read with a grid
+     *  @param grid a grid to reuse, or null to build one from the kept
+     *  tracers and randoms. Its distance, right-ascension and declination
+     *  ranges, cellSizeMps and mpsProfile define the cells, rebuilt with
+     *  the call's distance table and mask; its nCells must equal the
+     *  rebuilt count, and in the array overloads its profile must equal
+     *  mps in redshift and mps, bit for bit. Every other field is ignored.
      *  @exception Error on every case of the entry of findVoidsLightcone
      *  and of the grid; once the grid is built, always, since the search
      *  is not written
@@ -856,6 +864,48 @@ namespace bitvf {
                          const DivergenceGrid* grid, const otswap::Result* reconstruction);
 
   }
+
+  /**
+   *  @brief The grid findVoidsLightcone builds from this reconstruction and
+   *  these randoms, bit for bit: on the tracers and randoms the search
+   *  keeps, with the reconstruction's profile and distance table.
+   *  Declared here until the pipeline runs end to end; it then moves to
+   *  VoidFinder.h.
+   *
+   *  Only the fields that define the cells are set: geometry, nCells,
+   *  distanceMin, distanceMax, raMin, raMax, decMin, decMax, cellSizeMps
+   *  and mpsProfile; every per-cell field is left empty. The grid passes
+   *  the checks of a grid to reuse, so that several searches can share
+   *  it.
+   *
+   *  @param divergenceCellSize the cell size in units of mps, as
+   *  Config::divergenceCellSize; without it, the default for the
+   *  reconstruction's realizations, min(1, (20 / nRealizations)^(1/3))
+   *  mps
+   *  @exception Error on every case of the entry of the same overload of
+   *  findVoidsLightcone, the checks of the displacements included,
+   *  and of the grid's construction
+   */
+  DivergenceGrid lightconeGrid (const otswap::Result& reconstruction, const std::vector<double>& randomsSky,
+                                const otswap::Mask& mask,
+                                std::optional<double> divergenceCellSize = std::nullopt);
+
+  /**
+   *  @brief The grid the sky-position overload of findVoidsLightcone
+   *  builds, bit for bit: the same selection of the tracers and randoms,
+   *  as the overload above, without displacements.
+   *
+   *  @param divergenceCellSize the cell size in units of mps; finite and
+   *  positive. A reasonable starting value is min(1, (20 / R)^(1/3)), R
+   *  the number of realizations the search will read.
+   *  @exception Error on every case of the entry of findVoidsLightcone
+   *  that does not concern displacements, ids or the configuration, and
+   *  of the grid's construction
+   */
+  DivergenceGrid lightconeGrid (const std::vector<double>& tracersSky, const std::vector<double>& randomsSky,
+                                const otswap::Mask& mask, const otswap::DistanceTable& distances,
+                                const otswap::MpsProfile& mps, double divergenceCellSize,
+                                const otswap::RedshiftCut& redshiftCut = {});
 
   /**
    *  @brief Find the voids of a lightcone from sky positions.

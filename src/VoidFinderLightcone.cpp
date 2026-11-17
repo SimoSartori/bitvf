@@ -20,9 +20,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <cstdint>
 #include <exception>
 #include <limits>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -98,31 +100,83 @@ namespace {
     }
   }
 
-  void check_profile (const otswap::MpsProfile& profile, const std::string& fn)
+  void check_profile (const otswap::MpsProfile& profile, const std::string& fn, const bool ofGrid)
   {
     const std::vector<double>& z = profile.redshift;
     const std::vector<double>& m = profile.mps;
+    const std::string subject = ofGrid ? fn + ": the mps profile of the grid to reuse" : "the mps profile";
     if (z.empty() && m.empty())
-      throw bitvf::Error("the mps profile is empty; it must hold at least one entry");
+      throw bitvf::Error(subject + " is empty; it must hold at least one entry");
     if (z.size() != m.size())
-      throw bitvf::Error(fn + ": the redshift and mps lists of the profile hold " + std::to_string(z.size()) +
-                         " and " + std::to_string(m.size()) + " entries");
+      throw bitvf::Error(fn + ": the redshift and mps lists of " +
+                         (ofGrid ? "the profile of the grid to reuse" : "the profile") + " hold " +
+                         std::to_string(z.size()) + " and " + std::to_string(m.size()) + " entries");
     for (std::size_t i = 0; i < z.size(); ++i) {
       if (!std::isfinite(z[i]))
-        throw bitvf::Error("the mps profile holds a redshift of " + num(z[i]) + " at entry " +
+        throw bitvf::Error(subject + " holds a redshift of " + num(z[i]) + " at entry " +
                            std::to_string(i) + " (from 0); it must be finite");
       if (!std::isfinite(m[i]))
-        throw bitvf::Error("the mps profile holds a mean particle separation of " + num(m[i]) + " at entry " +
+        throw bitvf::Error(subject + " holds a mean particle separation of " + num(m[i]) + " at entry " +
                            std::to_string(i) + " (from 0); it must be finite");
     }
     for (std::size_t i = 1; i < z.size(); ++i)
       if (!(z[i] > z[i-1]))
-        throw bitvf::Error("the mps profile holds a redshift of " + num(z[i]) + " at entry " + std::to_string(i) +
+        throw bitvf::Error(subject + " holds a redshift of " + num(z[i]) + " at entry " + std::to_string(i) +
                            " (from 0), not above the " + num(z[i-1]) + " before it; the redshifts must increase strictly");
     for (std::size_t i = 0; i < m.size(); ++i)
       if (!(m[i] > 0.))
-        throw bitvf::Error("the mps profile holds a mean particle separation of " + num(m[i]) + " at entry " +
+        throw bitvf::Error(subject + " holds a mean particle separation of " + num(m[i]) + " at entry " +
                            std::to_string(i) + " (from 0); it must be positive");
+  }
+
+  void check_grid (const bitvf::DivergenceGrid& grid, const std::string& fn)
+  {
+    using bitvf::Error;
+    const std::string bad = fn + ": the grid to reuse ";
+    if (grid.geometry != otswap::Geometry::Lightcone) throw Error(bad + "is not a lightcone grid");
+    if (!std::isfinite(grid.distanceMin) || !std::isfinite(grid.distanceMax) ||
+        !(grid.distanceMin >= 0. && grid.distanceMin <= grid.distanceMax))
+      throw Error(bad + "has a distance range [" + num(grid.distanceMin) + ", " + num(grid.distanceMax) +
+                  "] in coordinate units; both bounds must be finite, with 0 <= min <= max");
+    if (!std::isfinite(grid.raMin) || !std::isfinite(grid.raMax) ||
+        !(grid.raMin <= grid.raMax && grid.raMax - grid.raMin <= kTwoPi))
+      throw Error(bad + "has an RA range [" + num(grid.raMin) + ", " + num(grid.raMax) +
+                  "] radians; both bounds must be finite, with min <= max and a width of at most 2 pi");
+    if (!(grid.decMin >= -kPi/2 && grid.decMin <= kPi/2 && grid.decMax >= -kPi/2 && grid.decMax <= kPi/2 &&
+          grid.decMin <= grid.decMax))
+      throw Error(bad + "has a declination range [" + num(grid.decMin) + ", " + num(grid.decMax) +
+                  "] radians; it must lie in [-pi/2, pi/2], with min <= max");
+    if (!std::isfinite(grid.cellSizeMps) || grid.cellSizeMps <= 0.)
+      throw Error(bad + "has a cell size of " + num(grid.cellSizeMps) +
+                  " mps (cellSizeMps); it must be finite and positive");
+    check_profile(grid.mpsProfile, fn, true);
+    std::string boxField;
+    if (!std::isnan(grid.cellSize)) boxField = "cellSize";
+    else if (!std::isnan(grid.lower[0]) || !std::isnan(grid.lower[1]) || !std::isnan(grid.lower[2]))
+      boxField = "lower";
+    else if (!std::isnan(grid.upper[0]) || !std::isnan(grid.upper[1]) || !std::isnan(grid.upper[2]))
+      boxField = "upper";
+    else if (!std::isnan(grid.mps)) boxField = "mps";
+    else if (grid.nCellsAxis[0] != 0 || grid.nCellsAxis[1] != 0 || grid.nCellsAxis[2] != 0)
+      boxField = "nCellsAxis";
+    if (!boxField.empty()) throw Error(bad + "is a lightcone grid but holds the box field " + boxField);
+  }
+
+  void compare_profiles (const otswap::MpsProfile& given, const otswap::MpsProfile& grid, const std::string& fn)
+  {
+    using bitvf::Error;
+    if (given.redshift.size() != grid.redshift.size())
+      throw Error(fn + ": the mps profile given holds " + std::to_string(given.redshift.size()) +
+                  " entries and the grid's " + std::to_string(grid.redshift.size()) + "; pass the grid's profile");
+    for (std::size_t i = 0; i < given.redshift.size(); ++i)
+      for (const bool redshift : {true, false}) {
+        const double a = redshift ? given.redshift[i] : given.mps[i];
+        const double b = redshift ? grid.redshift[i] : grid.mps[i];
+        if (std::memcmp(&a, &b, sizeof a) != 0)
+          throw Error(fn + ": the mps profile given differs from the grid's at entry " + std::to_string(i) +
+                      " (from 0): " + (redshift ? "redshift " : "mps ") + num(a) + " against " + num(b) +
+                      "; pass the grid's profile");
+      }
   }
 
   void fold_right_ascension (std::vector<double>& sky)
@@ -233,13 +287,13 @@ namespace {
   }
 
   otswap::RedshiftCut check_reconstruction (const otswap::Result& rec, const otswap::Mask& mask,
-                                             const bitvf::DivergenceGrid* grid)
+                                             const bitvf::DivergenceGrid* grid, const bool builder)
   {
     using bitvf::Error;
-    const std::string fn = "findVoidsLightcone";
+    const std::string fn = builder ? "lightconeGrid" : "findVoidsLightcone";
 
     if (rec.geometry != otswap::Geometry::Lightcone)
-      throw Error(fn + ": the reconstruction is not a lightcone result; use the box void finder");
+      throw Error(fn + ": the reconstruction is not a lightcone result; use " + (builder ? "boxGrid" : "findVoidsBox"));
 
     std::vector<std::string> missing;
     if (rec.tracersSky.empty()) missing.push_back("tracersSky");
@@ -251,8 +305,8 @@ namespace {
       for (std::size_t i = 1; i < missing.size(); ++i)
         list += (i + 1 == missing.size() ? " and " : ", ") + missing[i];
       throw Error(fn + ": the reconstruction has no " + list + ", which a lightcone search needs" +
-                  (missing.size() == 1 && missing[0] == "mpsProfile" ? "; give a grid to search without mpsProfile"
-                                                                     : ""));
+                  (!builder && missing.size() == 1 && missing[0] == "mpsProfile"
+                   ? "; give a grid to search without mpsProfile" : ""));
     }
 
     const std::size_t N = rec.nObjects;
@@ -291,11 +345,10 @@ namespace {
                      const otswap::Mask& mask, const otswap::DistanceTable& distances,
                      const otswap::MpsProfile& mps, const bitvf::Config& config,
                      const otswap::RedshiftCut& cut, const std::vector<std::int64_t>& ids,
-                     const bitvf::DivergenceGrid* grid, const otswap::Result* rec,
-                     const bitvf::internal::Report& report)
+                     const bitvf::DivergenceGrid* grid, const otswap::Result* rec, const std::string& fn,
+                     const bool withDisplacement, const bitvf::internal::Report& report)
   {
     using bitvf::Error;
-    const std::string fn = "findVoidsLightcone";
 
     const std::size_t N = check_sky(tracersSky, "tracersSky", fn);
     const std::size_t M = check_sky(randomsSky, "randomsSky", fn);
@@ -309,16 +362,20 @@ namespace {
                     std::to_string(M) + " objects in randomsSky");
     }
 
-    const std::size_t R = bitvf::internal::check_displacement_shape(displacement, valid, N, fn);
+    const std::size_t R = withDisplacement ? bitvf::internal::check_displacement_shape(displacement, valid, N, fn) : 0;
 
     if (std::isnan(cut.min) || std::isnan(cut.max) || cut.min > cut.max)
       throw Error("the redshift cut is [" + num(cut.min) + ", " + num(cut.max) +
                   "]; neither bound may be NaN and the lower bound must not exceed the upper one");
 
     const bool readProfile = rec == nullptr || grid == nullptr;
-    if (readProfile) check_profile(mps, fn);
+    if (readProfile) check_profile(mps, fn, false);
     if (rec == nullptr) bitvf::internal::check_ids(ids, N, fn, false);
     bitvf::internal::check_config(config, grid != nullptr);
+    if (grid != nullptr) {
+      check_grid(*grid, fn);
+      if (rec == nullptr) compare_profiles(mps, grid->mpsProfile, fn);
+    }
 
     check_sky_rows(tracersSky, "tracers", rec == nullptr ? "" : fn);
     check_sky_rows(randomsSky, "randoms", "");
@@ -387,7 +444,7 @@ namespace {
     if (keptTracers == 0)
       throw Error("no tracer is left to read: of " + std::to_string(N) + " tracers, " +
                   left_out(ts.outsideMask, ts.outsideCut));
-    if (nRead == 0)
+    if (withDisplacement && nRead == 0)
       throw Error("no valid displacement is left to read: of " + std::to_string(nValid) +
                   " valid displacements, none belongs to a tracer on an observed pixel inside the redshift cut (" +
                   left_out(ts.outsideMask, ts.outsideCut) + ")");
@@ -450,6 +507,149 @@ namespace {
     return entry;
   }
 
+  bitvf::internal::LightconeGrid entry_grid (Entry& entry, const std::size_t M, const otswap::Mask& mask,
+                                             const otswap::DistanceTable& distances, const otswap::MpsProfile& mps,
+                                             const std::optional<double>& divergenceCellSize,
+                                             const bitvf::DivergenceGrid* grid, const std::string& fn,
+                                             bitvf::internal::Report& report)
+  {
+    using bitvf::Error;
+    using bitvf::internal::LightconeGrid;
+    using bitvf::internal::Report;
+
+    bitvf::DivergenceGrid record;
+    if (grid == nullptr) {
+      const bitvf::internal::LightconeExtent extent =
+        bitvf::internal::lightcone_extent(entry.tracersSky, entry.tracerSelection.inMask, entry.tracerSelection.inCut,
+                                          entry.randomsSky, distances);
+      for (const double z : {extent.redshiftMin, extent.redshiftMax}) {
+        try {
+          mps.at(z);
+        }
+        catch (const otswap::Error&) {
+          throw Error("the mps profile is not positive at redshift " + num(z) + " (tracers and randoms span [" +
+                      num(extent.redshiftMin) + ", " + num(extent.redshiftMax) + "])");
+        }
+      }
+      record.geometry = otswap::Geometry::Lightcone;
+      record.distanceMin = extent.distanceMin;
+      record.distanceMax = extent.distanceMax;
+      record.raMin = extent.raMin;
+      record.raMax = extent.raMax;
+      record.decMin = extent.decMin;
+      record.decMax = extent.decMax;
+      record.cellSizeMps = divergenceCellSize ? *divergenceCellSize
+                                              : std::min(1., otswap::maths::cbrt(20. / entry.nRealizations));
+      record.mpsProfile = mps;
+    }
+    else {
+      record.geometry = otswap::Geometry::Lightcone;
+      record.distanceMin = grid->distanceMin;
+      record.distanceMax = grid->distanceMax;
+      record.raMin = grid->raMin;
+      record.raMax = grid->raMax;
+      record.decMin = grid->decMin;
+      record.decMax = grid->decMax;
+      record.cellSizeMps = grid->cellSizeMps;
+      record.mpsProfile = grid->mpsProfile;
+    }
+    const LightconeGrid lc = bitvf::internal::lightcone_grid(record, distances, mask, grid != nullptr);
+    if (grid != nullptr && grid->nCells != lc.cells.nCells)
+      throw Error(fn + ": the grid to reuse holds " + std::to_string(grid->nCells) + " cells but the rebuild gives " +
+                  std::to_string(lc.cells.nCells) + ": the record was modified or the distance table differs");
+
+    const std::int64_t nRandoms = (std::int64_t)entry.nRandoms;
+    std::vector<std::uint8_t> inGrid((std::size_t)nRandoms, 1);
+    std::size_t outsideGrid = 0;
+    std::exception_ptr failure;
+#pragma omp parallel for schedule(static) reduction(+:outsideGrid)
+    for (std::int64_t i = 0; i < nRandoms; ++i) {
+      const std::size_t r = (std::size_t)i;
+      try {
+        const double d = distances.distanceAt(entry.randomsSky[3*r+2]);
+        if (bitvf::internal::lightcone_cell(lc, d, entry.randomsSky[3*r], entry.randomsSky[3*r+1]) < 0) {
+          inGrid[r] = 0;
+          ++outsideGrid;
+        }
+      }
+      catch (...) {
+#pragma omp critical(bitvf_lightcone_randoms_grid)
+        if (!failure) failure = std::current_exception();
+      }
+    }
+    if (failure) {
+      try {
+        std::rethrow_exception(failure);
+      }
+      catch (const otswap::Error& e) {
+        std::throw_with_nested(Error(std::string("otswap: ") + e.what()));
+      }
+    }
+    if (outsideGrid > 0) {
+      std::size_t j = 0;
+      for (std::size_t i = 0; i < entry.nRandoms; ++i) {
+        if (!inGrid[i]) continue;
+        for (std::size_t k = 0; k < 3; ++k) {
+          entry.randomsSky[3*j+k] = entry.randomsSky[3*i+k];
+          entry.randoms[3*j+k] = entry.randoms[3*i+k];
+        }
+        ++j;
+      }
+      entry.nRandoms = j;
+      entry.randomsSky.resize(3 * j);
+      entry.randoms.resize(3 * j);
+    }
+    entry.counts.randoms = entry.nRandoms;
+    entry.counts.randomsOutsideGrid = outsideGrid;
+    const Selection& rs = entry.randomSelection;
+    if (entry.nRandoms == 0)
+      throw Error("no random is left: of " + std::to_string(M) + " randoms, " + left_out(rs.outsideMask, rs.outsideCut) +
+                  ", " + std::to_string(outsideGrid) + (grid == nullptr ? " outside the grid" : " outside the reused grid"));
+    if (entry.nRandoms > std::numeric_limits<unsigned>::max())
+      throw Error("the search reads " + std::to_string(entry.nRandoms) + " randoms, more than " +
+                  std::to_string(std::numeric_limits<unsigned>::max()) +
+                  ", the most that the density contrast within 2 mean particle separations of a centre supports");
+
+    if (report.normal()) {
+      constexpr double kDegrees = 180. / kPi;
+      const std::size_t nShells = lc.shellCentre.size();
+      std::ostringstream out = Report::line();
+      out << "grid of " << lc.cells.nCells << (lc.cells.nCells == 1 ? " cell in " : " cells in ") << nShells
+          << (nShells == 1 ? " shell" : " shells") << (lc.centralSphere ? ", central sphere included" : "")
+          << ", cell size " << record.cellSizeMps << " mps ("
+          << (grid != nullptr ? "reused" : divergenceCellSize ? "given" : "default") << "), distances ["
+          << record.distanceMin << ", " << record.distanceMax << "], RA [" << record.raMin * kDegrees << ", "
+          << record.raMax * kDegrees << "] deg, Dec [" << record.decMin * kDegrees << ", " << record.decMax * kDegrees
+          << (grid != nullptr ? "] deg (from the reused grid)" : "] deg (from the tracers and randoms)");
+      report.step(out);
+    }
+    if (report.detailed()) {
+      std::size_t masked = 0;
+      for (const std::uint8_t m : lc.cells.masked) masked += m;
+      std::ostringstream out = Report::line();
+      out << "grid: " << masked << " of " << lc.cells.nCells << " cells masked, redshifts [" << lc.redshiftFirstEdge
+          << ", " << lc.redshiftLastEdge << "] from the first to the last edge, smallest mps " << lc.mpsMin;
+      report.write(out.str());
+    }
+    return lc;
+  }
+
+  bitvf::DivergenceGrid defining_fields (const bitvf::DivergenceGrid& cells)
+  {
+    bitvf::DivergenceGrid grid;
+    grid.geometry = otswap::Geometry::Lightcone;
+    grid.nCells = cells.nCells;
+    grid.distanceMin = cells.distanceMin;
+    grid.distanceMax = cells.distanceMax;
+    grid.raMin = cells.raMin;
+    grid.raMax = cells.raMax;
+    grid.decMin = cells.decMin;
+    grid.decMax = cells.decMax;
+    grid.cellSizeMps = cells.cellSizeMps;
+    grid.mpsProfile = cells.mpsProfile;
+    return grid;
+  }
+
 }
 
 bitvf::Result bitvf::internal::runLightcone (const std::vector<double>* tracers, const std::vector<double>& tracersSky,
@@ -462,111 +662,60 @@ bitvf::Result bitvf::internal::runLightcone (const std::vector<double>* tracers,
                                              const std::vector<std::int64_t>& ids, const DivergenceGrid* grid,
                                              const otswap::Result* reconstruction)
 {
+  const std::string fn = "findVoidsLightcone";
   Report report(config.verbosity, config.log);
   Entry entry = check_entry(tracers, tracersSky, displacement, valid, randoms, randomsSky, mask, distances,
-                            mps, config, redshiftCut, ids, grid, reconstruction, report);
-  if (grid != nullptr) throw Error("findVoidsLightcone: the reuse of a grid is not implemented yet");
-
-  const LightconeExtent extent = lightcone_extent(entry.tracersSky, entry.tracerSelection.inMask,
-                                                  entry.tracerSelection.inCut, entry.randomsSky, distances);
-  for (const double z : {extent.redshiftMin, extent.redshiftMax}) {
-    try {
-      mps.at(z);
-    }
-    catch (const otswap::Error&) {
-      throw Error("the mps profile is not positive at redshift " + num(z) + " (tracers and randoms span [" +
-                  num(extent.redshiftMin) + ", " + num(extent.redshiftMax) + "])");
-    }
-  }
-
-  DivergenceGrid record;
-  record.geometry = otswap::Geometry::Lightcone;
-  record.distanceMin = extent.distanceMin;
-  record.distanceMax = extent.distanceMax;
-  record.raMin = extent.raMin;
-  record.raMax = extent.raMax;
-  record.decMin = extent.decMin;
-  record.decMax = extent.decMax;
-  record.cellSizeMps = config.divergenceCellSize ? *config.divergenceCellSize
-                                                 : std::min(1., otswap::maths::cbrt(20. / entry.nRealizations));
-  record.mpsProfile = mps;
-  const LightconeGrid lc = lightcone_grid(record, distances, mask);
-
-  const std::int64_t nRandoms = (std::int64_t)entry.nRandoms;
-  std::vector<std::uint8_t> inGrid((std::size_t)nRandoms, 1);
-  std::size_t outsideGrid = 0;
-  std::exception_ptr failure;
-#pragma omp parallel for schedule(static) reduction(+:outsideGrid)
-  for (std::int64_t i = 0; i < nRandoms; ++i) {
-    const std::size_t r = (std::size_t)i;
-    try {
-      const double d = distances.distanceAt(entry.randomsSky[3*r+2]);
-      if (lightcone_cell(lc, d, entry.randomsSky[3*r], entry.randomsSky[3*r+1]) < 0) {
-        inGrid[r] = 0;
-        ++outsideGrid;
-      }
-    }
-    catch (...) {
-#pragma omp critical(bitvf_lightcone_randoms_grid)
-      if (!failure) failure = std::current_exception();
-    }
-  }
-  if (failure) {
-    try {
-      std::rethrow_exception(failure);
-    }
-    catch (const otswap::Error& e) {
-      std::throw_with_nested(Error(std::string("otswap: ") + e.what()));
-    }
-  }
-  if (outsideGrid > 0) {
-    std::size_t j = 0;
-    for (std::size_t i = 0; i < entry.nRandoms; ++i) {
-      if (!inGrid[i]) continue;
-      for (std::size_t k = 0; k < 3; ++k) {
-        entry.randomsSky[3*j+k] = entry.randomsSky[3*i+k];
-        entry.randoms[3*j+k] = entry.randoms[3*i+k];
-      }
-      ++j;
-    }
-    entry.nRandoms = j;
-    entry.randomsSky.resize(3 * j);
-    entry.randoms.resize(3 * j);
-  }
-  entry.counts.randoms = entry.nRandoms;
-  entry.counts.randomsOutsideGrid = outsideGrid;
-  const Selection& rs = entry.randomSelection;
-  const std::size_t M = randomsSky.size() / 3;
-  if (entry.nRandoms == 0)
-    throw Error("no random is left: of " + std::to_string(M) + " randoms, " + left_out(rs.outsideMask, rs.outsideCut) +
-                ", " + std::to_string(outsideGrid) + " outside the grid");
-  if (entry.nRandoms > std::numeric_limits<unsigned>::max())
-    throw Error("the search reads " + std::to_string(entry.nRandoms) + " randoms, more than " +
-                std::to_string(std::numeric_limits<unsigned>::max()) +
-                ", the most that the density contrast within 2 mean particle separations of a centre supports");
-
-  if (report.normal()) {
-    constexpr double kDegrees = 180. / kPi;
-    const std::size_t nShells = lc.shellCentre.size();
-    std::ostringstream out = Report::line();
-    out << "grid of " << lc.cells.nCells << (lc.cells.nCells == 1 ? " cell in " : " cells in ") << nShells
-        << (nShells == 1 ? " shell" : " shells") << (lc.centralSphere ? ", central sphere included" : "") << ", cell size "
-        << record.cellSizeMps << " mps (" << (config.divergenceCellSize ? "given" : "default") << "), distances ["
-        << record.distanceMin << ", " << record.distanceMax << "], RA [" << record.raMin * kDegrees << ", "
-        << record.raMax * kDegrees << "] deg, Dec [" << record.decMin * kDegrees << ", " << record.decMax * kDegrees
-        << "] deg (from the tracers and randoms)";
-    report.step(out);
-  }
-  if (report.detailed()) {
-    std::size_t masked = 0;
-    for (const std::uint8_t m : lc.cells.masked) masked += m;
-    std::ostringstream out = Report::line();
-    out << "grid: " << masked << " of " << lc.cells.nCells << " cells masked, redshifts [" << lc.redshiftFirstEdge
-        << ", " << lc.redshiftLastEdge << "] from the first to the last edge, smallest mps " << lc.mpsMin;
-    report.write(out.str());
-  }
+                            mps, config, redshiftCut, ids, grid, reconstruction, fn, true, report);
+  const LightconeGrid lc = entry_grid(entry, randomsSky.size() / 3, mask, distances, mps, config.divergenceCellSize,
+                                      grid, fn, report);
   throw Error("findVoidsLightcone: the search after the grid is not implemented yet");
 }
+
+
+// ============================================================================
+
+
+bitvf::DivergenceGrid bitvf::lightconeGrid (const otswap::Result& reconstruction, const std::vector<double>& randomsSky,
+                                            const otswap::Mask& mask, const std::optional<double> divergenceCellSize)
+{
+  const std::string fn = "lightconeGrid";
+  const otswap::RedshiftCut cut = check_reconstruction(reconstruction, mask, nullptr, true);
+  const otswap::Result& rec = reconstruction;
+  Config config;
+  config.verbosity = otswap::Verbosity::Silent;
+  config.divergenceCellSize = divergenceCellSize;
+  internal::Report report(config.verbosity, nullptr);
+  Entry entry = check_entry(&rec.tracers, rec.tracersSky, rec.displacement, rec.valid, nullptr, randomsSky, mask,
+                            *rec.distances, rec.mpsProfile, config, cut, rec.ids, nullptr, &rec, fn, true, report);
+  const internal::LightconeGrid lc = entry_grid(entry, randomsSky.size() / 3, mask, *rec.distances, rec.mpsProfile,
+                                                divergenceCellSize, nullptr, fn, report);
+  return defining_fields(lc.cells);
+}
+
+
+// ============================================================================
+
+
+bitvf::DivergenceGrid bitvf::lightconeGrid (const std::vector<double>& tracersSky, const std::vector<double>& randomsSky,
+                                            const otswap::Mask& mask, const otswap::DistanceTable& distances,
+                                            const otswap::MpsProfile& mps, const double divergenceCellSize,
+                                            const otswap::RedshiftCut& redshiftCut)
+{
+  const std::string fn = "lightconeGrid";
+  Config config;
+  config.verbosity = otswap::Verbosity::Silent;
+  config.divergenceCellSize = divergenceCellSize;
+  internal::Report report(config.verbosity, nullptr);
+  Entry entry = check_entry(nullptr, tracersSky, {}, {}, nullptr, randomsSky, mask, distances, mps, config,
+                            redshiftCut, {}, nullptr, nullptr, fn, false, report);
+  const internal::LightconeGrid lc = entry_grid(entry, randomsSky.size() / 3, mask, distances, mps,
+                                                config.divergenceCellSize, nullptr, fn, report);
+  return defining_fields(lc.cells);
+}
+
+
+// ============================================================================
+
 
 bitvf::Result bitvf::findVoidsLightcone (const std::vector<double>& tracersSky,
                                          const std::vector<double>& displacement,
@@ -595,7 +744,7 @@ bitvf::Result bitvf::findVoidsLightcone (const std::vector<double>& tracers, con
 bitvf::Result bitvf::findVoidsLightcone (const otswap::Result& reconstruction, const std::vector<double>& randomsSky,
                                          const otswap::Mask& mask, const Config& config, const DivergenceGrid* grid)
 {
-  const otswap::RedshiftCut cut = check_reconstruction(reconstruction, mask, grid);
+  const otswap::RedshiftCut cut = check_reconstruction(reconstruction, mask, grid, false);
   const otswap::Result& rec = reconstruction;
   return internal::runLightcone(&rec.tracers, rec.tracersSky, rec.displacement, rec.valid, nullptr, randomsSky, mask,
                                 *rec.distances, rec.mpsProfile, config, cut, rec.ids, grid, &rec);

@@ -409,7 +409,7 @@ int main ()
   {
     FromResult r;
     r.rec.geometry = otswap::Geometry::Box;
-    fails(r, "findVoidsLightcone: the reconstruction is not a lightcone result; use the box void finder", "box result");
+    fails(r, "findVoidsLightcone: the reconstruction is not a lightcone result; use findVoidsBox", "box result");
   }
 
   // A reconstruction without sky positions, distance table or, without a grid, mps profile is refused, naming what is missing.
