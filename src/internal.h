@@ -362,8 +362,10 @@ namespace bitvf {
 
     //==========================================================================
 
-    /// The most cells a box grid may have along an axis: the largest n with
-    /// n^3 below 2^63, so that every cell row fits an int64 index.
+    /// The most cells a box grid may have along an axis, and a lightcone
+    /// grid at each level of its cell index (shells, rings of a shell,
+    /// sectors of a ring): the largest n with n^3 below 2^63, so that every
+    /// cell row fits an int64 index.
     constexpr std::size_t kMaxCellsAxis = 2097151;
 
     /**
@@ -672,6 +674,164 @@ namespace bitvf {
                                      const BasinCatalog& voids, const BasinCatalog& overdense);
 
     /**
+     *  @brief The extent of the objects a new lightcone grid must hold.
+     *
+     *  Redshifts, distances and declinations are the smallest and largest
+     *  over the objects; each distance is DistanceTable::distanceAt of the
+     *  object's redshift, so distanceMin and distanceMax are those of
+     *  redshiftMin and redshiftMax. The right ascensions are cut at their
+     *  largest gap on the circle: raMin is the first value after the gap,
+     *  in [0, 2 pi), and raMax the last before it, plus 2 pi when the gap
+     *  does not contain RA = 0, so raMax may exceed 2 pi.
+     */
+    struct LightconeExtent {
+      double redshiftMin, redshiftMax;
+      double distanceMin, distanceMax;
+      double raMin, raMax;
+      double decMin, decMax;
+    };
+
+    /**
+     *  @brief Measure the extent of the kept tracers and the randoms.
+     *
+     *  The largest gap of the right ascensions is found without sorting:
+     *  the circle is split into k = min(n, 2^20) equal bins, n the number
+     *  of objects, each keeping its smallest and largest value; the gaps
+     *  between consecutive non-empty bins, the wrap-around one included,
+     *  are exact, and the largest is the cut. The wrap-around gap wins a
+     *  tie, then the first gap from RA = 0. When the largest gap is
+     *  narrower than a bin, the objects cover the whole circle and every
+     *  ring of the grid is full whatever the cut. The result does not
+     *  depend on the number of threads.
+     *
+     *  @param tracersSky right ascension in [0, 2 pi), declination and
+     *  redshift of each tracer, radians
+     *  @param inMask,inCut a tracer is read when both are 1; empty for all
+     *  @param randomsSky as tracersSky, every random read
+     *  @param distances the table of the call; every redshift read must lie
+     *  inside it
+     */
+    LightconeExtent lightcone_extent (const std::vector<double>& tracersSky, const std::vector<std::uint8_t>& inMask,
+                                      const std::vector<std::uint8_t>& inCut, const std::vector<double>& randomsSky,
+                                      const otswap::DistanceTable& distances);
+
+    /**
+     *  @brief A lightcone grid as built, with the layout of its cells.
+     *
+     *  Cells are numbered by shell, then by declination ring within the
+     *  shell, then by right-ascension sector within the ring, all from 0;
+     *  every index is an int64. Shell 0 is the central sphere when there is
+     *  one: a single ring and a single sector over the full sky.
+     */
+    struct LightconeGrid {
+
+      /// The grid: the record fields, mpsProfile, nCells and the per-cell
+      /// limits, centre, centreSky, volume and masked.
+      DivergenceGrid cells;
+
+      /// Whether shell 0 is the central sphere.
+      bool centralSphere = false;
+
+      /// The distance edges of the shells, increasing, [shell + 1].
+      std::vector<double> shellEdge;
+
+      /// The distance of each shell centre, the mean of its edges; 0 for
+      /// the central sphere. [shell]
+      std::vector<double> shellCentre;
+
+      /// The redshift of each shell centre, through the distance table.
+      /// [shell]
+      std::vector<double> shellRedshift;
+
+      /// mps(z) at shellRedshift, in coordinate units. [shell]
+      std::vector<double> shellMps;
+
+      /// The first ring of each shell, and the number of rings last.
+      /// [shell + 1]
+      std::vector<std::int64_t> shellFirstRing;
+
+      /// The declination edges of each ring, radians. [ring]
+      std::vector<double> ringDecMin, ringDecMax;
+
+      /// 1 for a ring whose centre lies within 1e-5 radians of a pole,
+      /// polar caps included: one sector over the full circle, with no
+      /// right-ascension faces. [ring]
+      std::vector<std::uint8_t> ringPole;
+
+      /// 1 for a ring whose sectors cover the full circle from RA = 0 to
+      /// 2 pi, polar caps and the central sphere included. [ring]
+      std::vector<std::uint8_t> ringFull;
+
+      /// The first cell of each ring, and the number of cells last.
+      /// [ring + 1]
+      std::vector<std::int64_t> ringFirstCell;
+
+      /// The redshifts of the first and the last shell edge (0 with the
+      /// central sphere, through the table), and the smallest mps(z)
+      /// between them, at the profile's nodes inside the range and at its
+      /// ends, in coordinate units.
+      double redshiftFirstEdge = 0., redshiftLastEdge = 0., mpsMin = 0.;
+    };
+
+    /**
+     *  @brief Build a lightcone grid from its record.
+     *
+     *  The record is the distance, right-ascension and declination ranges,
+     *  cellSizeMps and mpsProfile of @p record; nothing else of it is read.
+     *  The same record, table and mask give the same grid, bit for bit.
+     *
+     *  Shells: with s the cell size in mps, zMin and zMax the redshifts of
+     *  distanceMin and distanceMax, the first edge is distanceMin - 0.1 s
+     *  mps(zMin); when distanceMin does not exceed (3 / (4 pi))^(1/3) s
+     *  mps(zMin), a central sphere of that radius replaces it. Each shell
+     *  then has width s mps(z), z the redshift at the previous edge plus
+     *  half the previous width (for the first shell, a width of s mps at
+     *  the first edge), until an edge reaches distanceMax + 0.1 s mps(zMax).
+     *
+     *  Rings: the declination range padded by 0.1 s mps / R on each side
+     *  (R the shell centre, mps at its redshift), with a polar cap of
+     *  half-width s mps / (sqrt(pi) R) where the range comes that close to
+     *  a pole; the rest is split into round(...) rings of equal width.
+     *  Edges within 1e-12 of 0 are set to 0.
+     *
+     *  Sectors: a ring is a full circle when its padded right-ascension arc
+     *  (0.1 s mps / (R cos dec) on each side) comes within two cells of the
+     *  circumference, then split into round(R cos dec 2 pi / (s mps))
+     *  sectors from RA = 0; otherwise into ceil(arc / (s mps)) sectors
+     *  centred on the padded range.
+     *
+     *  masked is 1 where the cell centre, right ascension folded into
+     *  [0, 2 pi), falls on an unobserved pixel of @p mask.
+     *
+     *  @exception Error, raised serially before any cell is filled: if an
+     *  edge, a shell centre or a point where mps(z) is evaluated lies
+     *  outside the distance table; if mps(z) is not positive inside the
+     *  grid's range; if a shell would hold no declination ring, or a full
+     *  ring no sector; if the shells, the rings of a shell or the sectors
+     *  of a ring would exceed kMaxCellsAxis
+     */
+    LightconeGrid lightcone_grid (const DivergenceGrid& record, const otswap::DistanceTable& distances,
+                                  const otswap::Mask& mask);
+
+    /**
+     *  @brief The cell of a lightcone grid that holds a point.
+     *
+     *  Every lookup of a point in a lightcone grid goes through this
+     *  function. A point on an edge belongs to the cell above it, in
+     *  distance, declination and right ascension: a point on the first edge
+     *  of the grid is inside, on the last outside, but for a declination of
+     *  exactly pi/2 inside a north polar cap. In a full ring, the right
+     *  ascension is folded into [0, 2 pi), so RA = 0 is in the first
+     *  sector; in a partial ring, it is moved by a multiple of 2 pi next to
+     *  the ring's centre.
+     *
+     *  @param distance the comoving distance, in coordinate units
+     *  @param ra,dec radians; any finite right ascension
+     *  @return the cell, or -1 outside every cell
+     */
+    std::int64_t lightcone_cell (const LightconeGrid& grid, double distance, double ra, double dec);
+
+    /**
      *  @brief The lightcone search both array overloads of
      *  findVoidsLightcone converge into: the entry checks, the selection
      *  and the conversion of what the search reads.
@@ -683,8 +843,9 @@ namespace bitvf {
      *  checked for consistency, or null for the array overloads; its
      *  outsideMask and outsideRedshiftCut flags then leave tracers out, and
      *  its profile is not read with a grid
-     *  @exception Error on every case of the entry of findVoidsLightcone;
-     *  once the entry has passed, always, since the search is not written
+     *  @exception Error on every case of the entry of findVoidsLightcone
+     *  and of the grid; once the grid is built, always, since the search
+     *  is not written
      */
     Result runLightcone (const std::vector<double>* tracers, const std::vector<double>& tracersSky,
                          const std::vector<double>& displacement, const std::vector<std::uint8_t>& valid,

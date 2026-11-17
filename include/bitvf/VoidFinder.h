@@ -467,8 +467,9 @@ namespace bitvf {
     double distanceMax = std::numeric_limits<double>::quiet_NaN();
 
     /// Lightcone, defines the cells: right-ascension range of the
-    /// footprint, radians, unwrapped at its largest gap, so raMin may be
-    /// negative. NaN in a box.
+    /// footprint, radians, cut at its largest gap on the circle: raMin, the
+    /// first value after the gap, lies in [0, 2 pi), and raMax may exceed
+    /// 2 pi when the footprint crosses RA = 0. NaN in a box.
     double raMin = std::numeric_limits<double>::quiet_NaN();
     double raMax = std::numeric_limits<double>::quiet_NaN();
 
