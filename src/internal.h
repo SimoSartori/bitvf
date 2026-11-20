@@ -1336,6 +1336,46 @@ namespace bitvf {
                            BasinCatalog& voids, BasinCatalog& overdense);
 
     /**
+     *  @brief The centres of the basins lightcone_watershed found, Cartesian
+     *  and on the sky.
+     *
+     *  For the seed cell of each basin, of centre x0: x0 + s sum_n div_n
+     *  (x_n - x0) / sum_n |div_n| over its radius neighbours n, summed in
+     *  ascending cell index, with x_n their centres, div the field the
+     *  watershed split, a sum of 0 over |div_n| read as 1, and s = -1 for a
+     *  void, +1 for an overdense basin, so that a void's centre moves
+     *  towards lower divergence and an overdense basin's towards higher.
+     *
+     *  A point that lightcone_cell_at places in the seed cell is kept as
+     *  it is. Otherwise its distance, declination and right ascension (the
+     *  last moved by a multiple of 2 pi next to the cell's centre) are
+     *  clamped to the cell's ranges, the declination alone in a polar cap
+     *  and the distance alone in the central sphere, and converted back to
+     *  Cartesian with otswap's maths; while lightcone_cell_at does not
+     *  return the seed cell, every coordinate lightcone_outside finds
+     *  outside moves inward by one std::nextafter step and the point is
+     *  converted again. Every centre is then in its seed cell.
+     *
+     *  centreSky is lightcone_sky of the centre, so its right ascension is
+     *  in [0, 2 pi), with the redshift of its distance from
+     *  DistanceTable::redshiftAt. The result is the same with any number of
+     *  threads.
+     *
+     *  Reads, of the grid, centralSphere, ringPole, ringFirstCell,
+     *  shellFirstRing, the shell and ring edges and, of the cells, centre,
+     *  the per-cell limits, divergence and divergenceSmoothed; of the
+     *  adjacency, the radius lists; of @p basins, the seeds. Writes centre
+     *  and centreSky of both catalogues.
+     *
+     *  @exception Error, an internal error raised after the loop, if a
+     *  centre cannot be placed in its seed cell, or if the redshift lookup
+     *  fails at a centre, the otswap error nested
+     */
+    void lightcone_centres (const LightconeGrid& grid, const LightconeAdjacency& adjacency,
+                            const LightconeBasins& basins, const otswap::DistanceTable& distances,
+                            BasinCatalog& voids, BasinCatalog& overdense);
+
+    /**
      *  @brief The lightcone search every lightcone entry converges into:
      *  the entry checks, the selection and the conversion of what the
      *  search reads.
