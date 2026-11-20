@@ -333,7 +333,11 @@ namespace bitvf {
     /// and the reused grid) in the sphere. In a lightcone, within 2 mps(z)
     /// at the centre's redshift, n_t / (n_r N_t / N_r) - 1, with n_t and
     /// n_r the tracers and randoms in the sphere and N_t / N_r one ratio of
-    /// the tracers to the randoms over the whole search (Counts::randoms).
+    /// the tracers to the randoms over the whole search (Counts::randoms);
+    /// NaN when no random lies in the sphere. The expected count
+    /// n_r N_t / N_r has a relative noise of about 1 / sqrt(33.5 q f), with
+    /// q the randoms per tracer and f the fraction of the sphere inside the
+    /// survey: at least 10 to 20 randoms per tracer is a reasonable start.
     std::vector<double> delta2Mps;
 
     /// Contact with the boundary: 0 none; 1 only the extended basin
@@ -639,7 +643,8 @@ namespace bitvf {
     /// excluded (Result::outsideCut).
     std::size_t tracersOutsideCut = 0;
 
-    /// Lightcone: N_r of delta2Mps, the randoms given and kept. 0 in a box.
+    /// Lightcone: N_r of delta2Mps, the randoms the search reads: kept by
+    /// the mask and the redshift cut, and inside the grid. 0 in a box.
     std::size_t randoms = 0;
 
     /// Lightcone: tracers on unobserved pixels of the mask, and so skipped

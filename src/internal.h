@@ -1376,6 +1376,38 @@ namespace bitvf {
                             BasinCatalog& voids, BasinCatalog& overdense);
 
     /**
+     *  @brief The density contrasts of the basins of a lightcone search,
+     *  deltaAv and delta2Mps.
+     *
+     *  With m = mps(z_c) from the grid's mpsProfile at the redshift of each
+     *  centre: deltaAv = (nTracers / core volume) / m^-3 - 1; delta2Mps =
+     *  n_t / (alpha n_r) - 1, with n_t and n_r the tracers and randoms
+     *  within 2 m of the centre, the sphere closed, and alpha = N_t / N_r,
+     *  computed once from the sizes of the two sets; NaN when n_r is 0.
+     *  The counts use one meshsearch grid per set, built in turn, of cell
+     *  4 mpsMin and limits the Cartesian bounding box of the grid's cells
+     *  padded by the largest sphere radius. Basins are taken in parallel
+     *  with integer counts, so the result is the same with any number of
+     *  threads.
+     *
+     *  Reads, of the grid, cells (mpsProfile, nCells and the per-cell
+     *  limits) and mpsMin; of @p basins, the core volumes; of each
+     *  catalogue, nBasins, centre, centreSky and nTracers. Writes deltaAv
+     *  and delta2Mps of both catalogues.
+     *
+     *  @param tracers the Cartesian positions of the tracers the search
+     *  reads, [tracer][xyz]; their number is N_t
+     *  @param randoms the Cartesian positions of the randoms the search
+     *  reads, [random][xyz]; their number is N_r, at least 1
+     *  @exception Error, an internal error raised after the loop, if the
+     *  mps lookup fails at a centre, with the otswap error nested, or if
+     *  meshsearch fails, with its error nested
+     */
+    void lightcone_densities (const LightconeGrid& grid, const LightconeBasins& basins,
+                              const std::vector<double>& tracers, const std::vector<double>& randoms,
+                              BasinCatalog& voids, BasinCatalog& overdense);
+
+    /**
      *  @brief The lightcone search every lightcone entry converges into:
      *  the entry checks, the selection and the conversion of what the
      *  search reads.

@@ -783,6 +783,14 @@ bitvf::Result bitvf::internal::runLightcone (const std::vector<double>* tracers,
   BasinCatalog voids, overdense;
   lightcone_basins(lc, adjacency, basins, voids, overdense);
   lightcone_centres(lc, adjacency, basins, distances, voids, overdense);
+  {
+    std::vector<double> read;
+    read.reserve(3 * (entry.nTracers - entry.counts.tracersOutsideMask -
+                      entry.counts.tracersOutsideRedshiftCut - div.nOutsideGrid));
+    for (std::size_t i = 0; i < entry.nTracers; ++i)
+      if (div.cell[i] >= 0) read.insert(read.end(), entry.tracers.begin() + 3*i, entry.tracers.begin() + 3*i + 3);
+    lightcone_densities(lc, basins, read, entry.randoms, voids, overdense);
+  }
 
   throw Error("findVoidsLightcone: the search after the divergence is not implemented yet");
 }
