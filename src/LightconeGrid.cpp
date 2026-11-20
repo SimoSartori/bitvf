@@ -31,6 +31,7 @@
 #include <string>
 #include <vector>
 
+#include "meshsearch/MeshGrid.h"
 #include "otswap/Maths.h"
 
 #include "internal.h"
@@ -540,6 +541,95 @@ std::int64_t bitvf::internal::lightcone_cell_at (const LightconeGrid& grid, cons
 // ============================================================================
 
 
+namespace {
+
+  void radius_lists (const bitvf::internal::LightconeGrid& grid, std::vector<std::int64_t>& first,
+                     std::vector<std::int64_t>& neighbour)
+  {
+    const bitvf::DivergenceGrid& cells = grid.cells;
+    first.assign(cells.nCells + 1, 0);
+    neighbour.clear();
+
+    std::vector<std::int64_t> unmasked;
+    for (std::size_t c = 0; c < cells.nCells; ++c)
+      if (!cells.masked[c]) unmasked.push_back((std::int64_t)c);
+    if (unmasked.empty()) return;
+
+    const std::size_t M = unmasked.size();
+    std::vector<double> X(M), Y(M), Z(M), side(M);
+    double sideMax = 0.;
+    std::vector<std::vector<double>> limits(3, std::vector<double>(2));
+    for (std::size_t m = 0; m < M; ++m) {
+      const std::size_t c = (std::size_t)unmasked[m];
+      X[m] = cells.centre[3*c];
+      Y[m] = cells.centre[3*c+1];
+      Z[m] = cells.centre[3*c+2];
+      side[m] = otswap::maths::cbrt(cells.volume[c]);
+      sideMax = std::max(sideMax, side[m]);
+      const double* x = &cells.centre[3*c];
+      for (std::size_t a = 0; a < 3; ++a) {
+        limits[a][0] = m == 0 ? x[a] : std::min(limits[a][0], x[a]);
+        limits[a][1] = m == 0 ? x[a] : std::max(limits[a][1], x[a]);
+      }
+    }
+    if (!(sideMax > 0.)) return;
+
+    const double rNeigh = 0.5 * (std::sqrt(3.) + 2.);
+    std::unique_ptr<meshsearch::MeshGrid> mesh;
+    try {
+      mesh.reset(new meshsearch::MeshGrid(X, Y, Z, rNeigh * sideMax, limits));
+    }
+    catch (const meshsearch::Error& e) {
+      std::throw_with_nested(bitvf::Error(std::string("lightcone_adjacency: meshsearch: ") + e.what()));
+    }
+
+    std::vector<std::vector<std::int64_t>> list(cells.nCells);
+    constexpr std::int64_t none = std::numeric_limits<std::int64_t>::max();
+    std::int64_t failed = none;
+
+#pragma omp parallel for schedule(dynamic, 64) reduction(min:failed)
+    for (std::int64_t m = 0; m < (std::int64_t)M; ++m) {
+      const std::size_t mm = (std::size_t)m;
+      try {
+        const double reach = rNeigh * 0.5 * (side[mm] + sideMax) * (1. + 1e-9);
+        std::vector<std::int64_t>& out = list[(std::size_t)unmasked[mm]];
+        for (const unsigned int n : mesh->closeObjects((unsigned int)m, reach)) {
+          const double dx = X[mm] - X[n], dy = Y[mm] - Y[n], dz = Z[mm] - Z[n];
+          const double limit = rNeigh * 0.5 * (side[mm] + side[n]);
+          if (dx*dx + dy*dy + dz*dz < limit * limit) out.push_back(unmasked[n]);
+        }
+        std::sort(out.begin(), out.end());
+      }
+      catch (...) {
+        failed = std::min(failed, m);
+      }
+    }
+
+    if (failed != none) {
+      const std::string what = "lightcone_adjacency: the radius search of cell " +
+        std::to_string(unmasked[(std::size_t)failed]) + " (from 0)";
+      try {
+        mesh->closeObjects((unsigned int)failed, rNeigh * sideMax * (1. + 1e-9));
+      }
+      catch (const meshsearch::Error& e) {
+        std::throw_with_nested(bitvf::Error(what + ": meshsearch: " + e.what()));
+      }
+      throw bitvf::Error("internal error: " + what + " failed inside the parallel region");
+    }
+
+    for (std::size_t c = 0; c < cells.nCells; ++c) {
+      first[c + 1] = first[c] + (std::int64_t)list[c].size();
+      neighbour.insert(neighbour.end(), list[c].begin(), list[c].end());
+      std::vector<std::int64_t>().swap(list[c]);
+    }
+  }
+
+}
+
+
+// ============================================================================
+
+
 bitvf::internal::LightconeAdjacency bitvf::internal::lightcone_adjacency (const LightconeGrid& grid)
 {
   const DivergenceGrid& cells = grid.cells;
@@ -618,13 +708,16 @@ bitvf::internal::LightconeAdjacency bitvf::internal::lightcone_adjacency (const 
   }
 
   LightconeAdjacency adjacency;
-  adjacency.first.assign((std::size_t)nCells + 1, 0);
+  adjacency.contactFirst.assign((std::size_t)nCells + 1, 0);
   for (std::int64_t c = 0; c < nCells; ++c)
-    adjacency.first[(std::size_t)c + 1] = adjacency.first[(std::size_t)c] + (std::int64_t)list[(std::size_t)c].size();
-  adjacency.neighbour.reserve((std::size_t)adjacency.first.back());
+    adjacency.contactFirst[(std::size_t)c + 1] =
+      adjacency.contactFirst[(std::size_t)c] + (std::int64_t)list[(std::size_t)c].size();
+  adjacency.contactNeighbour.reserve((std::size_t)adjacency.contactFirst.back());
   for (std::int64_t c = 0; c < nCells; ++c) {
-    adjacency.neighbour.insert(adjacency.neighbour.end(), list[(std::size_t)c].begin(), list[(std::size_t)c].end());
+    adjacency.contactNeighbour.insert(adjacency.contactNeighbour.end(), list[(std::size_t)c].begin(),
+                                      list[(std::size_t)c].end());
     std::vector<std::int64_t>().swap(list[(std::size_t)c]);
   }
+  radius_lists(grid, adjacency.radiusFirst, adjacency.radiusNeighbour);
   return adjacency;
 }

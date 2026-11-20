@@ -1107,36 +1107,50 @@ namespace bitvf {
      */
     LightconeDivergence lightcone_divergence (const LightconeSweep& sweep, LightconeGrid& grid);
 
-    /// The contact adjacency of a lightcone grid, in compressed rows: the
-    /// neighbours of cell c are neighbour[first[c]] to
-    /// neighbour[first[c + 1] - 1], in ascending order; a masked cell has
-    /// none.
+    /// The two neighbour definitions of a lightcone grid, each in compressed
+    /// rows: the neighbours of cell c are contactNeighbour[contactFirst[c]]
+    /// to contactNeighbour[contactFirst[c + 1] - 1], and likewise for the
+    /// radius lists, in ascending order; a masked cell has no list in
+    /// either.
     struct LightconeAdjacency {
 
-      /// [cell + 1]
-      std::vector<std::int64_t> first;
+      /// The contact lists: [cell + 1], and the neighbours of every cell,
+      /// one list after the other. They may hold masked cells.
+      std::vector<std::int64_t> contactFirst, contactNeighbour;
 
-      /// The neighbours of every cell, one list after the other.
-      std::vector<std::int64_t> neighbour;
+      /// The radius lists: [cell + 1], and the neighbours of every cell,
+      /// one list after the other. They hold unmasked cells only.
+      std::vector<std::int64_t> radiusFirst, radiusNeighbour;
     };
 
     /**
-     *  @brief The contact adjacency of a lightcone grid.
+     *  @brief The contact lists and the radius lists of a lightcone grid.
      *
-     *  The window of a cell is its own shell and the shells next to it,
-     *  its declination range widened by 1 % of its width on each side, and
-     *  its right-ascension range widened by 1 % of its width on each side;
-     *  on a full ring the window is also shifted by 2 pi, or by -2 pi,
-     *  where it passes below the ring's first edge or above its last. A
-     *  cell lies in the window when both its ranges overlap the window's,
-     *  touching included. Two distinct cells are adjacent when either lies
-     *  in the window of the other, so the relation is symmetric. Every
-     *  pair is evaluated, masked cells included; the lists of masked cells
-     *  are left empty, and the lists of the others may hold masked cells.
+     *  Contact lists. The window of a cell is its own shell and the shells
+     *  next to it, its declination range widened by 1 % of its width on
+     *  each side, and its right-ascension range widened by 1 % of its
+     *  width on each side; on a full ring the window is also shifted by
+     *  2 pi, or by -2 pi, where it passes below the ring's first edge or
+     *  above its last. A cell lies in the window when both its ranges
+     *  overlap the window's, touching included. Two distinct cells are
+     *  adjacent when either lies in the window of the other, so the
+     *  relation is symmetric. Every pair is evaluated, masked cells
+     *  included; the lists of masked cells are left empty, and the lists of
+     *  the others may hold masked cells.
      *
-     *  Reads only shellFirstRing, ringDecMin, ringDecMax, ringFull,
-     *  ringFirstCell and, of the cells, nCells, cellRaMin, cellRaMax and
-     *  masked. The result is the same with any number of threads.
+     *  Radius lists. With side = cbrt(volume) and r = (sqrt(3) + 2) / 2,
+     *  two distinct cells that are not masked are neighbours when the
+     *  distance between their Cartesian centres is below
+     *  r (side_i + side_j) / 2; the relation is symmetric, and the lists of
+     *  masked cells are empty.
+     *
+     *  Reads shellFirstRing, ringDecMin, ringDecMax, ringFull,
+     *  ringFirstCell and, of the cells, nCells, cellRaMin, cellRaMax,
+     *  masked, centre and volume. The result is the same with any number of
+     *  threads.
+     *
+     *  @exception Error if the search of the radius lists fails, an
+     *  internal error with the meshsearch error nested
      */
     LightconeAdjacency lightcone_adjacency (const LightconeGrid& grid);
 
@@ -1155,9 +1169,9 @@ namespace bitvf {
      *  as DivergenceGrid::weight describes; the weights are left unchanged.
      *
      *  A cell is empty when its nDisplacements is 0 and it is not masked.
-     *  In each pass, every empty cell whose adjacent cells include at least
-     *  three that are not masked and hold a value, a contribution or a
-     *  value filled in an earlier pass, takes the sum of their divergence
+     *  In each pass, every empty cell whose radius neighbours include at least
+     *  three that hold a value, a contribution or a value filled in an
+     *  earlier pass, takes the sum of their divergence
      *  over r^2 divided by the sum of 1 / r^2, r the distance between the
      *  Cartesian centres, summed in ascending cell index; a pass reads only
      *  the values left by the previous one. The passes repeat until one
@@ -1166,7 +1180,8 @@ namespace bitvf {
      *
      *  Reads nDisplacements, masked, centre and divergence of @p grid.
      *
-     *  @param adjacency lightcone_adjacency of the grid
+     *  @param adjacency lightcone_adjacency of the grid; only its radius
+     *  lists are read
      */
     LightconeFill lightcone_fill (const LightconeAdjacency& adjacency, DivergenceGrid& grid);
 

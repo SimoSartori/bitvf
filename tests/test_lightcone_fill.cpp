@@ -19,6 +19,7 @@
  ********************************************************************/
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
@@ -45,7 +46,7 @@ using internal::LightconeGrid;
 
 namespace {
 
-  constexpr std::uint64_t kRecordedHash = 0xfa7fb48ce0ee4800ull;
+  constexpr std::uint64_t kRecordedHash = 0xdf9a98030dc2551aull;
   constexpr double kTwoPi = 2. * 3.14159265358979323846;
 
   const otswap::DistanceTable& table ()
@@ -86,35 +87,88 @@ namespace {
     g.shellFirstRing.push_back((std::int64_t)g.ringDecMin.size());
     cells.nCells = cells.cellRaMin.size();
     cells.masked.assign(cells.nCells, 0);
+    cells.volume.assign(cells.nCells, 1.);
+    for (std::size_t c = 0; c < cells.nCells; ++c) cells.centre.insert(cells.centre.end(), {100. * (double)c, 0., 0.});
     return g;
+  }
+
+  /// Put the cells of a laid-out grid at the given centres, with the given volumes.
+  void place (LightconeGrid& g, const std::vector<std::array<double, 3>>& centres, const std::vector<double>& volumes)
+  {
+    for (std::size_t c = 0; c < centres.size(); ++c) {
+      for (std::size_t a = 0; a < 3; ++a) g.cells.centre[3*c+a] = centres[c][a];
+      g.cells.volume[c] = volumes[c];
+    }
   }
 
   bool lists (const LightconeAdjacency& a, const std::int64_t c, const std::int64_t n)
   {
-    return std::binary_search(a.neighbour.begin() + a.first[(std::size_t)c],
-                              a.neighbour.begin() + a.first[(std::size_t)c + 1], n);
+    return std::binary_search(a.contactNeighbour.begin() + a.contactFirst[(std::size_t)c],
+                              a.contactNeighbour.begin() + a.contactFirst[(std::size_t)c + 1], n);
   }
 
   std::size_t size (const LightconeAdjacency& a, const std::int64_t c)
   {
-    return (std::size_t)(a.first[(std::size_t)c + 1] - a.first[(std::size_t)c]);
+    return (std::size_t)(a.contactFirst[(std::size_t)c + 1] - a.contactFirst[(std::size_t)c]);
+  }
+
+  bool radius_lists (const LightconeAdjacency& a, const std::int64_t c, const std::int64_t n)
+  {
+    return std::binary_search(a.radiusNeighbour.begin() + a.radiusFirst[(std::size_t)c],
+                              a.radiusNeighbour.begin() + a.radiusFirst[(std::size_t)c + 1], n);
   }
 
   /// Every list is ascending, without repeats or the cell itself; masked cells have none; between unmasked
   /// cells the relation is symmetric.
   bool well_formed (const LightconeAdjacency& a, const DivergenceGrid& cells)
   {
-    if (a.first.size() != cells.nCells + 1 || a.first[0] != 0 || a.first.back() != (std::int64_t)a.neighbour.size())
+    if (a.contactFirst.size() != cells.nCells + 1 || a.contactFirst[0] != 0 ||
+        a.contactFirst.back() != (std::int64_t)a.contactNeighbour.size())
       return false;
     for (std::int64_t c = 0; c < (std::int64_t)cells.nCells; ++c) {
       if (cells.masked[(std::size_t)c] && size(a, c) != 0) return false;
-      for (std::int64_t k = a.first[(std::size_t)c]; k < a.first[(std::size_t)c + 1]; ++k) {
-        const std::int64_t n = a.neighbour[(std::size_t)k];
+      for (std::int64_t k = a.contactFirst[(std::size_t)c]; k < a.contactFirst[(std::size_t)c + 1]; ++k) {
+        const std::int64_t n = a.contactNeighbour[(std::size_t)k];
         if (n == c || n < 0 || n >= (std::int64_t)cells.nCells) return false;
-        if (k > a.first[(std::size_t)c] && !(a.neighbour[(std::size_t)k - 1] < n)) return false;
+        if (k > a.contactFirst[(std::size_t)c] && !(a.contactNeighbour[(std::size_t)k - 1] < n)) return false;
         if (!cells.masked[(std::size_t)n] && !lists(a, n, c)) return false;
       }
     }
+    return true;
+  }
+
+  /// Every radius list is ascending, without repeats or the cell itself, and holds unmasked cells only; masked
+  /// cells have none; the relation is symmetric.
+  bool radius_well_formed (const LightconeAdjacency& a, const DivergenceGrid& cells)
+  {
+    if (a.radiusFirst.size() != cells.nCells + 1 || a.radiusFirst[0] != 0 ||
+        a.radiusFirst.back() != (std::int64_t)a.radiusNeighbour.size())
+      return false;
+    for (std::int64_t c = 0; c < (std::int64_t)cells.nCells; ++c) {
+      if (cells.masked[(std::size_t)c] && a.radiusFirst[(std::size_t)c + 1] != a.radiusFirst[(std::size_t)c])
+        return false;
+      for (std::int64_t k = a.radiusFirst[(std::size_t)c]; k < a.radiusFirst[(std::size_t)c + 1]; ++k) {
+        const std::int64_t n = a.radiusNeighbour[(std::size_t)k];
+        if (n == c || n < 0 || n >= (std::int64_t)cells.nCells || cells.masked[(std::size_t)n]) return false;
+        if (k > a.radiusFirst[(std::size_t)c] && !(a.radiusNeighbour[(std::size_t)k - 1] < n)) return false;
+        if (!radius_lists(a, n, c)) return false;
+      }
+    }
+    return true;
+  }
+
+  /// The radius lists by testing every pair of unmasked cells.
+  bool radius_brute_force (const LightconeAdjacency& a, const DivergenceGrid& cells)
+  {
+    const double rNeigh = 0.5 * (std::sqrt(3.) + 2.);
+    for (std::size_t c = 0; c < cells.nCells; ++c)
+      for (std::size_t n = 0; n < cells.nCells; ++n) {
+        if (c == n || cells.masked[c] || cells.masked[n]) continue;
+        const double dx = cells.centre[3*c] - cells.centre[3*n], dy = cells.centre[3*c+1] - cells.centre[3*n+1],
+                     dz = cells.centre[3*c+2] - cells.centre[3*n+2];
+        const double limit = rNeigh * 0.5 * (otswap::maths::cbrt(cells.volume[c]) + otswap::maths::cbrt(cells.volume[n]));
+        if ((dx*dx + dy*dy + dz*dz < limit * limit) != radius_lists(a, (std::int64_t)c, (std::int64_t)n)) return false;
+      }
     return true;
   }
 
@@ -143,7 +197,7 @@ namespace {
     LightconeFill fill ()
     {
       LightconeAdjacency a;
-      a.first.assign(grid.nCells + 1, 0);
+      a.radiusFirst.assign(grid.nCells + 1, 0);
       std::vector<std::vector<std::int64_t>> list(grid.nCells);
       for (const auto& p : pairs) {
         if (!grid.masked[(std::size_t)p.first]) list[(std::size_t)p.first].push_back(p.second);
@@ -151,8 +205,8 @@ namespace {
       }
       for (std::size_t c = 0; c < grid.nCells; ++c) {
         std::sort(list[c].begin(), list[c].end());
-        a.neighbour.insert(a.neighbour.end(), list[c].begin(), list[c].end());
-        a.first[c + 1] = (std::int64_t)a.neighbour.size();
+        a.radiusNeighbour.insert(a.radiusNeighbour.end(), list[c].begin(), list[c].end());
+        a.radiusFirst[c + 1] = (std::int64_t)a.radiusNeighbour.size();
       }
       return internal::lightcone_fill(a, grid);
     }
@@ -177,7 +231,7 @@ namespace {
     record.raMax = e.raMax;
     record.decMin = e.decMin;
     record.decMax = e.decMax;
-    record.cellSizeMps = 2.;
+    record.cellSizeMps = 8.;
     record.mpsProfile.redshift = {0.1, 0.5};
     record.mpsProfile.mps = {5., 6.};
     const otswap::Mask mask(std::vector<double>(12, 1.), otswap::PixelOrdering::Ring);
@@ -212,8 +266,10 @@ namespace {
     const LightconeAdjacency a = internal::lightcone_adjacency(g);
     const LightconeFill f = internal::lightcone_fill(a, cells);
     std::uint64_t h = 0xcbf29ce484222325ull;
-    hash_bytes(h, a.first.data(), a.first.size() * sizeof(std::int64_t));
-    hash_bytes(h, a.neighbour.data(), a.neighbour.size() * sizeof(std::int64_t));
+    hash_bytes(h, a.contactFirst.data(), a.contactFirst.size() * sizeof(std::int64_t));
+    hash_bytes(h, a.contactNeighbour.data(), a.contactNeighbour.size() * sizeof(std::int64_t));
+    hash_bytes(h, a.radiusFirst.data(), a.radiusFirst.size() * sizeof(std::int64_t));
+    hash_bytes(h, a.radiusNeighbour.data(), a.radiusNeighbour.size() * sizeof(std::int64_t));
     hash_bytes(h, cells.divergence.data(), cells.divergence.size() * sizeof(double));
     hash_bytes(h, cells.weight.data(), cells.weight.size() * sizeof(double));
     hash_bytes(h, &f.filled, sizeof f.filled);
@@ -234,7 +290,7 @@ namespace {
     profile.mps = {5., 6.};
     Config config;
     std::ostringstream log;
-    config.smoothing.sigma = 0.;
+    config.divergenceCellSize = 15.;
     config.verbosity = verbosity;
     config.log = &log;
     throws_naming([&] { findVoidsLightcone(tracersSky, displacement, {}, randomsSky, mask, table(), profile, config); },
@@ -293,8 +349,46 @@ int main ()
     const LightconeAdjacency a = internal::lightcone_adjacency(g);
     check(well_formed(a, g.cells), "lists sorted, symmetric among unmasked cells");
     bool maskedListed = false;
-    for (const std::int64_t n : a.neighbour) maskedListed = maskedListed || g.cells.masked[(std::size_t)n];
+    for (const std::int64_t n : a.contactNeighbour) maskedListed = maskedListed || g.cells.masked[(std::size_t)n];
     check(maskedListed, "masked cells appear in the lists");
+  }
+
+  // Two unmasked cells are radius neighbours when their centres are closer than (sqrt(3) + 2) / 2 times the mean of their sides; the bound is strict, scales with the sides, and masked cells are in no list.
+  group("radius neighbours follow the distance bound, the cells' sides and the mask");
+  {
+    const double rNeigh = 0.5 * (std::sqrt(3.) + 2.);
+    LightconeGrid g = layout({{{0., 0.1, false, {0., 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7}}}});
+    place(g, {{0., 0., 0.}, {1.8, 0., 0.}, {0., 1.9, 0.}, {0., 0., 2.7}, {0.5, 0., 0.}, {0., 20., 0.}, {rNeigh, 20., 0.}},
+          {1., 1., 1., 8., 1., 1., 1.});
+    g.cells.masked[4] = 1;
+    const LightconeAdjacency a = internal::lightcone_adjacency(g);
+    check(radius_lists(a, 0, 1) && radius_lists(a, 1, 0), "closer than the bound: neighbours both ways");
+    check(!radius_lists(a, 0, 2), "farther than the bound: not neighbours");
+    check(radius_lists(a, 0, 3) && radius_lists(a, 3, 0), "a cell of side 2 reaches farther");
+    check(!radius_lists(a, 2, 3), "two cells beyond the bound of their sides");
+    check(a.radiusFirst[4] == a.radiusFirst[5], "a masked cell has no list");
+    check(!radius_lists(a, 0, 4) && !radius_lists(a, 1, 4), "a masked cell is in no list");
+    check(!radius_lists(a, 5, 6), "a distance equal to the bound is not a neighbour");
+    check(radius_well_formed(a, g.cells), "lists sorted, symmetric, unmasked cells only");
+  }
+
+  // On a grid as built, with masked cells, the radius lists are exactly the pairs closer than the bound.
+  group("the radius lists of a built grid are those of a search over every pair");
+  {
+    const LightconeGrid g = built_grid();
+    const LightconeAdjacency a = internal::lightcone_adjacency(g);
+    check(radius_well_formed(a, g.cells), "lists sorted, symmetric, unmasked cells only");
+    check(radius_brute_force(a, g.cells), "lists equal the brute-force pairs");
+    check(a.radiusNeighbour.size() > 4 * g.cells.nCells, "cells have several neighbours");
+  }
+
+  // A grid whose cells are all masked has empty lists in both definitions, and no error.
+  group("a grid with every cell masked has no neighbours");
+  {
+    LightconeGrid g = built_grid();
+    std::fill(g.cells.masked.begin(), g.cells.masked.end(), 1);
+    const LightconeAdjacency a = internal::lightcone_adjacency(g);
+    check(a.radiusNeighbour.empty() && a.contactNeighbour.empty(), "no list holds a cell");
   }
 
   // An empty cell with at least three neighbours holding a value takes their mean weighted by 1 / r^2, and keeps a weight of 0; with two it stays empty and ends at 0.
@@ -381,8 +475,8 @@ int main ()
     }
   }
 
-  // The adjacency and the fill of a fixed grid are identical bit for bit with any number of threads and match the recorded hash.
-  group("the adjacency and the fill are the same with 1 and 4 threads, and match the recorded hash");
+  // The lists and the fill of a fixed grid are identical bit for bit with any number of threads and match the recorded hash.
+  group("the lists and the fill are the same with 1 and 4 threads, and match the recorded hash");
   {
 #ifdef _OPENMP
     omp_set_num_threads(1);

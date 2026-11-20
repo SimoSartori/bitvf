@@ -510,8 +510,8 @@ bitvf::internal::LightconeFill bitvf::internal::lightcone_fill (const LightconeA
       const double* x = &grid.centre[3*c];
       double num = 0., den = 0.;
       unsigned sources = 0;
-      for (std::int64_t k = adjacency.first[c]; k < adjacency.first[c + 1]; ++k) {
-        const std::size_t n = (std::size_t)adjacency.neighbour[(std::size_t)k];
+      for (std::int64_t k = adjacency.radiusFirst[c]; k < adjacency.radiusFirst[c + 1]; ++k) {
+        const std::size_t n = (std::size_t)adjacency.radiusNeighbour[(std::size_t)k];
         if (grid.masked[n] || std::isnan(grid.divergence[n])) continue;
         ++sources;
         const double dx = x[0] - grid.centre[3*n], dy = x[1] - grid.centre[3*n+1], dz = x[2] - grid.centre[3*n+2];
