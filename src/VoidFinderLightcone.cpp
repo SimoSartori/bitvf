@@ -771,6 +771,14 @@ bitvf::Result bitvf::internal::runLightcone (const std::vector<double>* tracers,
     }
   }
 
+  const LightconeBasins basins = lightcone_watershed(adjacency, lc.cells);
+  if (report.detailed()) {
+    std::ostringstream out = Report::line();
+    out << "watershed into ";
+    Report::basins(out, basins.voids.seed.size(), basins.overdense.seed.size());
+    report.step(out);
+  }
+
   throw Error("findVoidsLightcone: the search after the divergence is not implemented yet");
 }
 

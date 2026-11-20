@@ -43,18 +43,6 @@
 
 #include "internal.h"
 
-namespace {
-
-  /// The rows of a block of the seed search: blocks of fixed size, so that
-  /// the seeds are gathered in the same order with any number of threads.
-  constexpr std::int64_t kSeedBlockRows = std::int64_t(1) << 16;
-
-}
-
-
-// ============================================================================
-
-
 void bitvf::internal::box_watershed (DivergenceGrid& grid, BoxBasins& basins)
 {
   const std::int64_t nx = (std::int64_t)grid.nCellsAxis[0];

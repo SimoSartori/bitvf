@@ -616,6 +616,10 @@ namespace bitvf {
     /// loop over the cells reaches them, with the same result.
     constexpr std::size_t kPathCells = 4096;
 
+    /// The cells of a block of the seed search: blocks of fixed size, so that
+    /// the seeds are gathered in the same order with any number of threads.
+    constexpr std::int64_t kSeedBlockRows = std::int64_t(1) << 16;
+
     /**
      *  @brief Split a box grid into basins by steepest descent of its
      *  divergence, as BasinCatalog describes.
@@ -1222,6 +1226,40 @@ namespace bitvf {
      *  @param threshold 1e-12 times the largest weight of the grid
      */
     void lightcone_smooth (LightconeGrid& grid, const std::vector<double>& sigmaShell, double threshold);
+
+    /// The voids and the overdense basins of a lightcone grid; only the
+    /// seeds are set.
+    struct LightconeBasins {
+      BasinSet voids;
+      BasinSet overdense;
+    };
+
+    /**
+     *  @brief Split a lightcone grid into basins by steepest descent of its
+     *  divergence.
+     *
+     *  Each cell that is not masked flows to the first of its radius
+     *  neighbours, in ascending cell index, whose divergence is strictly
+     *  below that of the cell and of every neighbour before it; a cell with
+     *  no such neighbour is a seed. A seed below 0 starts a void, one at or
+     *  above 0 an overdense basin; each kind is numbered by ascending seed
+     *  cell index. Every cell that is not masked belongs to the basin its
+     *  flow reaches; a masked cell is in none and takes -1 in voidIndex and
+     *  overdenseIndex, as does a cell in a basin of the other kind. With no
+     *  cell below 0 there is no void, and no error. The result does not
+     *  depend on the number of threads.
+     *
+     *  The field split is divergenceSmoothed when it is not empty,
+     *  otherwise divergence.
+     *
+     *  Reads masked, nCells and those fields, and the radius lists. Writes
+     *  voidIndex and overdenseIndex; of the result only the seeds are set,
+     *  the counts of each BasinSet are left empty.
+     *
+     *  @param adjacency lightcone_adjacency of the grid; only its radius
+     *  lists are read
+     */
+    LightconeBasins lightcone_watershed (const LightconeAdjacency& adjacency, DivergenceGrid& grid);
 
     /**
      *  @brief The lightcone search every lightcone entry converges into:
