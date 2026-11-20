@@ -737,6 +737,15 @@ bitvf::Result bitvf::internal::runLightcone (const std::vector<double>* tracers,
     report.step(out);
   }
 
+  const LightconeAdjacency adjacency = lightcone_adjacency(lc);
+  const LightconeFill fill = lightcone_fill(adjacency, lc.cells);
+  if (report.detailed() || (report.normal() && fill.leftEmpty > 0)) {
+    std::ostringstream out = Report::line();
+    out << "filled " << fill.filled << (fill.filled == 1 ? " cell in " : " cells in ") << fill.passes
+        << (fill.passes == 1 ? " pass, " : " passes, ") << fill.leftEmpty << " left empty";
+    report.step(out);
+  }
+
   throw Error("findVoidsLightcone: the search after the divergence is not implemented yet");
 }
 

@@ -483,3 +483,64 @@ bitvf::internal::LightconeDivergence bitvf::internal::lightcone_divergence (cons
 
   return result;
 }
+
+
+// ============================================================================
+
+
+bitvf::internal::LightconeFill bitvf::internal::lightcone_fill (const LightconeAdjacency& adjacency, DivergenceGrid& grid)
+{
+  LightconeFill result;
+  std::vector<std::int64_t> empty;
+  for (std::size_t c = 0; c < grid.nCells; ++c)
+    if (grid.nDisplacements[c] == 0 && !grid.masked[c]) {
+      empty.push_back((std::int64_t)c);
+      grid.divergence[c] = std::numeric_limits<double>::quiet_NaN();
+    }
+
+  std::vector<double> value(empty.size());
+
+  while (!empty.empty()) {
+    const std::size_t E = empty.size();
+    std::size_t nFilled = 0;
+
+#pragma omp parallel for schedule(dynamic, 64) reduction(+:nFilled)
+    for (std::size_t e = 0; e < E; ++e) {
+      const std::size_t c = (std::size_t)empty[e];
+      const double* x = &grid.centre[3*c];
+      double num = 0., den = 0.;
+      unsigned sources = 0;
+      for (std::int64_t k = adjacency.first[c]; k < adjacency.first[c + 1]; ++k) {
+        const std::size_t n = (std::size_t)adjacency.neighbour[(std::size_t)k];
+        if (grid.masked[n] || std::isnan(grid.divergence[n])) continue;
+        ++sources;
+        const double dx = x[0] - grid.centre[3*n], dy = x[1] - grid.centre[3*n+1], dz = x[2] - grid.centre[3*n+2];
+        const double factor = 1. / (dx*dx + dy*dy + dz*dz);
+        num += grid.divergence[n] * factor;
+        den += factor;
+      }
+      if (sources >= 3) {
+        value[e] = num / den;
+        ++nFilled;
+      }
+      else
+        value[e] = std::numeric_limits<double>::quiet_NaN();
+    }
+
+    if (nFilled == 0) break;
+    ++result.passes;
+    result.filled += nFilled;
+
+    std::size_t kept = 0;
+    for (std::size_t e = 0; e < E; ++e)
+      if (!std::isnan(value[e]))
+        grid.divergence[(std::size_t)empty[e]] = value[e];
+      else
+        empty[kept++] = empty[e];
+    empty.resize(kept);
+  }
+
+  for (const std::int64_t c : empty) grid.divergence[(std::size_t)c] = 0.;
+  result.leftEmpty = empty.size();
+  return result;
+}

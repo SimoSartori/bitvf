@@ -1107,6 +1107,69 @@ namespace bitvf {
      */
     LightconeDivergence lightcone_divergence (const LightconeSweep& sweep, LightconeGrid& grid);
 
+    /// The contact adjacency of a lightcone grid, in compressed rows: the
+    /// neighbours of cell c are neighbour[first[c]] to
+    /// neighbour[first[c + 1] - 1], in ascending order; a masked cell has
+    /// none.
+    struct LightconeAdjacency {
+
+      /// [cell + 1]
+      std::vector<std::int64_t> first;
+
+      /// The neighbours of every cell, one list after the other.
+      std::vector<std::int64_t> neighbour;
+    };
+
+    /**
+     *  @brief The contact adjacency of a lightcone grid.
+     *
+     *  The window of a cell is its own shell and the shells next to it,
+     *  its declination range widened by 1 % of its width on each side, and
+     *  its right-ascension range widened by 1 % of its width on each side;
+     *  on a full ring the window is also shifted by 2 pi, or by -2 pi,
+     *  where it passes below the ring's first edge or above its last. A
+     *  cell lies in the window when both its ranges overlap the window's,
+     *  touching included. Two distinct cells are adjacent when either lies
+     *  in the window of the other, so the relation is symmetric. Every
+     *  pair is evaluated, masked cells included; the lists of masked cells
+     *  are left empty, and the lists of the others may hold masked cells.
+     *
+     *  Reads only shellFirstRing, ringDecMin, ringDecMax, ringFull,
+     *  ringFirstCell and, of the cells, nCells, cellRaMin, cellRaMax and
+     *  masked. The result is the same with any number of threads.
+     */
+    LightconeAdjacency lightcone_adjacency (const LightconeGrid& grid);
+
+    /// What the fill of a lightcone grid did.
+    struct LightconeFill {
+
+      /// The cells filled, and the empty cells no pass could fill.
+      std::size_t filled = 0, leftEmpty = 0;
+
+      /// The passes that filled at least one cell; 0 with no empty cell.
+      unsigned passes = 0;
+    };
+
+    /**
+     *  @brief Fill the divergence of the empty cells of a lightcone grid,
+     *  as DivergenceGrid::weight describes; the weights are left unchanged.
+     *
+     *  A cell is empty when its nDisplacements is 0 and it is not masked.
+     *  In each pass, every empty cell whose adjacent cells include at least
+     *  three that are not masked and hold a value, a contribution or a
+     *  value filled in an earlier pass, takes the sum of their divergence
+     *  over r^2 divided by the sum of 1 / r^2, r the distance between the
+     *  Cartesian centres, summed in ascending cell index; a pass reads only
+     *  the values left by the previous one. The passes repeat until one
+     *  fills no cell; the cells then left empty get a divergence of 0. The
+     *  result is the same with any number of threads.
+     *
+     *  Reads nDisplacements, masked, centre and divergence of @p grid.
+     *
+     *  @param adjacency lightcone_adjacency of the grid
+     */
+    LightconeFill lightcone_fill (const LightconeAdjacency& adjacency, DivergenceGrid& grid);
+
     /**
      *  @brief The lightcone search every lightcone entry converges into:
      *  the entry checks, the selection and the conversion of what the

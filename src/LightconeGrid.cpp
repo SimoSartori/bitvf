@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <cstring>
 #include <exception>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <sstream>
@@ -533,4 +534,97 @@ std::int64_t bitvf::internal::lightcone_cell_at (const LightconeGrid& grid, cons
   double distance = 0., ra = 0., dec = 0.;
   lightcone_sky(x, distance, ra, dec);
   return lightcone_cell(grid, distance, ra, dec);
+}
+
+
+// ============================================================================
+
+
+bitvf::internal::LightconeAdjacency bitvf::internal::lightcone_adjacency (const LightconeGrid& grid)
+{
+  const DivergenceGrid& cells = grid.cells;
+  const std::int64_t nCells = (std::int64_t)cells.nCells;
+  const std::int64_t nShells = (std::int64_t)grid.shellFirstRing.size() - 1;
+  const std::int64_t nRings = (std::int64_t)grid.ringDecMin.size();
+
+  std::vector<std::int64_t> ringShell((std::size_t)nRings), cellRing((std::size_t)nCells);
+  for (std::int64_t i = 0; i < nShells; ++i)
+    for (std::int64_t r = grid.shellFirstRing[(std::size_t)i]; r < grid.shellFirstRing[(std::size_t)i + 1]; ++r)
+      ringShell[(std::size_t)r] = i;
+  for (std::int64_t r = 0; r < nRings; ++r)
+    for (std::int64_t c = grid.ringFirstCell[(std::size_t)r]; c < grid.ringFirstCell[(std::size_t)r + 1]; ++c)
+      cellRing[(std::size_t)c] = r;
+
+  std::vector<std::vector<std::int64_t>> list((std::size_t)nCells);
+
+#pragma omp parallel for schedule(dynamic, 64)
+  for (std::int64_t c = 0; c < nCells; ++c) {
+    const std::size_t cc = (std::size_t)c;
+    const std::size_t r = (std::size_t)cellRing[cc];
+    const std::int64_t i = ringShell[r];
+    const double tolDec = 0.01 * (grid.ringDecMax[r] - grid.ringDecMin[r]);
+    const double decLo = grid.ringDecMin[r] - tolDec, decHi = grid.ringDecMax[r] + tolDec;
+    const double tolRa = 0.01 * (cells.cellRaMax[cc] - cells.cellRaMin[cc]);
+    const double raLo = cells.cellRaMin[cc] - tolRa, raHi = cells.cellRaMax[cc] + tolRa;
+    std::vector<std::int64_t>& out = list[cc];
+
+    auto scan = [&] (const std::int64_t ring, const double lo, const double hi) {
+      const auto begin = cells.cellRaMax.begin() + grid.ringFirstCell[(std::size_t)ring];
+      const auto end = cells.cellRaMax.begin() + grid.ringFirstCell[(std::size_t)ring + 1];
+      for (std::int64_t n = std::lower_bound(begin, end, lo) - cells.cellRaMax.begin();
+           n < grid.ringFirstCell[(std::size_t)ring + 1] && cells.cellRaMin[(std::size_t)n] <= hi; ++n)
+        if (n != c) out.push_back(n);
+    };
+
+    for (std::int64_t ni = std::max<std::int64_t>(0, i - 1); ni <= std::min(nShells - 1, i + 1); ++ni) {
+      const auto begin = grid.ringDecMax.begin() + grid.shellFirstRing[(std::size_t)ni];
+      const std::int64_t last = grid.shellFirstRing[(std::size_t)ni + 1];
+      for (std::int64_t nr = std::lower_bound(begin, grid.ringDecMax.begin() + last, decLo) - grid.ringDecMax.begin();
+           nr < last && grid.ringDecMin[(std::size_t)nr] <= decHi; ++nr) {
+        scan(nr, raLo, raHi);
+        if (grid.ringFull[(std::size_t)nr]) {
+          const double front = cells.cellRaMin[(std::size_t)grid.ringFirstCell[(std::size_t)nr]];
+          const double back = cells.cellRaMax[(std::size_t)grid.ringFirstCell[(std::size_t)nr + 1] - 1];
+          if (raLo < front) scan(nr, raLo + kTwoPi, raHi + kTwoPi);
+          if (raHi > back) scan(nr, raLo - kTwoPi, raHi - kTwoPi);
+        }
+      }
+    }
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+  }
+
+  std::vector<std::int64_t> reverseFirst((std::size_t)nCells + 1, 0);
+  for (std::int64_t c = 0; c < nCells; ++c)
+    for (const std::int64_t n : list[(std::size_t)c]) ++reverseFirst[(std::size_t)n + 1];
+  for (std::int64_t c = 0; c < nCells; ++c) reverseFirst[(std::size_t)c + 1] += reverseFirst[(std::size_t)c];
+  std::vector<std::int64_t> reverse((std::size_t)reverseFirst.back());
+  {
+    std::vector<std::int64_t> next(reverseFirst.begin(), reverseFirst.end() - 1);
+    for (std::int64_t c = 0; c < nCells; ++c)
+      for (const std::int64_t n : list[(std::size_t)c]) reverse[(std::size_t)next[(std::size_t)n]++] = c;
+  }
+
+#pragma omp parallel for schedule(dynamic, 64)
+  for (std::int64_t c = 0; c < nCells; ++c) {
+    const std::size_t cc = (std::size_t)c;
+    std::vector<std::int64_t> joined;
+    if (!cells.masked[cc]) {
+      joined.reserve(list[cc].size() + (std::size_t)(reverseFirst[cc + 1] - reverseFirst[cc]));
+      std::set_union(list[cc].begin(), list[cc].end(), reverse.begin() + reverseFirst[cc],
+                     reverse.begin() + reverseFirst[cc + 1], std::back_inserter(joined));
+    }
+    list[cc].swap(joined);
+  }
+
+  LightconeAdjacency adjacency;
+  adjacency.first.assign((std::size_t)nCells + 1, 0);
+  for (std::int64_t c = 0; c < nCells; ++c)
+    adjacency.first[(std::size_t)c + 1] = adjacency.first[(std::size_t)c] + (std::int64_t)list[(std::size_t)c].size();
+  adjacency.neighbour.reserve((std::size_t)adjacency.first.back());
+  for (std::int64_t c = 0; c < nCells; ++c) {
+    adjacency.neighbour.insert(adjacency.neighbour.end(), list[(std::size_t)c].begin(), list[(std::size_t)c].end());
+    std::vector<std::int64_t>().swap(list[(std::size_t)c]);
+  }
+  return adjacency;
 }
