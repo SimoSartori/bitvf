@@ -73,8 +73,7 @@ namespace {
 
     void cartesian () const
     {
-      findVoidsLightcone(tracers, tracersSky, displacement, valid, randoms, randomsSky, mask, distances, profile,
-                         config, cut, ids);
+      findVoidsLightconeFromCartesian(tracers, displacement, valid, randoms, mask, distances, profile, config, cut, ids);
     }
   };
 
@@ -87,6 +86,11 @@ namespace {
   void fails_sky (const Case& c, const std::string& text, const std::string& what)
   {
     throws_naming([&] { c.sky(); }, text, what);
+  }
+
+  void fails_cartesian (const Case& c, const std::string& text, const std::string& what)
+  {
+    throws_naming([&] { c.cartesian(); }, text, what);
   }
 
   struct FromResult {
@@ -165,7 +169,7 @@ int main ()
   }
 
   // Empty position arrays are refused for tracers and for randoms.
-  group("an empty array of sky positions is refused");
+  group("an empty array of positions is refused");
   {
     Case c;
     c.tracersSky.clear();
@@ -173,6 +177,12 @@ int main ()
     Case r;
     r.randomsSky.clear();
     fails_sky(r, "findVoidsLightcone: randomsSky is empty", "empty randomsSky");
+    Case t;
+    t.tracers.clear();
+    fails_cartesian(t, "findVoidsLightcone: tracers is empty", "empty tracers");
+    Case s;
+    s.randoms.clear();
+    fails_cartesian(s, "findVoidsLightcone: randoms is empty", "empty randoms");
   }
 
   // Position arrays whose length is not a multiple of 3 are refused.
@@ -184,6 +194,12 @@ int main ()
     Case r;
     r.randomsSky.pop_back();
     fails_sky(r, "findVoidsLightcone: randomsSky holds 23 entries; it must hold 3 per object", "randomsSky size");
+    Case t;
+    t.tracers.pop_back();
+    fails_cartesian(t, "findVoidsLightcone: tracers holds 11 entries; it must hold 3 per object", "tracers size");
+    Case s;
+    s.randoms.push_back(0.);
+    fails_cartesian(s, "findVoidsLightcone: randoms holds 25 entries; it must hold 3 per object", "randoms size");
   }
 
   // Non-finite angles or redshifts and declinations outside [-pi/2, pi/2] are refused on every row, even rows the cut would drop.
@@ -205,19 +221,6 @@ int main ()
     m.cut.min = 0.35;
     m.tracersSky[0] = kNaN;
     fails_sky(m, "the sky positions of the tracers hold a non-finite value for object 0 (from 0), component 0", "row outside the cut");
-  }
-
-  // Cartesian arrays must hold one position per object of the sky arrays.
-  group("the Cartesian arrays must match the sky arrays in size");
-  {
-    Case c;
-    c.tracers.pop_back();
-    throws_naming([&] { c.cartesian(); }, "findVoidsLightcone: tracers holds 11 entries for 4 objects in tracersSky",
-                  "tracers size");
-    Case r;
-    r.randoms.push_back(0.);
-    throws_naming([&] { r.cartesian(); }, "findVoidsLightcone: randoms holds 25 entries for 8 objects in randomsSky",
-                  "randoms size");
   }
 
   // Displacements must be a whole number of realizations of the tracers, and validity flags must be 0 or 1 and fit them.
@@ -302,35 +305,70 @@ int main ()
   }
 
   // Rows used by the search must lie inside the distance table; rows masked or cut away are never read.
-  group("a kept row with a redshift outside the distance table is refused; rows left out are not read");
+  group("a kept sky row with a redshift outside the distance table is refused; rows left out are not read");
   {
     Case c;
     c.tracersSky[2] = 3.;
-    fails(c, "the sky positions of the tracers hold a redshift of 3 for object 0 (from 0), outside the distance table [0, 2]", "tracer redshift");
+    fails_sky(c, "the sky positions of the tracers hold a redshift of 3 for object 0 (from 0), outside the distance table [0, 2]", "tracer redshift");
     Case r;
     r.randomsSky[8] = -0.5;
-    fails(r, "the sky positions of the randoms hold a redshift of -0.5 for object 2 (from 0), outside the distance table [0, 2]", "random redshift");
+    fails_sky(r, "the sky positions of the randoms hold a redshift of -0.5 for object 2 (from 0), outside the distance table [0, 2]", "random redshift");
     Case m;
     m.tracersSky[2] = 3.;
     m.cut.max = 1.;
-    fails(m, "not implemented yet", "tracer outside the cut is not read");
+    fails_sky(m, "not implemented yet", "tracer outside the cut is not read");
   }
 
-  // Rows used by the search must have finite Cartesian coordinates; masked or cut rows may hold NaN.
-  group("a kept Cartesian row that is not finite is refused; rows left out may hold NaN");
+  // Cartesian positions must be finite on every row, even rows the mask or the cut would drop, and are checked before any is converted.
+  group("a Cartesian row that is not finite is refused on any row, before any conversion");
   {
     Case c;
     c.tracers[4] = kNaN;
-    throws_naming([&] { c.cartesian(); }, "the tracers hold a non-finite value for object 1 (from 0), component 1",
-                  "tracers NaN");
+    fails_cartesian(c, "the tracers hold a non-finite value for object 1 (from 0), component 1", "tracers NaN");
     Case r;
     r.randoms[17] = kInf;
-    throws_naming([&] { r.cartesian(); }, "the randoms hold a non-finite value for object 5 (from 0), component 2",
-                  "randoms inf");
+    fails_cartesian(r, "the randoms hold a non-finite value for object 5 (from 0), component 2", "randoms inf");
     Case m;
     m.cut.min = 0.28;
     m.tracers[9] = kNaN;
-    throws_naming([&] { m.cartesian(); }, "not implemented yet", "tracer outside the cut may hold NaN");
+    fails_cartesian(m, "the tracers hold a non-finite value for object 3 (from 0), component 0",
+                    "tracer outside the cut may not hold NaN");
+    Case o;
+    o.tracers[0] = o.tracers[1] = o.tracers[2] = 0.;
+    o.randoms[5] = kNaN;
+    fails_cartesian(o, "the randoms hold a non-finite value for object 1 (from 0), component 2",
+                    "finiteness of the randoms before the tracers' conversion");
+  }
+
+  // A Cartesian position at the observer has no sky position and is refused, naming the object.
+  group("a Cartesian row at the origin is refused");
+  {
+    Case c;
+    c.tracers[6] = c.tracers[7] = c.tracers[8] = 0.;
+    fails_cartesian(c, "the tracers hold object 2 (from 0) at the origin, the observer's position, which has no sky "
+                       "position", "tracer at the origin");
+    Case r;
+    r.randoms[21] = r.randoms[22] = r.randoms[23] = 0.;
+    fails_cartesian(r, "the randoms hold object 7 (from 0) at the origin", "random at the origin");
+  }
+
+  // Every Cartesian row must lie within the distance table, even rows the cut would drop, since its sky position decides.
+  group("a Cartesian row at a distance outside the distance table is refused on any row");
+  {
+    const double dMax = Case().distances.distance().back();
+    Case f;
+    f.tracers = {1., 0., 0.,  2. * dMax, 0., 0.,  0., 1., 0.,  0., 0., 1.};
+    f.cut.max = 0.5;
+    std::ostringstream text;
+    text.precision(17);
+    text << "the tracers hold a distance of " << 2. * dMax << " for object 1 (from 0), outside the distance table [0, "
+         << dMax << "]";
+    fails_cartesian(f, text.str(), "tracer beyond the table, outside the cut");
+    Case r;
+    r.randoms[12] = 3. * dMax;
+    r.randoms[13] = r.randoms[14] = 0.;
+    fails_cartesian(r, "the randoms hold a distance of", "random beyond the table");
+    fails_cartesian(r, "for object 4 (from 0), outside the distance table [0, ", "random beyond the table, object");
   }
 
   // Valid displacements of used tracers must be finite; invalid ones and those of dropped tracers are never read.

@@ -834,22 +834,27 @@ namespace bitvf {
     std::int64_t lightcone_cell (const LightconeGrid& grid, double distance, double ra, double dec);
 
     /**
-     *  @brief The lightcone search both array overloads of
-     *  findVoidsLightcone converge into: the entry checks, the selection
-     *  and the conversion of what the search reads.
+     *  @brief The lightcone search every lightcone entry converges into:
+     *  the entry checks, the selection and the conversion of what the
+     *  search reads.
      *
      *  @param tracers the Cartesian positions of the tracers, or null to
      *  convert the kept rows of tracersSky with otswap::toCartesian
-     *  @param randoms as tracers, for the randoms
+     *  @param tracersSky the sky positions of the tracers; ignored, and
+     *  computed from tracers with otswap::toSky, when randoms is not null
+     *  @param randoms the Cartesian positions of the randoms, or null to
+     *  convert the kept rows of randomsSky with otswap::toCartesian; when
+     *  not null, the sky positions of tracers and randoms are computed
+     *  from the Cartesian ones and randomsSky is ignored
      *  @param reconstruction the result the other arrays come from, already
-     *  checked for consistency, or null for the array overloads; its
+     *  checked for consistency, or null for the array entries; its
      *  outsideMask and outsideRedshiftCut flags then leave tracers out, and
      *  its profile is not read with a grid
      *  @param grid a grid to reuse, or null to build one from the kept
      *  tracers and randoms. Its distance, right-ascension and declination
      *  ranges, cellSizeMps and mpsProfile define the cells, rebuilt with
      *  the call's distance table and mask; its nCells must equal the
-     *  rebuilt count, and in the array overloads its profile must equal
+     *  rebuilt count, and in the array entries its profile must equal
      *  mps in redshift and mps, bit for bit. Every other field is ignored.
      *  @exception Error on every case of the entry of findVoidsLightcone
      *  and of the grid; once the grid is built, always, since the search
@@ -925,25 +930,48 @@ namespace bitvf {
                              const DivergenceGrid* grid = nullptr);
 
   /**
-   *  @brief As the overload above, with Cartesian positions given beside
-   *  the sky ones; nothing checks that the two agree.
+   *  @brief As findVoidsLightcone from sky positions, with the tracers and
+   *  randoms given as Cartesian positions, the observer at the origin.
+   *  Declared here until the pipeline runs end to end; it then moves to
+   *  VoidFinder.h.
+   *
+   *  The sky coordinates of every row are computed first with
+   *  otswap::toSky and the distance table given: the right ascension
+   *  folded into [0, 2 pi), the declination, and the redshift at the
+   *  row's distance from the origin. They alone decide the mask, the
+   *  redshift cut and the cell of every tracer and random; the Cartesian
+   *  positions are those the displacements start from. A position and its
+   *  sky coordinates can then disagree on a cell only by rounding, for a
+   *  point within rounding of a cell edge.
+   *
+   *  Every row must be finite, must not lie at the origin, and must lie
+   *  within the distance table, rows on unobserved pixels or outside the
+   *  cut included, since its sky coordinates decide whether it is kept. A
+   *  table covering a wider redshift range than the catalogue's is a safe
+   *  choice.
+   *
+   *  @param tracers 3 per tracer, x, y, z, in the unit of the distance
+   *  table
+   *  @param randoms as tracers, for the randoms; required
+   *  @exception Error as findVoidsLightcone from sky positions, and if a
+   *  row of tracers or randoms is not finite, lies at the origin, or lies
+   *  at a distance outside the distance table; the message names the
+   *  object
    */
-  Result findVoidsLightcone (const std::vector<double>& tracers,
-                             const std::vector<double>& tracersSky,
-                             const std::vector<double>& displacement,
-                             const std::vector<std::uint8_t>& valid,
-                             const std::vector<double>& randoms,
-                             const std::vector<double>& randomsSky,
-                             const otswap::Mask& mask,
-                             const otswap::DistanceTable& distances,
-                             const otswap::MpsProfile& mps,
-                             const Config& config,
-                             const otswap::RedshiftCut& redshiftCut = {},
-                             const std::vector<std::int64_t>& ids = {},
-                             const DivergenceGrid* grid = nullptr);
+  Result findVoidsLightconeFromCartesian (const std::vector<double>& tracers,
+                                          const std::vector<double>& displacement,
+                                          const std::vector<std::uint8_t>& valid,
+                                          const std::vector<double>& randoms,
+                                          const otswap::Mask& mask,
+                                          const otswap::DistanceTable& distances,
+                                          const otswap::MpsProfile& mps,
+                                          const Config& config,
+                                          const otswap::RedshiftCut& redshiftCut = {},
+                                          const std::vector<std::int64_t>& ids = {},
+                                          const DivergenceGrid* grid = nullptr);
 
   /**
-   *  @brief As the overloads above, from a lightcone reconstruction: its
+   *  @brief As the functions above, from a lightcone reconstruction: its
    *  tracers, tracersSky, displacement, valid, ids, distance table and,
    *  without a grid, its mps profile.
    *

@@ -66,6 +66,7 @@ namespace {
     Selection tracerSelection;
     Selection randomSelection;
     std::size_t nRandoms = 0;
+    std::size_t nRandomsGiven = 0;
     double maxDisplacement = 0.;
     bitvf::Counts counts;
   };
@@ -97,6 +98,46 @@ namespace {
                            : fromResult + ": the reconstruction's tracersSky holds a declination of " +
                              num(sky[3*i+1]) + " radians for object " + std::to_string(i) +
                              " (from 0); it must lie in [-pi/2, pi/2]");
+    }
+  }
+
+  void check_finite_rows (const std::vector<double>& xyz, const std::string& plural)
+  {
+    for (std::size_t i = 0; i < xyz.size() / 3; ++i)
+      for (std::size_t k = 0; k < 3; ++k)
+        if (!std::isfinite(xyz[3*i+k]))
+          throw bitvf::Error("the " + plural + " hold a non-finite value for object " + std::to_string(i) +
+                             " (from 0), component " + std::to_string(k));
+  }
+
+  std::vector<double> sky_of (const std::vector<double>& xyz, const std::string& plural,
+                              const otswap::DistanceTable& distances)
+  {
+    for (std::size_t i = 0; i < xyz.size() / 3; ++i)
+      if (xyz[3*i] == 0. && xyz[3*i+1] == 0. && xyz[3*i+2] == 0.)
+        throw bitvf::Error("the " + plural + " hold object " + std::to_string(i) +
+                           " (from 0) at the origin, the observer's position, which has no sky position");
+    try {
+      return otswap::toSky(xyz, distances);
+    }
+    catch (const otswap::Error& e) {
+      const std::vector<double>& table = distances.distance();
+      for (std::size_t i = 0; i < xyz.size() / 3; ++i) {
+        const std::vector<double> row {xyz[3*i], xyz[3*i+1], xyz[3*i+2]};
+        bool outside = false;
+        try {
+          otswap::toSky(row, distances);
+        }
+        catch (const otswap::Error&) {
+          outside = true;
+        }
+        if (outside)
+          throw bitvf::Error("the " + plural + " hold a distance of " +
+                             num(std::sqrt(row[0]*row[0] + row[1]*row[1] + row[2]*row[2])) + " for object " +
+                             std::to_string(i) + " (from 0), outside the distance table [" + num(table.front()) +
+                             ", " + num(table.back()) + "]");
+      }
+      std::throw_with_nested(bitvf::Error(std::string("otswap: ") + e.what()));
     }
   }
 
@@ -231,9 +272,8 @@ namespace {
     return selection;
   }
 
-  void check_usable (const std::vector<double>& sky, const std::vector<double>* cartesian, const Selection& selection,
-                     const otswap::DistanceTable& distances, const std::string& plural,
-                     const std::string& fromResult)
+  void check_usable (const std::vector<double>& sky, const Selection& selection,
+                     const otswap::DistanceTable& distances, const std::string& plural)
   {
     const double lo = distances.minRedshift(), hi = distances.maxRedshift();
     for (std::size_t i = 0; i < sky.size() / 3; ++i) {
@@ -242,17 +282,6 @@ namespace {
       if (!(z >= lo && z <= hi))
         throw bitvf::Error("the sky positions of the " + plural + " hold a redshift of " + num(z) + " for object " +
                            std::to_string(i) + " (from 0), outside the distance table [" + num(lo) + ", " + num(hi) + "]");
-    }
-    if (cartesian == nullptr) return;
-    for (std::size_t i = 0; i < sky.size() / 3; ++i) {
-      if (!selection.inMask[i] || !selection.inCut[i]) continue;
-      for (std::size_t k = 0; k < 3; ++k)
-        if (!std::isfinite((*cartesian)[3*i+k]))
-          throw bitvf::Error(fromResult.empty()
-                             ? "the " + plural + " hold a non-finite value for object " + std::to_string(i) +
-                               " (from 0), component " + std::to_string(k)
-                             : fromResult + ": the reconstruction's tracers hold a non-finite value for object " +
-                               std::to_string(i) + " (from 0), component " + std::to_string(k));
     }
   }
 
@@ -350,17 +379,21 @@ namespace {
   {
     using bitvf::Error;
 
-    const std::size_t N = check_sky(tracersSky, "tracersSky", fn);
-    const std::size_t M = check_sky(randomsSky, "randomsSky", fn);
-
-    if (randoms != nullptr) {
-      if (tracers->size() != tracersSky.size())
-        throw Error(fn + ": tracers holds " + std::to_string(tracers->size()) + " entries for " +
-                    std::to_string(N) + " objects in tracersSky");
-      if (randoms->size() != randomsSky.size())
-        throw Error(fn + ": randoms holds " + std::to_string(randoms->size()) + " entries for " +
-                    std::to_string(M) + " objects in randomsSky");
+    const bool cartesian = randoms != nullptr;
+    std::vector<double> tracersConverted, randomsConverted;
+    if (cartesian) {
+      check_sky(*tracers, "tracers", fn);
+      check_sky(*randoms, "randoms", fn);
+      check_finite_rows(*tracers, "tracers");
+      check_finite_rows(*randoms, "randoms");
+      tracersConverted = sky_of(*tracers, "tracers", distances);
+      randomsConverted = sky_of(*randoms, "randoms", distances);
     }
+    const std::vector<double>& tSky = cartesian ? tracersConverted : tracersSky;
+    const std::vector<double>& rSky = cartesian ? randomsConverted : randomsSky;
+
+    const std::size_t N = check_sky(tSky, "tracersSky", fn);
+    const std::size_t M = check_sky(rSky, "randomsSky", fn);
 
     const std::size_t R = withDisplacement ? bitvf::internal::check_displacement_shape(displacement, valid, N, fn) : 0;
 
@@ -377,15 +410,16 @@ namespace {
       if (rec == nullptr) compare_profiles(mps, grid->mpsProfile, fn);
     }
 
-    check_sky_rows(tracersSky, "tracers", rec == nullptr ? "" : fn);
-    check_sky_rows(randomsSky, "randoms", "");
+    check_sky_rows(tSky, "tracers", rec == nullptr ? "" : fn);
+    check_sky_rows(rSky, "randoms", "");
 
     Entry entry;
     entry.nTracers = N;
     entry.nRealizations = (unsigned)R;
-    entry.tracersSky = tracersSky;
+    entry.nRandomsGiven = M;
+    entry.tracersSky = tSky;
     fold_right_ascension(entry.tracersSky);
-    std::vector<double> randomsFolded = randomsSky;
+    std::vector<double> randomsFolded = rSky;
     fold_right_ascension(randomsFolded);
 
     if (rec == nullptr) entry.tracerSelection = select_rows(entry.tracersSky, mask, cut);
@@ -405,11 +439,18 @@ namespace {
     }
     entry.randomSelection = select_rows(randomsFolded, mask, cut);
 
-    check_usable(entry.tracersSky, tracers, entry.tracerSelection, distances, "tracers",
-                 rec == nullptr ? "" : fn);
-    check_usable(randomsFolded, randoms, entry.randomSelection, distances, "randoms", "");
-
     const Selection& ts = entry.tracerSelection;
+    check_usable(entry.tracersSky, ts, distances, "tracers");
+    if (rec != nullptr)
+      for (std::size_t i = 0; i < N; ++i) {
+        if (!ts.inMask[i] || !ts.inCut[i]) continue;
+        for (std::size_t k = 0; k < 3; ++k)
+          if (!std::isfinite((*tracers)[3*i+k]))
+            throw Error(fn + ": the reconstruction's tracers hold a non-finite value for object " +
+                        std::to_string(i) + " (from 0), component " + std::to_string(k));
+      }
+    check_usable(randomsFolded, entry.randomSelection, distances, "randoms");
+
     const std::int64_t rows = (std::int64_t)(R * N);
     std::size_t nValid = 0, nRead = 0, firstNonFinite = kNone;
     double maxDisplacement = 0.;
@@ -507,7 +548,7 @@ namespace {
     return entry;
   }
 
-  bitvf::internal::LightconeGrid entry_grid (Entry& entry, const std::size_t M, const otswap::Mask& mask,
+  bitvf::internal::LightconeGrid entry_grid (Entry& entry, const otswap::Mask& mask,
                                              const otswap::DistanceTable& distances, const otswap::MpsProfile& mps,
                                              const std::optional<double>& divergenceCellSize,
                                              const bitvf::DivergenceGrid* grid, const std::string& fn,
@@ -603,8 +644,9 @@ namespace {
     entry.counts.randomsOutsideGrid = outsideGrid;
     const Selection& rs = entry.randomSelection;
     if (entry.nRandoms == 0)
-      throw Error("no random is left: of " + std::to_string(M) + " randoms, " + left_out(rs.outsideMask, rs.outsideCut) +
-                  ", " + std::to_string(outsideGrid) + (grid == nullptr ? " outside the grid" : " outside the reused grid"));
+      throw Error("no random is left: of " + std::to_string(entry.nRandomsGiven) + " randoms, " +
+                  left_out(rs.outsideMask, rs.outsideCut) + ", " + std::to_string(outsideGrid) +
+                  (grid == nullptr ? " outside the grid" : " outside the reused grid"));
     if (entry.nRandoms > std::numeric_limits<unsigned>::max())
       throw Error("the search reads " + std::to_string(entry.nRandoms) + " randoms, more than " +
                   std::to_string(std::numeric_limits<unsigned>::max()) +
@@ -666,7 +708,7 @@ bitvf::Result bitvf::internal::runLightcone (const std::vector<double>* tracers,
   Report report(config.verbosity, config.log);
   Entry entry = check_entry(tracers, tracersSky, displacement, valid, randoms, randomsSky, mask, distances,
                             mps, config, redshiftCut, ids, grid, reconstruction, fn, true, report);
-  const LightconeGrid lc = entry_grid(entry, randomsSky.size() / 3, mask, distances, mps, config.divergenceCellSize,
+  const LightconeGrid lc = entry_grid(entry, mask, distances, mps, config.divergenceCellSize,
                                       grid, fn, report);
   throw Error("findVoidsLightcone: the search after the grid is not implemented yet");
 }
@@ -687,7 +729,7 @@ bitvf::DivergenceGrid bitvf::lightconeGrid (const otswap::Result& reconstruction
   internal::Report report(config.verbosity, nullptr);
   Entry entry = check_entry(&rec.tracers, rec.tracersSky, rec.displacement, rec.valid, nullptr, randomsSky, mask,
                             *rec.distances, rec.mpsProfile, config, cut, rec.ids, nullptr, &rec, fn, true, report);
-  const internal::LightconeGrid lc = entry_grid(entry, randomsSky.size() / 3, mask, *rec.distances, rec.mpsProfile,
+  const internal::LightconeGrid lc = entry_grid(entry, mask, *rec.distances, rec.mpsProfile,
                                                 divergenceCellSize, nullptr, fn, report);
   return defining_fields(lc.cells);
 }
@@ -708,7 +750,7 @@ bitvf::DivergenceGrid bitvf::lightconeGrid (const std::vector<double>& tracersSk
   internal::Report report(config.verbosity, nullptr);
   Entry entry = check_entry(nullptr, tracersSky, {}, {}, nullptr, randomsSky, mask, distances, mps, config,
                             redshiftCut, {}, nullptr, nullptr, fn, false, report);
-  const internal::LightconeGrid lc = entry_grid(entry, randomsSky.size() / 3, mask, distances, mps,
+  const internal::LightconeGrid lc = entry_grid(entry, mask, distances, mps,
                                                 config.divergenceCellSize, nullptr, fn, report);
   return defining_fields(lc.cells);
 }
@@ -729,16 +771,17 @@ bitvf::Result bitvf::findVoidsLightcone (const std::vector<double>& tracersSky,
                                 mps, config, redshiftCut, ids, grid, nullptr);
 }
 
-bitvf::Result bitvf::findVoidsLightcone (const std::vector<double>& tracers, const std::vector<double>& tracersSky,
-                                         const std::vector<double>& displacement,
-                                         const std::vector<std::uint8_t>& valid, const std::vector<double>& randoms,
-                                         const std::vector<double>& randomsSky, const otswap::Mask& mask,
-                                         const otswap::DistanceTable& distances, const otswap::MpsProfile& mps,
-                                         const Config& config, const otswap::RedshiftCut& redshiftCut,
-                                         const std::vector<std::int64_t>& ids, const DivergenceGrid* grid)
+bitvf::Result bitvf::findVoidsLightconeFromCartesian (const std::vector<double>& tracers,
+                                                      const std::vector<double>& displacement,
+                                                      const std::vector<std::uint8_t>& valid,
+                                                      const std::vector<double>& randoms, const otswap::Mask& mask,
+                                                      const otswap::DistanceTable& distances,
+                                                      const otswap::MpsProfile& mps, const Config& config,
+                                                      const otswap::RedshiftCut& redshiftCut,
+                                                      const std::vector<std::int64_t>& ids, const DivergenceGrid* grid)
 {
-  return internal::runLightcone(&tracers, tracersSky, displacement, valid, &randoms, randomsSky, mask, distances,
-                                mps, config, redshiftCut, ids, grid, nullptr);
+  return internal::runLightcone(&tracers, {}, displacement, valid, &randoms, {}, mask, distances, mps, config,
+                                redshiftCut, ids, grid, nullptr);
 }
 
 bitvf::Result bitvf::findVoidsLightcone (const otswap::Result& reconstruction, const std::vector<double>& randomsSky,
