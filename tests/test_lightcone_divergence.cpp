@@ -328,7 +328,7 @@ int main ()
     c.displacement[9] = std::numeric_limits<double>::quiet_NaN();
     throws_naming([&] { findVoidsLightcone(c.tracersSky, c.displacement, {}, c.randomsSky, c.mask, table(), c.profile,
                                            c.config, {}, {}, &g); },
-                  "not implemented yet", "a non-finite displacement outside the reused grid is not read");
+                  "no void found", "a non-finite displacement outside the reused grid is not read");
     c.displacement[0] = std::numeric_limits<double>::quiet_NaN();
     throws_naming([&] { findVoidsLightcone(c.tracersSky, c.displacement, {}, c.randomsSky, c.mask, table(), c.profile,
                                            c.config, {}, {}, &g); },
@@ -442,13 +442,13 @@ int main ()
   group("the divergence line is written at Detailed, and at Normal with rejections");
   {
     Case c;
-    const std::string detailed = c.run(otswap::Verbosity::Detailed, "not implemented yet");
+    const std::string detailed = c.run(otswap::Verbosity::Detailed, "no void found");
     check(detailed.find("bitvf: divergence of the valid displacements of 4 tracers, 0 displacements rejected "
                         "(masked cells, outside or below the grid) in ") != std::string::npos, "Detailed: " + detailed);
-    const std::string normal = c.run(otswap::Verbosity::Normal, "not implemented yet");
+    const std::string normal = c.run(otswap::Verbosity::Normal, "no void found");
     check(normal.find("bitvf: divergence") == std::string::npos, "no line at Normal without rejections");
     c.displacement[0] = 1e4;
-    const std::string rejected = c.run(otswap::Verbosity::Normal, "not implemented yet");
+    const std::string rejected = c.run(otswap::Verbosity::Normal, "no void found");
     check(rejected.find("bitvf: divergence of the valid displacements of 3 tracers, 1 displacement rejected "
                         "(masked cells, outside or below the grid) in ") != std::string::npos, "Normal: " + rejected);
   }

@@ -1227,11 +1227,20 @@ namespace bitvf {
      */
     void lightcone_smooth (LightconeGrid& grid, const std::vector<double>& sigmaShell, double threshold);
 
-    /// The voids and the overdense basins of a lightcone grid; only the
-    /// seeds are set.
+    /// The voids and the overdense basins of a lightcone grid.
+    /// lightcone_watershed sets the seeds; lightcone_basins the counts and
+    /// the volumes.
     struct LightconeBasins {
       BasinSet voids;
       BasinSet overdense;
+
+      /// The volume of the core and of the extended basin of each void, in
+      /// cubed coordinate units.
+      std::vector<double> voidCoreVolume, voidVolume;
+
+      /// The volume of the core and of the extended basin of each
+      /// overdense basin, in cubed coordinate units.
+      std::vector<double> overdenseCoreVolume, overdenseVolume;
     };
 
     /**
@@ -1254,12 +1263,76 @@ namespace bitvf {
      *
      *  Reads masked, nCells and those fields, and the radius lists. Writes
      *  voidIndex and overdenseIndex; of the result only the seeds are set,
-     *  the counts of each BasinSet are left empty.
+     *  the counts of each BasinSet and the volumes are left empty.
      *
      *  @param adjacency lightcone_adjacency of the grid; only its radius
      *  lists are read
      */
     LightconeBasins lightcone_watershed (const LightconeAdjacency& adjacency, DivergenceGrid& grid);
+
+    /**
+     *  @brief The area of the face two cells of a lightcone grid share.
+     *
+     *  The ranges of the two cells in distance, declination and right
+     *  ascension (the second cell's moved by the multiple of 2 pi that
+     *  brings its centre nearest to the first's) overlap with lengths Lr,
+     *  Ld, La. With each tolerance 1e-9 times the first cell's own extent
+     *  on that axis, the cells share a face when exactly one length is
+     *  within its tolerance of 0 and the other two exceed theirs: a sphere
+     *  of radius R, R^2 (sin dec_hi - sin dec_lo) La; a cone at
+     *  declination D, (r_hi^2 - r_lo^2) / 2 cos D La; a half-plane of
+     *  constant right ascension, (r_hi^2 - r_lo^2) / 2 Ld, over the
+     *  overlapping ranges. Otherwise, a gap beyond a tolerance included,
+     *  the area is 0.
+     *
+     *  Reads cellDistanceMin, cellDistanceMax, cellDecMin, cellDecMax,
+     *  cellRaMin and cellRaMax.
+     */
+    double lightcone_shared_area (const DivergenceGrid& grid, std::size_t c, std::size_t n);
+
+    /**
+     *  @brief Count, measure and flag the basins lightcone_watershed found.
+     *
+     *  The cells of each basin are taken in ascending cell index and summed
+     *  serially in that order, basins in parallel, so the result is the
+     *  same with any number of threads. The core is the cells below 0 for
+     *  a void, at or above 0 for an overdense basin, in the field the
+     *  watershed split.
+     *
+     *  Per basin: the cells, the core cells and, when the grid has
+     *  nTracers, the tracers of the core; the volume of the core and of
+     *  the extended basin; radius and radiusExt, the radii of spheres of
+     *  those volumes.
+     *
+     *  edgeFlag: a cell touches the boundary when it is on the border of
+     *  the grid, or when a masked cell of its contact list shares a face
+     *  with it (lightcone_shared_area above 0). The border is shell 0
+     *  unless it is the central sphere, the last shell, the first and the
+     *  last ring of a shell unless its edge is on the pole, and the first
+     *  and the last sector of a ring that is not a full circle. 2 when a
+     *  core cell touches it, 1 when only another cell does, 0 otherwise.
+     *
+     *  contamination: for each cell, its surface (the faces with area: no
+     *  face on a pole or at the centre, no right-ascension face in a ring
+     *  of one sector over the full circle) is split by its contact list
+     *  into the area shared with its own basin, with masked cells, and with
+     *  cells of other basins; the rest is on the border. Summed over the
+     *  basin, the area on masked cells and on the border over that area
+     *  plus the area shared with other basins; a small negative sum, above
+     *  -1024 epsilon times the surface, is read as 0; 0 when the
+     *  denominator is not positive.
+     *
+     *  Reads, of the grid, shellCentre, shellFirstRing, ringFull,
+     *  ringFirstCell, centralSphere and, of the cells, nCells,
+     *  masked, the per-cell limits, volume, voidIndex, overdenseIndex,
+     *  divergence, divergenceSmoothed and nTracers; of the adjacency, the
+     *  contact lists. Writes the counts and volumes of @p basins and, of
+     *  each catalogue, nBasins, radius, radiusExt, edgeFlag, contamination
+     *  and nTracers (empty without nTracers); centre, centreSky, deltaAv
+     *  and delta2Mps are left empty.
+     */
+    void lightcone_basins (const LightconeGrid& grid, const LightconeAdjacency& adjacency, LightconeBasins& basins,
+                           BasinCatalog& voids, BasinCatalog& overdense);
 
     /**
      *  @brief The lightcone search every lightcone entry converges into:

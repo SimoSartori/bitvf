@@ -294,7 +294,7 @@ namespace {
     config.verbosity = verbosity;
     config.log = &log;
     throws_naming([&] { findVoidsLightcone(tracersSky, displacement, {}, randomsSky, mask, table(), profile, config); },
-                  "not implemented yet", "run with a log");
+                  "no void found", "run with a log");
     return log.str();
   }
 

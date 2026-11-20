@@ -771,13 +771,17 @@ bitvf::Result bitvf::internal::runLightcone (const std::vector<double>* tracers,
     }
   }
 
-  const LightconeBasins basins = lightcone_watershed(adjacency, lc.cells);
+  LightconeBasins basins = lightcone_watershed(adjacency, lc.cells);
   if (report.detailed()) {
     std::ostringstream out = Report::line();
     out << "watershed into ";
     Report::basins(out, basins.voids.seed.size(), basins.overdense.seed.size());
     report.step(out);
   }
+  if (basins.voids.seed.empty())
+    throw Error("no void found: the divergence is 0 or positive in every unmasked cell");
+  BasinCatalog voids, overdense;
+  lightcone_basins(lc, adjacency, basins, voids, overdense);
 
   throw Error("findVoidsLightcone: the search after the divergence is not implemented yet");
 }

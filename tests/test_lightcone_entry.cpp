@@ -167,7 +167,7 @@ int main ()
   group("a valid entry passes every check and stops at the search");
   {
     Case c;
-    fails(c, "not implemented yet", "valid entry");
+    fails(c, "no void found", "valid entry");
   }
 
   // Empty position arrays are refused for tracers and for randoms.
@@ -318,7 +318,7 @@ int main ()
     Case m;
     m.tracersSky[2] = 3.;
     m.cut.max = 1.;
-    fails_sky(m, "not implemented yet", "tracer outside the cut is not read");
+    fails_sky(m, "no void found", "tracer outside the cut is not read");
   }
 
   // Cartesian positions must be finite on every row, even rows the mask or the cut would drop, and are checked before any is converted.
@@ -383,12 +383,12 @@ int main ()
     Case i;
     i.displacement[5] = kNaN;
     i.valid = {1, 0, 1, 1};
-    fails(i, "not implemented yet", "invalid displacement is not read");
+    fails(i, "no void found", "invalid displacement is not read");
     Case m;
     m.displacement[5] = kNaN;
     m.cut.max = 0.3;
     m.cut.min = 0.28;
-    fails(m, "not implemented yet", "displacement of a tracer outside the cut is not read");
+    fails(m, "no void found", "displacement of a tracer outside the cut is not read");
   }
 
   // A call that leaves no tracer, or no valid displacement, to read is refused with the counts of rows dropped.
@@ -427,7 +427,7 @@ int main ()
     std::ostringstream log;
     c.config.verbosity = otswap::Verbosity::Normal;
     c.config.log = &log;
-    fails_sky(c, "not implemented yet", "report case");
+    fails_sky(c, "no void found", "report case");
     check(log.str().find("bitvf: kept 3 of 4 tracers: 0 on unobserved pixels, 1 outside the redshift cut\n") !=
           std::string::npos, "tracer selection line: " + log.str());
     check(log.str().find("bitvf: kept 7 of 8 randoms: 0 on unobserved pixels, 1 outside the redshift cut\n") !=
@@ -438,10 +438,10 @@ int main ()
   group("a valid reconstruction or mean passes every check and stops at the search");
   {
     FromResult r;
-    fails(r, "not implemented yet", "valid reconstruction");
+    fails(r, "no void found", "valid reconstruction");
     const FromResult m = mean_read_back();
     check(m.rec.nRealizations == 1 && m.rec.nRealizationsMean == 3, "mean read back as one realization of 3");
-    fails(m, "not implemented yet", "valid mean");
+    fails(m, "no void found", "valid mean");
   }
 
   // A box reconstruction is refused by the lightcone void finder.

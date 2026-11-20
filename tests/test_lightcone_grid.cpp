@@ -185,13 +185,33 @@ namespace {
     return kept;
   }
 
+  /// @p f must stop after the grid: with no void found, or at the steps not implemented yet.
+  template <typename F>
+  void passes_grid (F&& f, const std::string& what)
+  {
+    try {
+      f();
+    }
+    catch (const Error& e) {
+      const std::string m = e.what();
+      check(m.find("no void found") != std::string::npos || m.find("not implemented yet") != std::string::npos,
+            what + " (the message is \"" + m + "\")");
+      return;
+    }
+    catch (const std::exception& e) {
+      check(false, what + " (threw the wrong type: " + e.what() + ")");
+      return;
+    }
+    check(false, what + " (did not throw)");
+  }
+
   std::string run_log (const Case& c)
   {
     Case d = c;
     std::ostringstream log;
     d.config.verbosity = otswap::Verbosity::Detailed;
     d.config.log = &log;
-    throws_naming([&] { d.run(); }, "not implemented yet", "run to the grid");
+    passes_grid([&] { d.run(); }, "run to the grid");
     return log.str();
   }
 
@@ -622,7 +642,7 @@ int main ()
     std::ostringstream log;
     c.config.verbosity = otswap::Verbosity::Detailed;
     c.config.log = &log;
-    fails(c, "not implemented yet", "report case");
+    passes_grid([&] { c.run(); }, "report case");
     check(log.str().find(" shells, cell size 12 mps (given), distances [") != std::string::npos &&
           log.str().find("] deg (from the tracers and randoms) in ") != std::string::npos, "grid line: " + log.str());
     check(log.str().find("bitvf: grid: 0 of ") != std::string::npos &&
@@ -632,7 +652,7 @@ int main ()
     std::ostringstream normal;
     d.config.verbosity = otswap::Verbosity::Normal;
     d.config.log = &normal;
-    fails(d, "not implemented yet", "default cell size");
+    passes_grid([&] { d.run(); }, "default cell size");
     check(normal.str().find("cell size 1 mps (default)") != std::string::npos, "default cell size: " + normal.str());
     check(normal.str().find("central sphere") == std::string::npos, "no central sphere: " + normal.str());
     Case s;
@@ -641,7 +661,7 @@ int main ()
     std::ostringstream sphere;
     s.config.verbosity = otswap::Verbosity::Normal;
     s.config.log = &sphere;
-    fails(s, "not implemented yet", "central sphere case");
+    passes_grid([&] { s.run(); }, "central sphere case");
     check(sphere.str().find(" shells, central sphere included, cell size ") != std::string::npos,
           "central sphere: " + sphere.str());
   }
@@ -715,8 +735,8 @@ int main ()
       Config config;
       config.verbosity = otswap::Verbosity::Detailed;
       config.log = &log;
-      throws_naming([&] { findVoidsLightcone(noProfile, c.randomsSky, mask, config, &g); }, "not implemented yet",
-                    "result overload with a grid");
+      passes_grid([&] { findVoidsLightcone(noProfile, c.randomsSky, mask, config, &g); },
+                  "result overload with a grid");
       fromResult[t] = grid_lines(log.str(), false);
     }
     check(built[0].find("bitvf: kept ") != std::string::npos && built[0].find("bitvf: grid of ") != std::string::npos &&
@@ -739,8 +759,8 @@ int main ()
       Config config;
       config.verbosity = otswap::Verbosity::Detailed;
       config.log = &log;
-      throws_naming([&] { findVoidsLightcone(r, c.randomsSky, full_mask(), config, &g); }, "not implemented yet",
-                    "result overload with a grid and its own profile");
+      passes_grid([&] { findVoidsLightcone(r, c.randomsSky, full_mask(), config, &g); },
+                  "result overload with a grid and its own profile");
       return grid_lines(log.str(), false);
     };
     const std::string same = lines(rec);
@@ -834,7 +854,7 @@ int main ()
     c.profile = flat_profile();
     c.profile.count = {1, 2};
     c.profile.representative = 5.5;
-    fails(c, "not implemented yet", "the other fields are not compared");
+    passes_grid([&] { c.run(); }, "the other fields are not compared");
     c.config.divergenceCellSize = kCaseCellSize;
     fails(c, "the divergence cell size is set together with a grid to reuse", "cell size and grid");
   }
