@@ -47,7 +47,8 @@ namespace {
   constexpr double kPi = 3.14159265358979323846;
   constexpr double kTwoPi = 2. * kPi;
 
-  constexpr std::uint64_t kRecordedHash = 0x49f33c5c5cd90e3aull;
+  constexpr std::uint64_t kRecordedHash = 0x7e64a2eb37c2bc70ull;
+  constexpr double kCaseCellSize = 12.;
 
   const otswap::DistanceTable& table ()
   {
@@ -120,9 +121,8 @@ namespace {
     const DivergenceGrid* grid = nullptr;
     Case ()
     {
-      config.smoothing.sigma = 0.;
       config.verbosity = otswap::Verbosity::Silent;
-      config.divergenceCellSize = 4.;
+      config.divergenceCellSize = kCaseCellSize;
     }
     void run () const
     {
@@ -133,6 +133,14 @@ namespace {
       return lightconeGrid(tracersSky, randomsSky, *mask, distances, profile, *config.divergenceCellSize);
     }
   };
+
+  Case small_footprint ()
+  {
+    Case c;
+    c.tracersSky = objects(40, 1., 1.1, 0., 0.1, 0.3, 0.32, 30);
+    c.randomsSky = objects(200, 1., 1.1, 0., 0.1, 0.3, 0.32, 31);
+    return c;
+  }
 
   otswap::Result reconstruction (const Case& c)
   {
@@ -264,7 +272,7 @@ namespace {
     std::vector<double> pixels(12, 1.);
     pixels[4] = 0.;
     const otswap::Mask mask(pixels, otswap::PixelOrdering::Ring);
-    const Built b = build(tracers, randoms, 2., mask);
+    const Built b = build(tracers, randoms, 14., mask);
     const DivergenceGrid& c = b.grid.cells;
     std::vector<std::int64_t> cells;
     for (std::size_t i = 0; i < tracers.size() / 3; ++i)
@@ -313,10 +321,10 @@ int main ()
   group("the shells: first edge, widths from mps(z) half a step ahead, last edge past the margin");
   {
     const Built b = build(objects(100, 1., 2., -0.2, 0.2, 0.25, 0.4, 5), objects(300, 1., 2., -0.2, 0.2, 0.25, 0.4, 6),
-                          3., full_mask());
+                          9., full_mask());
     const internal::LightconeGrid& g = b.grid;
     const otswap::MpsProfile p = flat_profile();
-    const double s = 3.;
+    const double s = 9.;
     const double zMin = table().redshiftAt(b.extent.distanceMin), zMax = table().redshiftAt(b.extent.distanceMax);
     check(!g.centralSphere && g.shellEdge[0] == b.extent.distanceMin - 0.1 * s * p.at(zMin), "the first edge");
     bool widths = true;
@@ -359,11 +367,11 @@ int main ()
   group("the rings: padded declination range, polar caps, one sector on the pole");
   {
     const Built b = build(objects(100, 1., 2., -0.2, 0.3, 0.25, 0.3, 9), objects(300, 1., 2., -0.2, 0.3, 0.25, 0.3, 10),
-                          4., full_mask());
+                          6., full_mask());
     const internal::LightconeGrid& g = b.grid;
     bool padded = true, contiguous = true;
     for (std::size_t i = 0; i + 1 < g.shellEdge.size(); ++i) {
-      const double cell = 4. * g.shellMps[i], R = g.shellCentre[i];
+      const double cell = 6. * g.shellMps[i], R = g.shellCentre[i];
       const std::size_t r0 = (std::size_t)g.shellFirstRing[i], r1 = (std::size_t)g.shellFirstRing[i + 1];
       padded = padded && g.ringDecMin[r0] == b.extent.decMin - 0.1 * cell / R &&
                g.ringDecMax[r1 - 1] == b.extent.decMax + 0.1 * cell / R;
@@ -374,7 +382,7 @@ int main ()
 
     std::vector<double> near = objects(400, 0., 6.28, 0.5, 1.5705, 0.25, 0.3, 12);
     near.insert(near.end(), {1., 1.5705, 0.27});
-    const Built c = build(objects(100, 0., 6.28, 0.5, 1.5705, 0.25, 0.3, 11), near, 4., full_mask());
+    const Built c = build(objects(100, 0., 6.28, 0.5, 1.5705, 0.25, 0.3, 11), near, 10., full_mask());
     const internal::LightconeGrid& h = c.grid;
     bool caps = true;
     for (std::size_t i = 0; i + 1 < h.shellEdge.size(); ++i) {
@@ -416,7 +424,7 @@ int main ()
     check_volumes(g, "partial rings");
 
     const Built w = build(objects(300, 0., 6.283, -0.2, 0.2, 0.25, 0.3, 15),
-                          objects(900, 0., 6.283, -0.2, 0.2, 0.25, 0.3, 16), 4., full_mask());
+                          objects(900, 0., 6.283, -0.2, 0.2, 0.25, 0.3, 16), 10., full_mask());
     const internal::LightconeGrid& f = w.grid;
     bool full = true;
     for (std::size_t r = 0; r < f.ringFull.size(); ++r) {
@@ -440,7 +448,7 @@ int main ()
     std::vector<double> sky = objects(1500, 0., 6.283, -1.5706, 1.5706, 0.25, 0.3, 18);
     for (int k = 0; k < 2000; ++k) sky.insert(sky.end(), {kTwoPi * k / 2000., 0., 0.27});
     sky.insert(sky.end(), {1., 1.5706, 0.27,  2., -1.5706, 0.27});
-    const Built b = build(objects(500, 0., 6.283, -1.5706, 1.5706, 0.25, 0.3, 17), sky, 4., full_mask());
+    const Built b = build(objects(500, 0., 6.283, -1.5706, 1.5706, 0.25, 0.3, 17), sky, 14., full_mask());
     const internal::LightconeGrid& g = b.grid;
     double sum = 0.;
     for (const double v : g.cells.volume) sum += v;
@@ -454,7 +462,7 @@ int main ()
   group("the cell of a point: edges belong to the cell above, the grid's last edges are outside");
   {
     const Built b = build(objects(100, 1., 2., -0.2, 0.2, 0.25, 0.4, 19), objects(300, 1., 2., -0.2, 0.2, 0.25, 0.4, 20),
-                          4., full_mask());
+                          8., full_mask());
     const internal::LightconeGrid& g = b.grid;
     const DivergenceGrid& c = g.cells;
     const std::size_t r = (std::size_t)g.shellFirstRing[1] + 1;
@@ -513,7 +521,7 @@ int main ()
     pixels[5] = 0.;
     const otswap::Mask mask(pixels, otswap::PixelOrdering::Ring);
     const Built b = build(objects(300, 0., 6.283, -0.5, 0.5, 0.25, 0.3, 21),
-                          objects(900, 0., 6.283, -0.5, 0.5, 0.25, 0.3, 22), 4., mask);
+                          objects(900, 0., 6.283, -0.5, 0.5, 0.25, 0.3, 22), 12., mask);
     const DivergenceGrid& c = b.grid.cells;
     bool same = true;
     std::size_t masked = 0;
@@ -615,11 +623,11 @@ int main ()
     c.config.verbosity = otswap::Verbosity::Detailed;
     c.config.log = &log;
     fails(c, "not implemented yet", "report case");
-    check(log.str().find(" shells, cell size 4 mps (given), distances [") != std::string::npos &&
+    check(log.str().find(" shells, cell size 12 mps (given), distances [") != std::string::npos &&
           log.str().find("] deg (from the tracers and randoms) in ") != std::string::npos, "grid line: " + log.str());
     check(log.str().find("bitvf: grid: 0 of ") != std::string::npos &&
           log.str().find(" cells masked, redshifts [") != std::string::npos, "detailed grid line: " + log.str());
-    Case d;
+    Case d = small_footprint();
     d.config.divergenceCellSize.reset();
     std::ostringstream normal;
     d.config.verbosity = otswap::Verbosity::Normal;
@@ -643,18 +651,18 @@ int main ()
   {
     const Case c;
     const DivergenceGrid g = c.built();
-    const Built b = build(c.tracersSky, c.randomsSky, 4., full_mask());
+    const Built b = build(c.tracersSky, c.randomsSky, kCaseCellSize, full_mask());
     check(same_record(g, b.grid.cells), "the array overload builds the grid of the data");
     check(g.cellRaMin.empty() && g.centre.empty() && g.volume.empty() && g.masked.empty() && std::isnan(g.cellSize) &&
           std::isnan(g.mps) && g.nCellsAxis[0] == 0, "no per-cell or box field is set");
     check(run_log(c).find("grid of " + std::to_string(g.nCells) + " cells in ") != std::string::npos,
           "the search's grid has the same cells");
     const otswap::Result rec = reconstruction(c);
-    const DivergenceGrid r = lightconeGrid(rec, c.randomsSky, full_mask(), 4.);
+    const DivergenceGrid r = lightconeGrid(rec, c.randomsSky, full_mask(), kCaseCellSize);
     check(same_record(r, g) && r.mpsProfile.count == rec.mpsProfile.count, "the result overload builds the same grid");
-    Case d;
+    Case d = small_footprint();
     d.config.divergenceCellSize = 1.;
-    check(same_record(lightconeGrid(rec, c.randomsSky, full_mask()), d.built()),
+    check(same_record(lightconeGrid(reconstruction(d), d.randomsSky, full_mask()), d.built()),
           "without a cell size, the default for the reconstruction's realizations");
     otswap::Result bad = rec;
     bad.displacement[4] = std::numeric_limits<double>::quiet_NaN();
@@ -700,12 +708,11 @@ int main ()
       r.grid = &grids[t];
       reused[t] = grid_lines(run_log(r), false);
       const otswap::Result rec = reconstruction(c);
-      const DivergenceGrid g = lightconeGrid(rec, c.randomsSky, mask, 4.);
+      const DivergenceGrid g = lightconeGrid(rec, c.randomsSky, mask, kCaseCellSize);
       otswap::Result noProfile = rec;
       noProfile.mpsProfile = {};
       std::ostringstream log;
       Config config;
-      config.smoothing.sigma = 0.;
       config.verbosity = otswap::Verbosity::Detailed;
       config.log = &log;
       throws_naming([&] { findVoidsLightcone(noProfile, c.randomsSky, mask, config, &g); }, "not implemented yet",
@@ -726,11 +733,10 @@ int main ()
   {
     const Case c;
     const otswap::Result rec = reconstruction(c);
-    const DivergenceGrid g = lightconeGrid(rec, c.randomsSky, full_mask(), 4.);
+    const DivergenceGrid g = lightconeGrid(rec, c.randomsSky, full_mask(), kCaseCellSize);
     auto lines = [&] (const otswap::Result& r) {
       std::ostringstream log;
       Config config;
-      config.smoothing.sigma = 0.;
       config.verbosity = otswap::Verbosity::Detailed;
       config.log = &log;
       throws_naming([&] { findVoidsLightcone(r, c.randomsSky, full_mask(), config, &g); }, "not implemented yet",
@@ -829,7 +835,7 @@ int main ()
     c.profile.count = {1, 2};
     c.profile.representative = 5.5;
     fails(c, "not implemented yet", "the other fields are not compared");
-    c.config.divergenceCellSize = 4.;
+    c.config.divergenceCellSize = kCaseCellSize;
     fails(c, "the divergence cell size is set together with a grid to reuse", "cell size and grid");
   }
 

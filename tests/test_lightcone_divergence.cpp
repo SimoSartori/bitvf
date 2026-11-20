@@ -46,7 +46,7 @@ using internal::LightconeGrid;
 
 namespace {
 
-  constexpr std::uint64_t kRecordedHash = 0x84aa9dcad44025c8ull;
+  constexpr std::uint64_t kRecordedHash = 0xba9d74fe5a13eda8ull;
 
   using Point = std::array<double, 3>;
 
@@ -81,7 +81,7 @@ namespace {
     record.raMax = e.raMax;
     record.decMin = e.decMin;
     record.decMax = e.decMax;
-    record.cellSizeMps = 2.;
+    record.cellSizeMps = 8.;
     record.mpsProfile.redshift = {0.1, 0.5};
     record.mpsProfile.mps = {5., 6.};
     const otswap::Mask mask(std::vector<double>(12, 1.), otswap::PixelOrdering::Ring);
@@ -198,7 +198,7 @@ namespace {
     s.inMask.assign(n, 1);
     s.inCut.assign(n, 1);
     s.displacement.resize(3 * n * s.R);
-    for (double& d : s.displacement) d = uniform(-15., 15.);
+    for (double& d : s.displacement) d = uniform(-60., 60.);
     s.valid.assign(n * s.R, 1);
     for (std::size_t k = 0; k < s.valid.size(); k += 17) s.valid[k] = 0;
     for (std::size_t c = 0; c < s.grid.cells.nCells; c += 23) s.grid.cells.masked[c] = 1;
@@ -230,7 +230,7 @@ namespace {
     {
       profile.redshift = {0.1, 0.5};
       profile.mps = {5., 6.};
-      config.smoothing.sigma = 0.;
+      config.divergenceCellSize = 15.;
       config.verbosity = otswap::Verbosity::Silent;
     }
 
@@ -269,8 +269,8 @@ int main ()
   {
     Sweep s;
     const std::size_t kept = s.add_centre({0.1, 0.1, 0.1});
-    const std::size_t toMasked = s.add(1.5, 0.0, 0.32, radial(1.5, 0.0, 40.));
-    const std::size_t fromMasked = s.add(0.8, -0.1, 0.3, radial(0.8, -0.1, 40.));
+    const std::size_t toMasked = s.add(1.5, 0.0, 0.32, radial(1.5, 0.0, 160.));
+    const std::size_t fromMasked = s.add(0.8, -0.1, 0.3, radial(0.8, -0.1, 160.));
     const std::int64_t endCell = s.end_cell(toMasked), startCell = s.start_cell(fromMasked);
     check(endCell >= 0 && endCell != s.start_cell(toMasked) && s.end_cell(fromMasked) != startCell,
           "both displacements cross into another cell");
@@ -323,7 +323,8 @@ int main ()
     Case c;
     c.randomsSky = {1.5, 0.1, 0.3,  2.5, 0., 0.3,  0.5, 0.3, 0.3,  1.2, -0.3, 0.35};
     const std::vector<double> firstTwo(c.tracersSky.begin(), c.tracersSky.begin() + 6);
-    const DivergenceGrid g = lightconeGrid(firstTwo, c.randomsSky, c.mask, table(), c.profile, 4.);
+    const DivergenceGrid g = lightconeGrid(firstTwo, c.randomsSky, c.mask, table(), c.profile, 15.);
+    c.config.divergenceCellSize.reset();
     c.displacement[9] = std::numeric_limits<double>::quiet_NaN();
     throws_naming([&] { findVoidsLightcone(c.tracersSky, c.displacement, {}, c.randomsSky, c.mask, table(), c.profile,
                                            c.config, {}, {}, &g); },

@@ -42,7 +42,7 @@ using internal::LightconeGrid;
 
 namespace {
 
-  constexpr std::uint64_t kRecordedHash = 0x6ed1c19fa0f3e7e8ull;
+  constexpr std::uint64_t kRecordedHash = 0xa4340a829441122dull;
   constexpr double kPi = 3.14159265358979323846;
   constexpr double kTwoPi = 2. * kPi;
 
@@ -189,7 +189,7 @@ namespace {
 
   std::uint64_t smoothing_hash ()
   {
-    LightconeGrid g = built_grid(0.5, 2., -0.3, 0.3, 0.25, 0.4, 2.);
+    LightconeGrid g = built_grid(0.5, 0.8, -0.1, 0.1, 0.25, 0.28, 2.);
     fill_values(g, 7);
     internal::lightcone_smooth(g, sigma_mps(g, 1.), 1e-12 * 3.);
     std::uint64_t h = 0xcbf29ce484222325ull;
@@ -212,7 +212,7 @@ namespace {
     std::ostringstream log;
     config.smoothing.sigma = sigma;
     config.smoothing.unit = unit;
-    config.divergenceCellSize = 4.;
+    config.divergenceCellSize = 15.;
     config.verbosity = otswap::Verbosity::Detailed;
     config.log = &log;
     throws_naming([&] { findVoidsLightcone(tracersSky, displacement, {}, randomsSky, mask, table(), profile, config); },
@@ -227,7 +227,7 @@ int main ()
   // A uniform divergence stays uniform after the smoothing, and a uniform weight gives a uniform smoothed weight.
   group("a uniform field stays uniform");
   {
-    LightconeGrid g = built_grid(0.5, 2., -0.3, 0.3, 0.25, 0.4, 2.);
+    LightconeGrid g = built_grid(0.5, 0.8, -0.1, 0.1, 0.25, 0.28, 2.);
     g.cells.divergence.assign(g.cells.nCells, 0.7);
     g.cells.weight.assign(g.cells.nCells, 2.);
     internal::lightcone_smooth(g, sigma_mps(g, 1.), 1e-12 * 2.);
@@ -240,7 +240,7 @@ int main ()
   // A single non-zero cell spreads to the cells within 4 sigma as its kernel over the kernel sum, and nowhere beyond.
   group("a single non-zero cell spreads as the kernel says");
   {
-    LightconeGrid g = built_grid(0.5, 2., -0.3, 0.3, 0.25, 0.4, 2.);
+    LightconeGrid g = built_grid(0.5, 0.8, -0.1, 0.1, 0.25, 0.28, 2.);
     DivergenceGrid& cells = g.cells;
     const std::size_t c0 = cells.nCells / 2;
     cells.divergence.assign(cells.nCells, 0.);
@@ -248,16 +248,18 @@ int main ()
     cells.divergence[c0] = 3.;
     const std::vector<double> sigmaShell = sigma_mps(g, 1.5);
     internal::lightcone_smooth(g, sigmaShell, 1e-12);
-    const double sigma = sigmaShell[(std::size_t)std::distance(g.shellFirstRing.begin(),
-      std::upper_bound(g.shellFirstRing.begin(), g.shellFirstRing.end(),
-        std::distance(g.ringFirstCell.begin(),
-          std::upper_bound(g.ringFirstCell.begin(), g.ringFirstCell.end(), (std::int64_t)c0)) - 1)) - 1];
+    const auto sigma_of = [&] (const std::size_t c) {
+      return sigmaShell[(std::size_t)std::distance(g.shellFirstRing.begin(),
+        std::upper_bound(g.shellFirstRing.begin(), g.shellFirstRing.end(),
+          std::distance(g.ringFirstCell.begin(),
+            std::upper_bound(g.ringFirstCell.begin(), g.ringFirstCell.end(), (std::int64_t)c)) - 1)) - 1];
+    };
+    const double sigma = sigma_of(c0);
     bool spread = true;
     std::size_t reached = 0;
     for (std::size_t m = 0; m < cells.nCells; ++m) {
-      const double k = kernel(cells, c0, m, sigma);
-      if (k > 0.) ++reached;
-      if (k == 0. && cells.divergenceSmoothed[m] != 0.) spread = false;
+      if (kernel(cells, c0, m, sigma) > 0.) ++reached;
+      if (kernel(cells, m, c0, sigma_of(m)) == 0. && cells.divergenceSmoothed[m] != 0.) spread = false;
       if (cells.weightSmoothed[m] != 1.) spread = false;
     }
     double sum = 0.;
@@ -319,7 +321,7 @@ int main ()
   // The smoothing equals its definition, every pair of cells within 4 sigma, on partial, polar and full-sky grids.
   group("the smoothing equals the sum over every pair of cells within 4 sigma");
   {
-    LightconeGrid partial = built_grid(0.5, 2., -0.3, 0.3, 0.25, 0.3, 3.);
+    LightconeGrid partial = built_grid(0.5, 1., -0.15, 0.15, 0.25, 0.3, 3.);
     fill_values(partial, 3);
     check(matches_reference(partial, 1.), "a partial grid, sigma 1 mps");
     fill_values(partial, 4);

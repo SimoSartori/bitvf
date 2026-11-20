@@ -61,7 +61,7 @@ namespace {
     {
       profile.redshift = {0.1, 0.5};
       profile.mps = {5., 6.};
-      config.smoothing.sigma = 0.;
+      config.divergenceCellSize = 15.;
       config.verbosity = otswap::Verbosity::Silent;
       tracers = otswap::toCartesian(tracersSky, distances);
       randoms = otswap::toCartesian(randomsSky, distances);
@@ -119,7 +119,7 @@ namespace {
       rec.distances = std::make_shared<const otswap::DistanceTable>(c.distances);
       otswap::recomputeMeans(rec);
       randomsSky = c.randomsSky;
-      config.smoothing.sigma = 0.;
+      config.divergenceCellSize = 15.;
       config.verbosity = otswap::Verbosity::Silent;
     }
 

@@ -47,7 +47,7 @@ namespace {
   constexpr double kTwoPi = 2. * kPi;
   constexpr double kHalfPi = kPi / 2.;
 
-  constexpr std::uint64_t kRecordedHash = 0x8380b08b0325a45cull;
+  constexpr std::uint64_t kRecordedHash = 0xe71a635485ccdd61ull;
 
   using Point = std::array<double, 3>;
 
@@ -261,7 +261,7 @@ namespace {
       record.raMax = e.raMax;
       record.decMin = e.decMin;
       record.decMax = e.decMax;
-      record.cellSizeMps = 2.;
+      record.cellSizeMps = 8.;
       record.mpsProfile.redshift = {0.1, 0.5};
       record.mpsProfile.mps = {5., 6.};
       const otswap::Mask mask(std::vector<double>(12, 1.), otswap::PixelOrdering::Ring);
@@ -305,7 +305,7 @@ namespace {
 
   std::uint64_t faces_hash ()
   {
-    const std::vector<Segment> s = segments(3000, 20., 7);
+    const std::vector<Segment> s = segments(3000, 80., 7);
     const std::int64_t n = (std::int64_t)s.size();
     std::vector<LightconeFace> exits((std::size_t)n), entries((std::size_t)n);
     std::vector<std::int64_t> cells((std::size_t)n);
@@ -523,7 +523,7 @@ int main ()
     }
     std::size_t moved = 0;
     bool atZero = true;
-    for (const Segment& s : segments(4000, 15., 11)) {
+    for (const Segment& s : segments(4000, 60., 11)) {
       if (internal::lightcone_cell_at(built(), s.x.data()) == s.startCell) continue;
       ++moved;
       const LightconeFace f = internal::lightcone_face(built(), s.startCell, s.x.data(), s.d.data(), true);
@@ -604,7 +604,7 @@ int main ()
     check(out.coordinate == -1 && out.t == 1. && in.coordinate == -1 && in.t == 0., "a segment inside its cell");
     bool always = true;
     std::size_t crossing = 0;
-    for (const Segment& s : segments(4000, 15., 13)) {
+    for (const Segment& s : segments(4000, 60., 13)) {
       if (s.startCell == s.endCell) continue;
       ++crossing;
       always = always && internal::lightcone_face(built(), s.startCell, s.x.data(), s.d.data(), true).coordinate >= 0;
