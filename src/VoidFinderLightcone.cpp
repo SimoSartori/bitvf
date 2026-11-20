@@ -67,7 +67,6 @@ namespace {
     Selection randomSelection;
     std::size_t nRandoms = 0;
     std::size_t nRandomsGiven = 0;
-    double maxDisplacement = 0.;
     bitvf::Counts counts;
   };
 
@@ -453,26 +452,24 @@ namespace {
 
     const std::int64_t rows = (std::int64_t)(R * N);
     std::size_t nValid = 0, nRead = 0, firstNonFinite = kNone;
-    double maxDisplacement = 0.;
-#pragma omp parallel for schedule(static) reduction(+:nValid, nRead) \
-  reduction(min:firstNonFinite) reduction(max:maxDisplacement)
+#pragma omp parallel for schedule(static) reduction(+:nValid, nRead) reduction(min:firstNonFinite)
     for (std::int64_t row = 0; row < rows; ++row) {
       const std::size_t r = (std::size_t)row;
       const std::size_t i = r % N;
       if (!valid.empty() && !valid[r]) continue;
       ++nValid;
       if (!ts.inMask[i] || !ts.inCut[i]) continue;
+      if (grid != nullptr) {
+        ++nRead;
+        continue;
+      }
       bool finite = true;
       for (std::size_t k = 0; k < 3; ++k)
         if (!std::isfinite(displacement[3*r+k])) {
           firstNonFinite = std::min(firstNonFinite, 3*r+k);
           finite = false;
         }
-      if (!finite) continue;
-      const double norm = std::sqrt(displacement[3*r]*displacement[3*r] + displacement[3*r+1]*displacement[3*r+1] +
-                                    displacement[3*r+2]*displacement[3*r+2]);
-      maxDisplacement = std::max(maxDisplacement, norm);
-      ++nRead;
+      if (finite) ++nRead;
     }
     if (firstNonFinite != kNone) {
       const std::size_t row = firstNonFinite / 3;
@@ -520,7 +517,6 @@ namespace {
     if (randoms == nullptr)
       entry.randoms = bitvf::internal::call_otswap([&] { return otswap::toCartesian(entry.randomsSky, distances); });
 
-    entry.maxDisplacement = maxDisplacement;
     entry.counts.tracers = N;
     entry.counts.tracersOutsideMask = ts.outsideMask;
     entry.counts.tracersOutsideRedshiftCut = ts.outsideCut;
@@ -708,9 +704,40 @@ bitvf::Result bitvf::internal::runLightcone (const std::vector<double>* tracers,
   Report report(config.verbosity, config.log);
   Entry entry = check_entry(tracers, tracersSky, displacement, valid, randoms, randomsSky, mask, distances,
                             mps, config, redshiftCut, ids, grid, reconstruction, fn, true, report);
-  const LightconeGrid lc = entry_grid(entry, mask, distances, mps, config.divergenceCellSize,
-                                      grid, fn, report);
-  throw Error("findVoidsLightcone: the search after the grid is not implemented yet");
+  LightconeGrid lc = entry_grid(entry, mask, distances, mps, config.divergenceCellSize, grid, fn, report);
+
+  LightconeSweep sweep;
+  sweep.nTracers = entry.nTracers;
+  sweep.nRealizations = entry.nRealizations;
+  sweep.tracers = &entry.tracers;
+  sweep.tracersSky = &entry.tracersSky;
+  sweep.inMask = &entry.tracerSelection.inMask;
+  sweep.inCut = &entry.tracerSelection.inCut;
+  sweep.displacement = &displacement;
+  sweep.valid = &valid;
+  sweep.distances = &distances;
+  sweep.reusedGrid = grid != nullptr;
+  const LightconeDivergence div = lightcone_divergence(sweep, lc);
+  entry.counts.tracersOutsideGrid = div.nOutsideGrid;
+  entry.counts.tracersUsed = div.nUsed;
+  entry.counts.displacementsRejected = div.nRejected;
+
+  if (grid != nullptr && report.normal()) {
+    const std::size_t kept = entry.nTracers - entry.counts.tracersOutsideMask - entry.counts.tracersOutsideRedshiftCut;
+    std::ostringstream out = Report::line();
+    out << "kept " << kept - div.nOutsideGrid << " of " << kept << (kept == 1 ? " tracer: " : " tracers: ")
+        << div.nOutsideGrid << " outside the reused grid";
+    report.write(out.str());
+  }
+  if (report.detailed() || (report.normal() && div.nRejected > 0)) {
+    std::ostringstream out = Report::line();
+    out << "divergence of the valid displacements of " << div.nUsed << (div.nUsed == 1 ? " tracer, " : " tracers, ")
+        << div.nRejected << (div.nRejected == 1 ? " displacement" : " displacements")
+        << " rejected (masked cells, outside or below the grid)";
+    report.step(out);
+  }
+
+  throw Error("findVoidsLightcone: the search after the divergence is not implemented yet");
 }
 
 

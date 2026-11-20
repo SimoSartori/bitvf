@@ -440,6 +440,20 @@ namespace bitvf {
       unsigned fillPasses = 0;
     };
 
+    /// The base-2 logarithm of the largest count of a cell the scale of a
+    /// fixed-point accumulation of the divergence assumes; a larger count
+    /// reruns the accumulation at the scale of the real count.
+    constexpr int kAssumedCountBits = 20;
+
+    /**
+     *  @brief The scale exponent q = 61 - e - L of a fixed-point
+     *  accumulation of the divergence, with B < 2^e, capped at 1000 so that
+     *  2^-q times a sum stays a normal double; 0 when B is 0.
+     *  @param B the largest absolute value of a term
+     *  @param L the base-2 logarithm of the largest count of a cell
+     */
+    int scale_exponent (double B, int L);
+
     /// The face of a cell crossed by a displacement: axis 0, 1 or 2 and
     /// sign -1 (lower face) or +1 (upper face); axis -1 when none is.
     struct BoxFace {
@@ -953,7 +967,13 @@ namespace bitvf {
      *  - end: from t = 1 backwards, the first interval whose midpoint is
      *    outside the cell; the crossing is the root closing it (t = 1 for
      *    the last interval). When none is, the crossing is t = 0 and the
-     *    point classified is x.
+     *    point classified is x; when x lies inside the cell and @p sky is
+     *    given, the point classified is the tracer's sky position instead.
+     *    That happens only when x lies within rounding of a face of the
+     *    cell while its sky position lies in the cell across that face:
+     *    the segment then enters the cell at x, through the face its sky
+     *    position lies beyond, as the start search leaves the other cell
+     *    there.
      *  The face is the coordinate the classified point violates, at the
      *  crossing, whichever surface gave the root. When it violates more than
      *  one, the first of distance-upper, declination-upper, right-ascension-
@@ -977,9 +997,115 @@ namespace bitvf {
      *  finite
      *  @param d the displacement; finite
      *  @param start true for the cell left, false for the cell entered
+     *  @param sky for the end search, the tracer's distance, right
+     *  ascension and declination, from which its start cell was found; null
+     *  for none. Not read by the start search.
      */
     LightconeFace lightcone_face (const LightconeGrid& grid, std::int64_t cell, const double* x, const double* d,
-                                  bool start);
+                                  bool start, const double* sky = nullptr);
+
+    /// The tracers and displacements a lightcone divergence reads, after
+    /// the entry checks. The pointers refer to arrays that outlive the
+    /// call.
+    struct LightconeSweep {
+
+      std::size_t nTracers = 0;
+      unsigned nRealizations = 0;
+
+      /// [tracer][xyz], the Cartesian positions the displacements start
+      /// from; rows of tracers not kept are not read.
+      const std::vector<double>* tracers = nullptr;
+
+      /// [tracer][3]: right ascension in [0, 2 pi), declination, redshift.
+      const std::vector<double>* tracersSky = nullptr;
+
+      /// [tracer]: a tracer is kept when both are 1.
+      const std::vector<std::uint8_t>* inMask = nullptr;
+      const std::vector<std::uint8_t>* inCut = nullptr;
+
+      /// [realization][tracer][xyz] and [realization][tracer]; valid empty
+      /// means all valid. With a new grid, every valid displacement of a
+      /// kept tracer is finite; with a reused grid, those of the tracers
+      /// read are checked here.
+      const std::vector<double>* displacement = nullptr;
+      const std::vector<std::uint8_t>* valid = nullptr;
+
+      /// The distance table of the call; every kept redshift lies inside
+      /// it.
+      const otswap::DistanceTable* distances = nullptr;
+
+      /// Whether the grid is a grid given for reuse, which kept tracers may
+      /// lie outside; a new grid holds every kept tracer.
+      bool reusedGrid = false;
+    };
+
+    /// What the divergence of a lightcone search finds besides the grid
+    /// fields.
+    struct LightconeDivergence {
+
+      /// [tracer]: the cell of the tracer's sky position, distance
+      /// DistanceTable::distanceAt of its redshift; -1 for a tracer not
+      /// kept or outside the grid.
+      std::vector<std::int64_t> cell;
+
+      /// [tracer]: 1 for a kept tracer outside every cell of a reused grid,
+      /// whose displacements are not read; empty with a new grid.
+      std::vector<std::uint8_t> outsideGrid;
+
+      /// [tracer]: 1 when a valid displacement of the tracer entered the
+      /// divergence.
+      std::vector<std::uint8_t> used;
+
+      /// The tracers with used 1, those with outsideGrid 1, and the valid
+      /// displacements of the tracers read that were rejected.
+      std::size_t nUsed = 0, nOutsideGrid = 0, nRejected = 0;
+
+      /// The largest norm of a valid displacement of a tracer read, in
+      /// coordinate units.
+      double maxDisplacement = 0.;
+
+      /// The exponent q of the fixed-point accumulation: each term is
+      /// rounded to a multiple of 2^-q.
+      int scaleExponent = 0;
+    };
+
+    /**
+     *  @brief The divergence of the displacement field on a lightcone grid,
+     *  before the fill and the smoothing.
+     *
+     *  A tracer is read when it is kept and its sky position lies in a cell;
+     *  DivergenceGrid::nTracers counts the tracers read in each cell, masked
+     *  cells included. A valid displacement d of a tracer read, from its
+     *  Cartesian position x, is rejected, and counts nowhere, when its start
+     *  cell or its end cell (lightcone_cell_at(x + d)) is masked, when x + d
+     *  lies outside every cell, or, without a central sphere, when the
+     *  segment passes closer to the observer than the grid's first edge
+     *  (|x cross d|^2 < r^2 |d|^2 with the closest point strictly inside the
+     *  segment). An accepted displacement that ends in its start cell counts
+     *  2 there and adds nothing. One that ends in another cell counts 1 in
+     *  each and adds n . d / (s mps(z)) to each, n the outward normal at the
+     *  crossing point of lightcone_face (start search in the start cell,
+     *  end search in the end cell with the tracer's sky position), s
+     *  cellSizeMps, z the redshift of the crossing point's distance clamped
+     *  to the cell's distance range. The divergence of a cell is its sum
+     *  over its count, 0 for a count of 0; its weight is the count over the
+     *  number of realizations.
+     *
+     *  The sums are accumulated in fixed point as in a box, with the term
+     *  bound maxDisplacement / (s mpsMin), so that the result is the same
+     *  bit for bit with any number of threads.
+     *
+     *  @param grid the grid; its cells' nTracers, nDisplacements,
+     *  divergence and weight are set
+     *  @exception Error, in this order: an internal error if a kept
+     *  tracer's distance cannot be read or the tracer lies outside a new
+     *  grid; with a reused grid, if a valid displacement of a tracer read
+     *  is not finite, or if no valid displacement belongs to a tracer read;
+     *  after the sweep, an internal error if no face is found
+     *  for an accepted displacement, or if a redshift or mps lookup fails at
+     *  a crossing; if every valid displacement read was rejected
+     */
+    LightconeDivergence lightcone_divergence (const LightconeSweep& sweep, LightconeGrid& grid);
 
     /**
      *  @brief The lightcone search every lightcone entry converges into:
@@ -1004,9 +1130,9 @@ namespace bitvf {
      *  the call's distance table and mask; its nCells must equal the
      *  rebuilt count, and in the array entries its profile must equal
      *  mps in redshift and mps, bit for bit. Every other field is ignored.
-     *  @exception Error on every case of the entry of findVoidsLightcone
-     *  and of the grid; once the grid is built, always, since the search
-     *  is not written
+     *  @exception Error on every case of the entry of findVoidsLightcone,
+     *  of the grid and of the divergence; after the divergence, always,
+     *  since the rest of the search is not written
      */
     Result runLightcone (const std::vector<double>* tracers, const std::vector<double>& tracersSky,
                          const std::vector<double>& displacement, const std::vector<std::uint8_t>& valid,

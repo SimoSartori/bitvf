@@ -560,7 +560,7 @@ namespace bitvf {
     /// upper one, and a displacement that starts or ends on a face, an edge
     /// or a vertex, or runs along a face, is counted as that of the same
     /// tracer moved one ulp into its cell. In a lightcone, displacements
-    /// rejected by the mask count nowhere (Counts::displacementsRejected).
+    /// rejected count nowhere (Counts::displacementsRejected).
     std::vector<std::uint64_t> nDisplacements;
 
     /// Tracers starting in each cell.
@@ -664,9 +664,13 @@ namespace bitvf {
     std::size_t randomsOutsideGrid = 0;  ///< lightcone, reused grid: randoms outside it, removed
     std::size_t displacements = 0;       ///< valid displacements given
 
-    /// Lightcone: valid displacements rejected because their endpoint, or a
-    /// point of their path, falls on a masked cell or outside the survey.
-    /// 0 in a box.
+    /// Lightcone: valid displacements of the tracers read that were
+    /// rejected (masked cells, outside or below the grid): the start or the
+    /// end lies in a masked cell, the end lies outside every cell, or,
+    /// without a central sphere, the path passes closer to the observer
+    /// than the grid's first edge. A path through unobserved pixels is the
+    /// reconstruction's to reject, with its own mask and threshold. 0 in a
+    /// box.
     std::size_t displacementsRejected = 0;
   };
 

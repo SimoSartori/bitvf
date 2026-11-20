@@ -37,15 +37,6 @@
 
 namespace {
 
-  /// The base-2 logarithm of the largest count of a cell the scale of the
-  /// accumulation assumes; a larger count reruns the accumulation at the
-  /// scale of the real count.
-  constexpr int kAssumedCountBits = 20;
-
-  /// The largest exponent of the scale, so that 2^-q times a sum stays a
-  /// normal double.
-  constexpr int kMaxScaleExponent = 1000;
-
   /// No offending displacement.
   constexpr std::size_t kNone = std::numeric_limits<std::size_t>::max();
 
@@ -55,20 +46,6 @@ namespace {
     std::size_t outside = kNone;
     std::size_t noFace = kNone;
   };
-
-  /**
-   *  @brief The scale exponent q = 61 - e - L, with B < 2^e, capped at
-   *  kMaxScaleExponent; 0 when B is 0.
-   *  @param B the largest component of a displacement, in cell sides
-   *  @param L the base-2 logarithm of the largest count of a cell
-   */
-  int scale_exponent (const double B, const int L)
-  {
-    if (!(B > 0.)) return 0;
-    int e = 0;
-    std::frexp(B, &e);
-    return std::min(61 - e - L, kMaxScaleExponent);
-  }
 
   /**
    *  @brief One sweep over the tracers read: start and end cells, faces,
@@ -149,6 +126,18 @@ namespace {
     return {outside, noFace};
   }
 
+}
+
+
+// ============================================================================
+
+
+int bitvf::internal::scale_exponent (const double B, const int L)
+{
+  if (!(B > 0.)) return 0;
+  int e = 0;
+  std::frexp(B, &e);
+  return std::min(61 - e - L, 1000);
 }
 
 

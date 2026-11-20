@@ -161,6 +161,7 @@ namespace {
     std::string line, kept;
     while (std::getline(in, line)) {
       if (line.find("bitvf: kept ") != 0 && line.find("bitvf: grid") != 0) continue;
+      if (line.find(" outside the reused grid") != std::string::npos) continue;
       line = std::regex_replace(line, time, "");
       if (built) {
         for (const auto& swap : {std::pair<std::string, std::string>{" mps (given)", " mps (reused)"},
