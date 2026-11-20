@@ -125,8 +125,10 @@ order of its seed cell, whatever the number of threads.
   divergence is below 0; the extended void is the whole basin. For an
   overdense basin the two coincide.
 - **centre**: the seed cell's centre x₀ shifted by
-  −Σₙ divₙ (xₙ − x₀) / Σₙ |divₙ| over the seed's neighbouring cells, and
-  kept inside the seed cell.
+  s Σₙ divₙ (xₙ − x₀) / Σₙ |divₙ| over the seed's neighbouring cells, with
+  s = −1 for a void and +1 for an overdense basin, so that a void's centre
+  moves towards lower divergence and an overdense basin's towards higher;
+  then kept inside the seed cell.
 - **radius**, **radiusExt**: the radius of the sphere with the volume of the
   core, of the extended basin.
 - **deltaAv**: the tracers starting in the core over its volume, divided by

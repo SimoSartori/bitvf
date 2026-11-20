@@ -24,3 +24,9 @@ The first release.
   step finishes.
 - Results identical bit for bit whatever the number of threads, on every
   supported platform and compiler.
+
+### Changed
+
+- The centres of overdense basins change: the shift from the seed cell's
+  centre now points towards higher divergence, so an overdense basin's
+  centre moves towards its higher neighbours. Voids' centres are unchanged.

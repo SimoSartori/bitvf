@@ -306,9 +306,11 @@ class BasinCatalog:
     def centre(self) -> NDArray[np.float64]:
         """Cartesian centre, shape (n_basins, 3), in coordinate units: the
         seed cell's centre x0, shifted by
-        ``-sum_n div_n (x_n - x0) / sum_n |div_n|`` over the seed's
-        neighbouring cells n, with div the smoothed
-        divergence, and kept inside the seed cell."""
+        ``s * sum_n div_n (x_n - x0) / sum_n |div_n|`` over the seed's
+        neighbouring cells n, with div the smoothed divergence and s = -1
+        for a void, +1 for an overdense basin (towards lower divergence in a
+        void, higher in an overdense basin), and kept inside the seed
+        cell."""
     @property
     def centre_sky(self) -> NDArray[np.float64]:
         """Sky coordinates of the centre, lightcone only; shape (0, 3) in a

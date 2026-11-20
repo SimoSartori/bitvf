@@ -304,9 +304,11 @@ namespace bitvf {
     std::size_t nBasins = 0;
 
     /// Cartesian centre, in coordinate units: the seed cell's centre x0,
-    /// shifted by -sum_n div_n (x_n - x0) / sum_n |div_n| over the seed's
-    /// neighbouring cells n, with div the field the watershed split, and
-    /// kept inside the seed cell. Flat, [basin][xyz].
+    /// shifted by s sum_n div_n (x_n - x0) / sum_n |div_n| over the seed's
+    /// neighbouring cells n, with div the field the watershed split and
+    /// s = -1 for a void, +1 for an overdense basin (towards lower divergence
+    /// in a void, higher in an overdense basin), and kept inside the seed
+    /// cell. Flat, [basin][xyz].
     std::vector<double> centre;
 
     /// Sky coordinates of centre: right ascension, declination, redshift;

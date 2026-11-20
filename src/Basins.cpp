@@ -170,7 +170,8 @@ void bitvf::internal::box_basins (const BoxSearch* search, const BoxDivergence* 
 
       for (int a = 0; a < 3; ++a) {
         const double i = (double)idx[a];
-        double x = lower[a] + s * (i + 0.5) + num[a] / den;
+        const double shift = num[a] / den;
+        double x = lower[a] + s * (i + 0.5) + (kind == 0 ? shift : -shift);
         const double faceLo = lower[a] + s * i;
         const double faceHi = lower[a] + s * (i + 1.);
         x = std::max(faceLo, std::min(faceHi, x));

@@ -651,7 +651,8 @@ namespace bitvf {
      *  BasinCatalog describes for a box.
      *
      *  The centre is computed from the divergence of the seed's neighbours,
-     *  cut at the faces of the grid and taken in ascending row order, with a
+     *  with the shift's sign reversed for overdense basins, cut at the faces
+     *  of the grid and taken in ascending row order, with a
      *  sum of 0 over |div_n| read as 1. It is then clamped to the seed cell,
      *  per axis, and moved by the least steps of one ulp that make
      *  box_cell return the seed for it. The radii and deltaAv come from the

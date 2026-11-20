@@ -55,7 +55,7 @@ namespace {
   // input, cells of 1 and 0.5 mps, sigma 1 mps, recorded once. A different
   // value on some platform means results are not portable there.
   constexpr std::uint64_t kRecordedHash1 = 0x83688cdf6487890eull;
-  constexpr std::uint64_t kRecordedHash05 = 0x926c412455a8dac4ull;
+  constexpr std::uint64_t kRecordedHash05 = 0x58c0eefa0f3350a7ull;
 
   constexpr double kPi = 3.141592653589793;
   constexpr double kInf = std::numeric_limits<double>::infinity();
@@ -189,8 +189,8 @@ namespace {
     return out;
   }
 
-  /// The unclamped centre, evaluated directly.
-  std::array<double, 3> unclamped (const DivergenceGrid& g, const std::int64_t c)
+  /// The unclamped centre, evaluated directly: towards lower divergence for a void, higher for an overdense basin.
+  std::array<double, 3> unclamped (const DivergenceGrid& g, const std::int64_t c, const bool isVoid)
   {
     const std::int64_t n[3] = {(std::int64_t)g.nCellsAxis[0], (std::int64_t)g.nCellsAxis[1],
                                (std::int64_t)g.nCellsAxis[2]};
@@ -212,7 +212,7 @@ namespace {
         }
     if (den == 0.) den = 1.;
     std::array<double, 3> x;
-    for (int k = 0; k < 3; ++k) x[k] = g.lower[k] + s * (i[k] + 0.5) + num[k] / den;
+    for (int k = 0; k < 3; ++k) x[k] = g.lower[k] + s * (i[k] + 0.5) + (isVoid ? num[k] / den : -(num[k] / den));
     return x;
   }
 
@@ -430,7 +430,7 @@ int main ()
           const Hand h = one_basin(g, c);
           const Catalogues cat = catalogues(h);
           const double* x = &(isVoid ? cat.voids : cat.overdense).centre[0];
-          const std::array<double, 3> u = unclamped(g, c);
+          const std::array<double, 3> u = unclamped(g, c, isVoid);
           bool inside = true;
           for (int a = 0; a < 3; ++a) {
             const double t = (u[a] - g.lower[a]) * (1. / g.cellSize);
@@ -456,6 +456,34 @@ int main ()
       check(cat.voids.centre[0] == p[0] + 0.5 && cat.voids.centre[1] == p[1] + 0.5 &&
             cat.voids.centre[2] == p[2] + 0.5, "all neighbours 0: the cell centre");
     }
+  }
+
+  group("centre direction: a void's centre moves towards its lower neighbour, an overdense basin's towards its "
+        "higher neighbour, by the same weighted shift");
+  {
+    const std::size_t n = 5;
+    const std::int64_t c = row(n, 2, 2, 2);
+    for (const bool isVoid : {true, false}) {
+      DivergenceGrid g = cube(n, 0.);
+      const double sign = isVoid ? -1. : 1.;
+      g.divergence[c] = 2. * sign;
+      g.divergence[row(n, 3, 2, 2)] = 1. * sign;
+      g.divergence[row(n, 1, 2, 2)] = 0.5 * sign;
+      const Catalogues cat = catalogues(one_basin(g, c));
+      const BasinCatalog& b = isVoid ? cat.voids : cat.overdense;
+      check(b.nBasins == 1, "one basin");
+      const std::string what = isVoid ? "void" : "overdense basin";
+      check(b.centre[0] > 2.5 && b.centre[0] < 3., what + ": the centre moves towards the stronger neighbour");
+      check(std::abs(b.centre[0] - (2.5 + 1. / 3.)) < 1e-15, what + ": by 1/3 of a cell");
+      check(b.centre[1] == 2.5 && b.centre[2] == 2.5, what + ": no shift across the other axes");
+    }
+    DivergenceGrid g = cube(n, 0.);
+    g.divergence[c] = 2.;
+    g.divergence[row(n, 2, 3, 2)] = 1.;
+    g.divergence[row(n, 2, 1, 2)] = -1.;
+    const Catalogues cat = catalogues(one_basin(g, c));
+    check(cat.overdense.centre[1] > 2.5 && internal::box_cell(g, &cat.overdense.centre[0]) == c,
+          "overdense basin: towards the higher of two neighbours of opposite sign, inside the seed cell");
   }
 
   group("clamp: a centre pulled past each of the six faces of its seed cell stays in it, box_cell of it "
@@ -806,7 +834,7 @@ int main ()
           ok = ok && brute_force(h, c) && in_seed(h.grid, h.basins, c);
           for (std::size_t b = 0; watershed && b < c.voids.nBasins; ++b) {
             const std::int64_t seed = h.basins.voids.seed[b];
-            const std::array<double, 3> u = unclamped(h.grid, seed);
+            const std::array<double, 3> u = unclamped(h.grid, seed, true);
             const std::int64_t idx[3] = {seed / (std::int64_t)(n[1] * n[2]), (seed / (std::int64_t)n[2]) %
                                          (std::int64_t)n[1], seed % (std::int64_t)n[2]};
             bool inside = true;

@@ -1,11 +1,11 @@
 {
  "hashes": {
-  "find_voids_box.assignment.distance": "daaa8750e223dba2a26c97668ea824df99f02f79ce52b079efcfad0dd704c0ea",
+  "find_voids_box.assignment.distance": "1b95d014732bc7d061dfb1c4b748f1b1cd0a9836988a67cf06b6dba50b949476",
   "find_voids_box.divergence": "da712c37f923243d7b94b96b2f3266d14f71c4bca29ef590fd58d9554bc26fd1",
   "find_voids_box.divergence_smoothed": "f73cef9ddf4a98e78c5b5bb6c683efd38252a912de65626e953fccbf3c28e0a6",
-  "find_voids_box.overdense.centre": "b3754a608072eb2236f595a4bba823f09dc37650e034d9d603ec3c32be4a08e5",
+  "find_voids_box.overdense.centre": "d86bf89ec892cc1dcfe9e2534ff42080ef5a46baf8c994ca9cd41c81d68aaa39",
   "find_voids_box.overdense.contamination": "77b6e2bd987c645a5e128471118adccd03ea454974023305d5dc2e7663efb7c3",
-  "find_voids_box.overdense.delta_2mps": "5666380a86440695cc42717462e8d4fe5738c957d48de091e58250d609f7cc4f",
+  "find_voids_box.overdense.delta_2mps": "fe4043f23bdfad52e988b2798ab77d959a217e9ab1322d91628a770f4cea6a46",
   "find_voids_box.overdense.delta_av": "8661c193999bd5f667f10a630a8fd98e8aadc6f3a86725668996a6e8fe8ba104",
   "find_voids_box.overdense.edge_flag": "01f5a01a236ced913fe3cd45a1a70ed95195db31e8c544b4e5cad81c2a443ccb",
   "find_voids_box.overdense.radius": "fe48814e2e090533ea7f13279df8c188498d79062d9f11620e8460b186bd77c0",
@@ -34,7 +34,7 @@
   "find_voids_box_from_divergence.weight_smoothed": "5ab58e4305ec606e47c26081118e66e0f8432252fd5cd095d1d626cdd453db1c",
   "find_voids_box_from_field.divergence": "6ceb697d7c3b2124a98597bc8615d17c19b0e294d0c75d7e2d47753931085714",
   "find_voids_box_from_field.divergence_smoothed": "d2beb0fcb010e5e8a693aaa90a8bc8cff230d206dcd922a2eaa0a62535107463",
-  "find_voids_box_from_field.overdense.centre": "92f00293ae935bb71a85a6b733036ed90945c5c5d254b646d00ac29b1c38ec21",
+  "find_voids_box_from_field.overdense.centre": "02a44ab33900538d86289fdacd66dcd70f78ef8b3e7545cb2b5ee1f9b19ae202",
   "find_voids_box_from_field.overdense.contamination": "76ac2cde7665454a2feeeb3ff8bf3c4b85272509b98228dbc1e8f7a8c979a647",
   "find_voids_box_from_field.overdense.edge_flag": "d86e8112f3c4c4442126f8e9f44f16867da487f29052bf91b810457db34209a4",
   "find_voids_box_from_field.overdense.radius": "df72fb9f726af10e4d02e811047568cab828a1b542ce468b16023e87fc82cf48",
@@ -44,12 +44,12 @@
   "find_voids_box_from_field.voids.edge_flag": "af9ecbe177721660da15f82901d733ec169d867cd5f1455cdac1533c6f8f85a8",
   "find_voids_box_from_field.voids.radius": "ceda557c274801422b8702384fbbcf9f1b325f8418b37599248db9f4e0d093a7",
   "find_voids_box_from_field.weight_smoothed": "55ac71edb403e9ea12c4e77d7bf754f6c0391f71027b12e10e148c5f93780eca",
-  "run_box.assignment.distance": "fa983b203d201157b1da7c1705e2b7e24dea9bbc351ea48f7be1472c4f39d3a7",
+  "run_box.assignment.distance": "dd9cac98029546b3c30f035afed30d669fb523019f44cb651d5c133d3578acb6",
   "run_box.divergence": "5832871d81bbc537e406a8b7a54225dcb93cc1c6651cbeeb42853cd0903c6756",
   "run_box.divergence_smoothed": "25f9fa137e663920684efd67c5086d311e9a6fe64993e5b72f193c4e9cfbc353",
-  "run_box.overdense.centre": "061707cbc63e3898fdef75f4f16c4ba6c24a371509238ce34a2fff9727342275",
+  "run_box.overdense.centre": "8c07aaced2456d0ca9e426f0ccf54f0619c27f87ca2b57c3e316435bf4b9826a",
   "run_box.overdense.contamination": "f193a4d201bb57a89f542c96f60492da886a10818f28e1142f31a42d6b7c0ea6",
-  "run_box.overdense.delta_2mps": "1c66d42f604830a5931cef8d2b18d1a38d0e17758b20785a6de640163038c105",
+  "run_box.overdense.delta_2mps": "e4af6b97f8710643291c4382fd164bad96aca37e0cabe486d04efa08cd26ab49",
   "run_box.overdense.delta_av": "e4ad63791eac4146420160900bf1f4d5f59fbfbad7068b32c5c15b12e54cf59b",
   "run_box.overdense.edge_flag": "d86e8112f3c4c4442126f8e9f44f16867da487f29052bf91b810457db34209a4",
   "run_box.overdense.radius": "bfff76ebb059e48fb38b8adfe6d8fc0d423ce5990a6162fbe5b3f8b4b0a39cf8",
@@ -81,11 +81,11 @@
   "watershed_box.void_index": "09e63a6ab2b4a69c66cfe72b534e289edda578a9938beb9a6dbe2a096cf7ffc0"
  },
  "recorded": {
-  "date": "2026-11-03",
+  "date": "2026-11-20",
   "machine": "arm64",
   "numpy": "2.5.4",
   "platform": "macOS-14.5-arm64-arm-64bit-Mach-O",
-  "python": "3.14.7",
+  "python": "3.13.3",
   "threads": [
    1,
    4

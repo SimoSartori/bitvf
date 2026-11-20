@@ -50,7 +50,7 @@ namespace {
   // The hash of the search on the default LatticeField, with its weights,
   // sigma 1.5 in coordinate units, recorded once. A different value on
   // some platform means results are not portable there.
-  constexpr std::uint64_t kRecordedHash = 0x06eb8de77478e0b9ull;
+  constexpr std::uint64_t kRecordedHash = 0x0aa8af6c8e2e36abull;
 
   std::string temporary (const std::string& name)
   {
