@@ -1171,6 +1171,44 @@ namespace bitvf {
     LightconeFill lightcone_fill (const LightconeAdjacency& adjacency, DivergenceGrid& grid);
 
     /**
+     *  @brief The smoothing sigma of each shell of a lightcone grid, in
+     *  coordinate units.
+     *
+     *  In Mps, sigma times shellMps of the shell; in coordinate units,
+     *  sigma for every shell. Checked serially, shells in ascending order:
+     *  2 sigma_i^2 must be non-zero and finite, and 16 sigma_i^2 finite.
+     *
+     *  @return one sigma per shell; empty when sigma is 0
+     *  @exception Error if a shell's sigma is too small or too large to
+     *  build the kernel; in Mps the message names the first such shell and
+     *  its redshift
+     */
+    std::vector<double> lightcone_sigma (const Smoothing& smoothing, const LightconeGrid& grid);
+
+    /**
+     *  @brief Smooth the divergence of a lightcone grid into
+     *  divergenceSmoothed and weightSmoothed, as Smoothing describes for a
+     *  lightcone.
+     *
+     *  For a cell m that is not masked, of shell i, the sums run over the
+     *  cells n that are not masked and whose Cartesian centre lies at d^2
+     *  < 16 sigma_i^2 from m's, m included, in ascending cell index: K =
+     *  exp(-d^2 / (2 sigma_i^2)), num += K (weight_n divergence_n), den +=
+     *  K weight_n, sum += K. divergenceSmoothed is num / den when den
+     *  exceeds @p threshold, otherwise 0; weightSmoothed is den / sum. A
+     *  masked cell takes 0 in both. With @p sigmaShell empty both fields
+     *  are emptied. The result is the same with any number of threads.
+     *
+     *  Reads shellCentre, shellFirstRing, ringDecMin, ringDecMax,
+     *  ringFirstCell and, of the cells, nCells, cellRaMin, cellRaMax,
+     *  centre, centreSky, masked, divergence and weight.
+     *
+     *  @param sigmaShell lightcone_sigma of the grid
+     *  @param threshold 1e-12 times the largest weight of the grid
+     */
+    void lightcone_smooth (LightconeGrid& grid, const std::vector<double>& sigmaShell, double threshold);
+
+    /**
      *  @brief The lightcone search every lightcone entry converges into:
      *  the entry checks, the selection and the conversion of what the
      *  search reads.

@@ -704,3 +704,34 @@ double bitvf::internal::check_box_from_field (const std::vector<double>& centres
 
   return sigmaLength;
 }
+
+
+// ============================================================================
+
+
+std::vector<double> bitvf::internal::lightcone_sigma (const Smoothing& smoothing, const LightconeGrid& grid)
+{
+  if (!(smoothing.sigma > 0.)) return {};
+
+  const std::size_t nShells = grid.shellCentre.size();
+  if (smoothing.unit == LengthUnit::Coordinate) {
+    const double sigma = sigma_length(smoothing, 1.);
+    if (!std::isfinite(16 * sigma * sigma))
+      throw Error("the smoothing sigma is " + exact(smoothing.sigma) + " in coordinate units (" + exact(sigma) +
+                  " in coordinate units), too large to build the kernel; use 0 to disable the smoothing");
+    return std::vector<double>(nShells, sigma);
+  }
+
+  std::vector<double> sigmaShell(nShells);
+  for (std::size_t i = 0; i < nShells; ++i) {
+    const double sigma = smoothing.sigma * grid.shellMps[i];
+    const double twoSigmaSq = 2 * sigma * sigma;
+    if (twoSigmaSq == 0. || !std::isfinite(twoSigmaSq) || !std::isfinite(16 * sigma * sigma))
+      throw Error("the smoothing sigma is " + exact(smoothing.sigma) + " mps, which is " + exact(sigma) +
+                  " in coordinate units at redshift " + exact(grid.shellRedshift[i]) + " of shell " +
+                  std::to_string(i) + " (from 0), too " + (twoSigmaSq == 0. ? "small" : "large") +
+                  " to build the kernel; use 0 to disable the smoothing");
+    sigmaShell[i] = sigma;
+  }
+  return sigmaShell;
+}

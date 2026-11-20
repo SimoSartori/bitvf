@@ -120,6 +120,7 @@ namespace {
     const DivergenceGrid* grid = nullptr;
     Case ()
     {
+      config.smoothing.sigma = 0.;
       config.verbosity = otswap::Verbosity::Silent;
       config.divergenceCellSize = 4.;
     }
@@ -704,6 +705,7 @@ int main ()
       noProfile.mpsProfile = {};
       std::ostringstream log;
       Config config;
+      config.smoothing.sigma = 0.;
       config.verbosity = otswap::Verbosity::Detailed;
       config.log = &log;
       throws_naming([&] { findVoidsLightcone(noProfile, c.randomsSky, mask, config, &g); }, "not implemented yet",
@@ -728,6 +730,7 @@ int main ()
     auto lines = [&] (const otswap::Result& r) {
       std::ostringstream log;
       Config config;
+      config.smoothing.sigma = 0.;
       config.verbosity = otswap::Verbosity::Detailed;
       config.log = &log;
       throws_naming([&] { findVoidsLightcone(r, c.randomsSky, full_mask(), config, &g); }, "not implemented yet",

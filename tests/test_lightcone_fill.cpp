@@ -234,6 +234,7 @@ namespace {
     profile.mps = {5., 6.};
     Config config;
     std::ostringstream log;
+    config.smoothing.sigma = 0.;
     config.verbosity = verbosity;
     config.log = &log;
     throws_naming([&] { findVoidsLightcone(tracersSky, displacement, {}, randomsSky, mask, table(), profile, config); },

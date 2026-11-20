@@ -230,6 +230,7 @@ namespace {
     {
       profile.redshift = {0.1, 0.5};
       profile.mps = {5., 6.};
+      config.smoothing.sigma = 0.;
       config.verbosity = otswap::Verbosity::Silent;
     }
 

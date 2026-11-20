@@ -705,6 +705,7 @@ bitvf::Result bitvf::internal::runLightcone (const std::vector<double>* tracers,
   Entry entry = check_entry(tracers, tracersSky, displacement, valid, randoms, randomsSky, mask, distances,
                             mps, config, redshiftCut, ids, grid, reconstruction, fn, true, report);
   LightconeGrid lc = entry_grid(entry, mask, distances, mps, config.divergenceCellSize, grid, fn, report);
+  const std::vector<double> sigmaShell = lightcone_sigma(config.smoothing, lc);
 
   LightconeSweep sweep;
   sweep.nTracers = entry.nTracers;
@@ -744,6 +745,30 @@ bitvf::Result bitvf::internal::runLightcone (const std::vector<double>* tracers,
     out << "filled " << fill.filled << (fill.filled == 1 ? " cell in " : " cells in ") << fill.passes
         << (fill.passes == 1 ? " pass, " : " passes, ") << fill.leftEmpty << " left empty";
     report.step(out);
+  }
+
+  double wMax = 0.;
+  if (!sigmaShell.empty()) {
+    const std::int64_t C = (std::int64_t)lc.cells.nCells;
+#pragma omp parallel for schedule(static) reduction(max:wMax)
+    for (std::int64_t c = 0; c < C; ++c) wMax = std::max(wMax, lc.cells.weight[(std::size_t)c]);
+  }
+  lightcone_smooth(lc, sigmaShell, 1e-12 * wMax);
+  if (report.detailed()) {
+    if (!sigmaShell.empty()) {
+      std::ostringstream out = Report::line();
+      if (config.smoothing.unit == LengthUnit::Mps)
+        out << "smoothed with sigma " << config.smoothing.sigma << " mps ("
+            << *std::min_element(sigmaShell.begin(), sigmaShell.end()) << " to "
+            << *std::max_element(sigmaShell.begin(), sigmaShell.end()) << " in coordinate units)";
+      else
+        out << "smoothed with sigma " << sigmaShell.front() << " in coordinate units";
+      report.step(out);
+    }
+    else {
+      report.lap();
+      report.write("not smoothed (sigma 0)");
+    }
   }
 
   throw Error("findVoidsLightcone: the search after the divergence is not implemented yet");

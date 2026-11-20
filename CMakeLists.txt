@@ -160,6 +160,7 @@ add_library(bitvf STATIC
   src/Divergence.cpp
   src/LightconeDivergence.cpp
   src/LightconeGrid.cpp
+  src/LightconeSmoothing.cpp
   src/Readers.cpp
   src/Smoothing.cpp
   src/Support.cpp
@@ -233,7 +234,8 @@ if (BITVF_BUILD_TESTS)
 
   foreach (test_name test_checks test_box_grid test_divergence test_smoothing test_watershed test_basins test_writers test_readers
                     test_from_divergence test_from_field test_report test_runbox test_lightcone_entry
-                    test_lightcone_grid test_lightcone_faces test_lightcone_divergence test_lightcone_fill)
+                    test_lightcone_grid test_lightcone_faces test_lightcone_divergence test_lightcone_fill
+                    test_lightcone_smoothing)
     add_executable(${test_name} tests/${test_name}.cpp)
     target_include_directories(${test_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_link_libraries(${test_name} PRIVATE bitvf)
