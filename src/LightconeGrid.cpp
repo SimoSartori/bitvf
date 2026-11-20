@@ -468,3 +468,69 @@ std::int64_t bitvf::internal::lightcone_cell (const LightconeGrid& grid, const d
   if (cell < firstCell || !(a < grid.cells.cellRaMax[(std::size_t)cell])) return -1;
   return cell;
 }
+
+
+// ============================================================================
+
+
+bitvf::internal::LightconeOutside bitvf::internal::lightcone_outside (const LightconeGrid& grid,
+                                                                       const std::int64_t cell, const double distance,
+                                                                       const double ra, const double dec)
+{
+  const std::vector<std::int64_t>& firstCell = grid.ringFirstCell;
+  const std::size_t ring = (std::size_t)(std::upper_bound(firstCell.begin(), firstCell.end(), cell) -
+                                         firstCell.begin()) - 1;
+  const std::vector<std::int64_t>& firstRing = grid.shellFirstRing;
+  const std::size_t shell = (std::size_t)(std::upper_bound(firstRing.begin(), firstRing.end(), (std::int64_t)ring) -
+                                          firstRing.begin()) - 1;
+  const std::size_t c = (std::size_t)cell;
+
+  LightconeOutside out;
+  if (distance < grid.shellEdge[shell]) out.side[0] = -1;
+  else if (!(distance < grid.shellEdge[shell + 1])) out.side[0] = 1;
+
+  const double decHi = grid.ringDecMax[ring];
+  if (dec < grid.ringDecMin[ring]) out.side[1] = -1;
+  else if (!(dec < decHi) && !(dec == kHalfPi && decHi == kHalfPi)) out.side[1] = 1;
+
+  const std::vector<double>& raLo = grid.cells.cellRaMin;
+  const std::vector<double>& raHi = grid.cells.cellRaMax;
+  double a = fold(ra);
+  if (!grid.ringFull[ring]) {
+    const double centre = (raLo[(std::size_t)firstCell[ring]] + raHi[(std::size_t)firstCell[ring + 1] - 1]) / 2.;
+    a += kTwoPi * std::round((centre - a) / kTwoPi);
+  }
+  if (!(a >= raLo[c] && a < raHi[c])) {
+    double b = fold(ra);
+    b += kTwoPi * std::round(((raLo[c] + raHi[c]) / 2. - b) / kTwoPi);
+    out.side[2] = b < raLo[c] ? -1 : 1;
+  }
+  return out;
+}
+
+
+// ============================================================================
+
+
+void bitvf::internal::lightcone_sky (const double* x, double& distance, double& ra, double& dec)
+{
+  distance = std::sqrt(x[0]*x[0] + x[1]*x[1] + x[2]*x[2]);
+  if (distance == 0.) {
+    ra = 0.;
+    dec = 0.;
+    return;
+  }
+  ra = fold(otswap::maths::atan2(x[1], x[0]));
+  dec = otswap::maths::asin(std::max(-1., std::min(1., x[2] / distance)));
+}
+
+
+// ============================================================================
+
+
+std::int64_t bitvf::internal::lightcone_cell_at (const LightconeGrid& grid, const double* x)
+{
+  double distance = 0., ra = 0., dec = 0.;
+  lightcone_sky(x, distance, ra, dec);
+  return lightcone_cell(grid, distance, ra, dec);
+}

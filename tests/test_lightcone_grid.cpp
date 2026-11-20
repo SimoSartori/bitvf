@@ -718,6 +718,32 @@ int main ()
           same_record(grids[0], grids[1]), "1 and 4 threads agree");
   }
 
+  // With a grid, a reconstruction's own profile is ignored, even one that differs from the grid's or would be refused.
+  group("with a grid, the reconstruction's profile is ignored, whatever it holds");
+  {
+    const Case c;
+    const otswap::Result rec = reconstruction(c);
+    const DivergenceGrid g = lightconeGrid(rec, c.randomsSky, full_mask(), 4.);
+    auto lines = [&] (const otswap::Result& r) {
+      std::ostringstream log;
+      Config config;
+      config.verbosity = otswap::Verbosity::Detailed;
+      config.log = &log;
+      throws_naming([&] { findVoidsLightcone(r, c.randomsSky, full_mask(), config, &g); }, "not implemented yet",
+                    "result overload with a grid and its own profile");
+      return grid_lines(log.str(), false);
+    };
+    const std::string same = lines(rec);
+    otswap::Result other = rec;
+    other.mpsProfile.redshift = {0.2, 0.6};
+    other.mpsProfile.mps = {7., 9.};
+    check(lines(other) == same, "a profile that differs from the grid's changes nothing");
+    otswap::Result invalid = rec;
+    invalid.mpsProfile.mps = {0., -1.};
+    check(lines(invalid) == same, "a profile that would be refused is not read");
+    check(same.find("bitvf: grid of ") != std::string::npos, "the lines compared hold the grid: " + same);
+  }
+
   // Every inconsistent field of a grid to reuse is refused before any row of data is read, naming the field.
   group("a grid to reuse with an inconsistent record is refused");
   {

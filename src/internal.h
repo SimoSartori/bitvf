@@ -833,6 +833,154 @@ namespace bitvf {
      */
     std::int64_t lightcone_cell (const LightconeGrid& grid, double distance, double ra, double dec);
 
+    /// Where a point lies with respect to one cell of a lightcone grid, per
+    /// coordinate: -1 below the cell's lower edge, +1 on or above its upper
+    /// edge, 0 inside its range. [0] distance, [1] declination, [2] right
+    /// ascension.
+    struct LightconeOutside {
+      std::array<int, 3> side{};
+    };
+
+    /**
+     *  @brief Where a point lies with respect to one cell of a lightcone
+     *  grid, with the comparisons of lightcone_cell.
+     *
+     *  The three sides are all 0 exactly when lightcone_cell returns @p cell
+     *  for the same point. Each coordinate is compared with the cell's own
+     *  range, [lower, upper), whatever the other two: the distance with the
+     *  edges of the cell's shell, the declination with those of its ring
+     *  (a declination of exactly pi/2 is inside a ring whose upper edge is
+     *  pi/2), the right ascension with those of its sector. Whether the
+     *  right ascension is inside is decided as in lightcone_cell; when it is
+     *  not, its side is taken with the right ascension moved by a multiple
+     *  of 2 pi to within pi of the sector's centre, so that a point just
+     *  below RA = 0 in a full ring is below the first sector.
+     *
+     *  @param cell a cell of the grid, 0 <= cell < nCells
+     *  @param distance the comoving distance, in coordinate units
+     *  @param ra,dec radians; any finite right ascension
+     */
+    LightconeOutside lightcone_outside (const LightconeGrid& grid, std::int64_t cell, double distance, double ra,
+                                        double dec);
+
+    /**
+     *  @brief The sky coordinates of a Cartesian point, observer at the
+     *  origin, exactly as otswap::toSky computes them: distance
+     *  sqrt(x^2 + y^2 + z^2), right ascension atan2(y, x) folded into
+     *  [0, 2 pi), declination asin(z / distance) with the ratio clamped to
+     *  [-1, 1], with otswap's maths; at the origin both angles are 0.
+     *
+     *  @param x the point, x, y, z, in coordinate units; finite
+     */
+    void lightcone_sky (const double* x, double& distance, double& ra, double& dec);
+
+    /**
+     *  @brief The cell of a lightcone grid that holds a Cartesian point,
+     *  observer at the origin.
+     *
+     *  The point is converted by lightcone_sky, as otswap::toSky does, and
+     *  the cell is lightcone_cell's for those values. Every lookup of a
+     *  Cartesian point goes through this function: endpoints of
+     *  displacements, points along them and the clamp of the centres.
+     *
+     *  @param x the point, x, y, z, in coordinate units; finite
+     *  @return the cell, or -1 outside every cell
+     */
+    std::int64_t lightcone_cell_at (const LightconeGrid& grid, const double* x);
+
+    /// The face of a lightcone cell through which a displacement leaves or
+    /// enters it.
+    struct LightconeFace {
+
+      /// 0 distance (a sphere), 1 declination (a cone, or the plane z = 0
+      /// for an edge at 0), 2 right ascension (a plane through the z axis);
+      /// -1 when no face is found.
+      int coordinate = -1;
+
+      /// -1 the cell's lower edge in that coordinate, +1 its upper edge.
+      int side = 0;
+
+      /// The crossing, x + t d, 0 <= t <= 1.
+      double t = 0.;
+
+      /// The crossing point x + t d, componentwise; x itself at t = 0 and
+      /// x + d at t = 1.
+      std::array<double, 3> point{};
+
+      /// The unit normal of the face at point, outward from the cell (unit
+      /// up to rounding).
+      std::array<double, 3> normal{};
+    };
+
+    /**
+     *  @brief The face of a lightcone cell through which the segment from
+     *  x to x + d first leaves it (start) or last enters it (end).
+     *
+     *  Roots. Every root in (0, 1) of the surfaces bounding the cell is
+     *  found, with no tolerance:
+     *  - the spheres of the shell's two edges (only the outer one for the
+     *    central sphere);
+     *  - the cones of the ring's two declination edges, both nappes,
+     *    (x^2 + y^2) sin^2 dec - z^2 cos^2 dec = 0; an edge at 0 is the
+     *    plane z = 0; an edge at +-pi/2 is not searched;
+     *  - the planes through the z axis of the sector's two right-ascension
+     *    edges, whole planes, except in a ring with a single sector over
+     *    the full circle (polar caps and the central sphere included). The
+     *    edge 2 pi of a full ring is taken as 0, so that both sectors at
+     *    RA = 0 see the same plane, bit for bit.
+     *  A quadratic A t^2 + B t + C has roots q / A and C / q, with
+     *  q = -(B / 2 + sign(B) sqrt(D)), sign(0) = +1, and D = (B / 2)^2 - AC
+     *  written from L = x cross d: R^2 |d|^2 - |L|^2 for a sphere of radius
+     *  R, with C = (|x| - R)(|x| + R); sin^2 dec (cos^2 dec (L_x^2 + L_y^2)
+     *  - sin^2 dec L_z^2) for a cone. A surface gives roots only when D > 0;
+     *  a plane only when its denominator is not 0; a root that is not
+     *  finite, or not strictly inside (0, 1), is dropped; equal roots count
+     *  once. The sines and cosines of the edges come from otswap's maths,
+     *  computed in each call. A root that should be 0 or 1, for an endpoint
+     *  on a face, may round just outside (0, 1) and be dropped; the
+     *  intervals below give the same crossing either way.
+     *
+     *  Intervals. With the roots sorted, t = 0 and t = 1 bound the list;
+     *  the cell cannot change inside an interval, so each is classified by
+     *  lightcone_outside at its midpoint (a + b) / 2, the point x + t d
+     *  converted by lightcone_sky.
+     *  - start: when x itself lies outside the cell (by rounding, when the
+     *    cell is that of the tracer's sky coordinates), the crossing is
+     *    t = 0 and the point classified is x. Otherwise, from t = 0
+     *    forwards, the first interval whose midpoint is outside the cell;
+     *    the crossing is the root opening it. When none is, the crossing is
+     *    t = 1 and the point classified is x + d.
+     *  - end: from t = 1 backwards, the first interval whose midpoint is
+     *    outside the cell; the crossing is the root closing it (t = 1 for
+     *    the last interval). When none is, the crossing is t = 0 and the
+     *    point classified is x.
+     *  The face is the coordinate the classified point violates, at the
+     *  crossing, whichever surface gave the root. When it violates more than
+     *  one, the first of distance-upper, declination-upper, right-ascension-
+     *  upper, right-ascension-lower, declination-lower, distance-lower is
+     *  taken (a vanishing step along +r, +dec, +ra, in that order of size).
+     *  coordinate is -1 only when the classified point violates none: then
+     *  every point examined lies in the cell.
+     *
+     *  Normal at the crossing point p, outward: distance, side * p / |p|;
+     *  declination, side * (-sin dec_e p_x / rho, -sin dec_e p_y / rho,
+     *  cos dec_e), dec_e the edge, rho = sqrt(p_x^2 + p_y^2) ((0, 0, side)
+     *  for an edge at 0); right ascension, side * (-sin ra_e, cos ra_e, 0),
+     *  ra_e the edge, as taken for the roots. These hold also when p is not on the face. At rho = 0
+     *  (p on the z axis) the azimuth is 0, as lightcone_sky takes it.
+     *
+     *  Never throws: it is called inside parallel regions.
+     *
+     *  @param cell the cell searched: for start, the cell of the tracer's
+     *  sky coordinates; for end, lightcone_cell_at(x + d). 0 <= cell < nCells
+     *  @param x the start of the segment, the tracer's Cartesian position;
+     *  finite
+     *  @param d the displacement; finite
+     *  @param start true for the cell left, false for the cell entered
+     */
+    LightconeFace lightcone_face (const LightconeGrid& grid, std::int64_t cell, const double* x, const double* d,
+                                  bool start);
+
     /**
      *  @brief The lightcone search every lightcone entry converges into:
      *  the entry checks, the selection and the conversion of what the
