@@ -1157,6 +1157,11 @@ NB_MODULE(_bitvf, m)
       }, nb::rv_policy::reference_internal, "Lightcone: the mps(z) profile; None for a box.")
     .def_prop_ro("mask_nside", [] (const bitvf::Result& r) { return r.maskNside; },
                  "Lightcone: the NSIDE of the mask the search was given; 0 in a box.")
+    .def_prop_ro("redshift_cut", [] (const bitvf::Result& r) -> nb::object {
+        if (r.geometry == otswap::Geometry::Box) return nb::none();
+        return nb::cast(r.redshiftCut);
+      }, "Lightcone: the closed range of observed redshift the search kept, an otswap.RedshiftCut; None for "
+         "a box.")
     .def_prop_ro("distances", [] (const bitvf::Result& r) -> nb::object {
         if (!r.distances) return nb::none();
         return nb::cast(otswap::DistanceTable(*r.distances));

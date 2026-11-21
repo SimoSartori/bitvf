@@ -241,7 +241,7 @@ if (BITVF_BUILD_TESTS)
                     test_from_divergence test_from_field test_report test_runbox test_lightcone_entry
                     test_lightcone_grid test_lightcone_faces test_lightcone_divergence test_lightcone_fill
                     test_lightcone_smoothing test_lightcone_watershed test_lightcone_basins test_lightcone_centres
-                    test_lightcone_densities test_lightcone_pipeline)
+                    test_lightcone_densities test_lightcone_pipeline test_lightcone_files)
     add_executable(${test_name} tests/${test_name}.cpp)
     target_include_directories(${test_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_link_libraries(${test_name} PRIVATE bitvf)

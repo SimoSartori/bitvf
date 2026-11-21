@@ -51,12 +51,15 @@ namespace {
 
   using bitvf::Error;
   using otswap::io::Keyword;
+  namespace internal = bitvf::internal;
 
   constexpr std::uint64_t kUnsigned = std::numeric_limits<unsigned>::max();
   constexpr std::uint64_t kSize = std::numeric_limits<std::size_t>::max();
 
   const char* const kBoxKeywords[6] = {"BOXXLO", "BOXXHI", "BOXYLO", "BOXYHI", "BOXZLO", "BOXZHI"};
   const char* const kAxis[3] = {"X", "Y", "Z"};
+  constexpr double kRadians = 0.017453292519943295769236907684886;
+  constexpr double kTwoPi = 6.283185307179586476925286766559;
 
   std::string lower_case (std::string s)
   {
@@ -133,6 +136,17 @@ namespace {
     }
 
     /**
+     *  @brief An error unless none of @p names is a keyword of the file:
+     *  the keywords of the other geometry.
+     */
+    void absent (const std::vector<std::string>& names, const std::string& geometry) const
+    {
+      for (const std::string& k : names)
+        if (find(k) != nullptr)
+          throw Error(file + ": keyword " + k + " is present, which a " + geometry + " file does not hold");
+    }
+
+    /**
      *  @brief The box limits: the six box keywords when BOXLIM = 1, else
      *  none. A box keyword without BOXLIM is an error.
      */
@@ -172,6 +186,125 @@ namespace {
     }
   };
 
+  /// The grid of a lightcone divergence file, its keywords read in @p h.
+  bitvf::DivergenceGrid read_lightcone_divergence (const Header& h)
+  {
+    using bitvf::DivergenceGrid;
+    const std::string& file = h.file;
+    h.absent({"BOXLIM", "BOXXLO", "BOXXHI", "BOXYLO", "BOXYHI", "BOXZLO", "BOXZHI", "LOWERX", "LOWERY", "LOWERZ",
+              "UPPERX", "UPPERY", "UPPERZ", "CELLSIDE", "NCELLX", "NCELLY", "NCELLZ", "MPS"}, "lightcone");
+
+    DivergenceGrid grid;
+    grid.geometry = otswap::Geometry::Lightcone;
+    grid.nCells = (std::size_t)h.whole("NCELLS", kSize);
+    grid.nRealizations = (unsigned)h.whole("NREC", kUnsigned);
+    if (grid.nRealizations == 0) throw Error(file + ": NREC is 0; it must be at least 1");
+    grid.nRealizationsMean = (unsigned)h.whole("NRECMEAN", kUnsigned);
+    if (grid.nRealizationsMean == 0) throw Error(file + ": NRECMEAN is 0; it must be at least 1");
+    grid.cellSizeMps = h.real("CELLSIZE");
+    grid.distanceMin = h.real("DISTMIN");
+    grid.distanceMax = h.real("DISTMAX");
+    grid.raMin = h.real("RAMIN") * kRadians;
+    grid.raMax = h.real("RAMAX") * kRadians;
+    grid.decMin = h.real("DECMIN") * kRadians;
+    grid.decMax = h.real("DECMAX") * kRadians;
+    if (h.real("RAMAX") - h.real("RAMIN") <= 360.)
+      while (grid.raMax - grid.raMin > kTwoPi) grid.raMax = std::nextafter(grid.raMax, grid.raMin);
+
+    const std::string lower = lower_case(file);
+    const bool fits = lower.size() >= 5 && (lower.compare(lower.size() - 5, 5, ".fits") == 0 ||
+                      lower.compare(lower.size() - 4, 4, ".fit") == 0 ||
+                      (lower.size() >= 8 && lower.compare(lower.size() - 8, 8, ".fits.gz") == 0));
+    if (!internal::call_otswap([&] { return otswap::io::hasPart(file, "MPSPROF", "mps"); }))
+      throw Error(file + ": the mps profile part is missing; a lightcone divergence file holds it beside the grid");
+    const std::string profileFile = fits ? file : internal::call_otswap([&] { return otswap::io::twinFile(file, "mps"); });
+    const Header p {profileFile, internal::call_otswap([&] {
+                                   return otswap::io::readKeywords(profileFile, fits ? "MPSPROF" : "");
+                                 })};
+    p.product("divergence mps profile", "divergence mps profile", "a bitvf divergence mps profile");
+    grid.mpsProfile.redshiftMin = p.real("ZMIN");
+    grid.mpsProfile.redshiftMax = p.real("ZMAX");
+    grid.mpsProfile.representative = p.real("MPSREPR");
+    const otswap::io::Table pt = internal::call_otswap([&] {
+      return otswap::io::readPart(file, "MPSPROF", "mps", {"redshift", "MPS"}, {"nTracers"});
+    });
+    for (std::size_t row = 0; row < pt.nRows; ++row) {
+      if (pt.integers[row] < 0)
+        throw Error(profileFile + ": data row " + std::to_string(row + 1) + " (from 1) has a negative count (nTracers " +
+                    std::to_string(pt.integers[row]) + ")");
+      grid.mpsProfile.redshift.push_back(pt.values[2*row]);
+      grid.mpsProfile.mps.push_back(pt.values[2*row+1]);
+      grid.mpsProfile.count.push_back((std::size_t)pt.integers[row]);
+    }
+
+    try {
+      internal::check_lightcone_record(grid, "", "the grid to reuse");
+    }
+    catch (const Error& e) {
+      throw Error(file + ": " + e.what());
+    }
+
+    const std::vector<std::string> names = internal::call_otswap([&file] { return otswap::io::columnNames(file); });
+    const bool smoothed = Header::has_column(names, "divergenceSmoothed");
+    const bool weightSmoothed = Header::has_column(names, "weightSmoothed");
+    std::vector<std::string> columns = {"cellX", "cellY", "cellZ", "cellRA", "cellDec", "cellRed", "divergence"};
+    if (smoothed) columns.push_back("divergenceSmoothed");
+    columns.push_back("volume");
+    columns.push_back("weight");
+    if (weightSmoothed) columns.push_back("weightSmoothed");
+    const otswap::io::Table t = internal::call_otswap([&] {
+      return otswap::io::read(file, columns, {"index", "nDispl", "nTracers", "voidIndex", "overdenseIndex", "masked"});
+    });
+
+    const std::size_t n = grid.nCells;
+    if (t.nRows != n)
+      throw Error(file + ": it holds " + std::to_string(t.nRows) + " rows, but NCELLS is " + std::to_string(n));
+
+    const std::size_t nc = columns.size();
+    const std::size_t s = smoothed ? 1 : 0;
+    grid.centre.resize(3 * n);
+    grid.centreSky.resize(3 * n);
+    grid.divergence.resize(n);
+    if (smoothed) grid.divergenceSmoothed.resize(n);
+    grid.volume.resize(n);
+    grid.weight.resize(n);
+    if (weightSmoothed) grid.weightSmoothed.resize(n);
+    grid.nDisplacements.resize(n);
+    grid.nTracers.resize(n);
+    grid.voidIndex.resize(n);
+    grid.overdenseIndex.resize(n);
+    grid.masked.resize(n);
+    for (std::size_t c = 0; c < n; ++c) {
+      const double* v = &t.values[nc*c];
+      const std::int64_t* k = &t.integers[6*c];
+      const std::string row = file + ": data row " + std::to_string(c+1) + " (from 1) has ";
+      if (k[0] != (std::int64_t)c)
+        throw Error(row + "index " + std::to_string(k[0]) + "; the rows must hold the cells 0 to NCELLS - 1 in order");
+      if (k[1] < 0 || k[2] < 0)
+        throw Error(row + "a negative count (nDispl " + std::to_string(k[1]) + ", nTracers " + std::to_string(k[2]) + ")");
+      if (k[3] < -1 || k[4] < -1)
+        throw Error(row + "a basin index below -1 (voidIndex " + std::to_string(k[3]) + ", overdenseIndex " +
+                    std::to_string(k[4]) + ")");
+      if (k[5] != 0 && k[5] != 1)
+        throw Error(row + "masked " + std::to_string(k[5]) + "; it must be 0 or 1");
+      for (std::size_t a = 0; a < 3; ++a) grid.centre[3*c+a] = v[a];
+      grid.centreSky[3*c] = v[3] * kRadians;
+      grid.centreSky[3*c+1] = v[4] * kRadians;
+      grid.centreSky[3*c+2] = v[5];
+      grid.divergence[c] = v[6];
+      if (smoothed) grid.divergenceSmoothed[c] = v[7];
+      grid.volume[c] = v[7+s];
+      grid.weight[c] = v[8+s];
+      if (weightSmoothed) grid.weightSmoothed[c] = v[9+s];
+      grid.nDisplacements[c] = (std::uint64_t)k[1];
+      grid.nTracers[c] = (std::uint64_t)k[2];
+      grid.voidIndex[c] = k[3];
+      grid.overdenseIndex[c] = k[4];
+      grid.masked[c] = (std::uint8_t)k[5];
+    }
+    return grid;
+  }
+
 }
 
 
@@ -182,7 +315,9 @@ bitvf::DivergenceGrid bitvf::io::readDivergence (const std::string& file)
 {
   const Header h {file, internal::call_otswap([&file] { return otswap::io::readKeywords(file); })};
   h.product("divergence", "divergence", "a bitvf divergence");
+  if (h.text("GEOMETRY") == "lightcone") return read_lightcone_divergence(h);
   h.box_geometry("divergence");
+  h.absent({"DISTMIN", "DISTMAX", "RAMIN", "RAMAX", "DECMIN", "DECMAX"}, "box");
 
   DivergenceGrid grid;
   grid.geometry = otswap::Geometry::Box;

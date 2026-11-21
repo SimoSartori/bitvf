@@ -548,7 +548,7 @@ int main ()
     {
       Table d = div;
       d.set("GEOMETRY", "lightcone");
-      refused(d, read_divergence, "reading a lightcone divergence file is not implemented", "divergence");
+      refused(d, read_divergence, "keyword BOXLIM is present, which a lightcone file does not hold", "divergence");
       d.set("GEOMETRY", "Box");
       refused(d, read_divergence, ": GEOMETRY is 'Box'; it must be box or lightcone", "divergence");
     }

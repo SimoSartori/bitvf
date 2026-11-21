@@ -601,6 +601,7 @@ def test_dtypes_and_shapes(result):
     for flag in (a.in_mask, a.in_cut):
         assert flag.dtype == np.bool_ and flag.shape == (0,)
     assert result.mask_nside == 0
+    assert result.redshift_cut is None
     assert result.counts.tracers_in_masked_cells == 0
     assert a.in_box.sum() == n - 4
     for flag in (result.uncorrected, result.outside_grid, result.outside_cut, g.masked):

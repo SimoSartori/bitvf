@@ -141,16 +141,18 @@ namespace {
     }
   }
 
-  void check_profile (const otswap::MpsProfile& profile, const std::string& fn, const bool ofGrid)
+  void check_profile (const otswap::MpsProfile& profile, const std::string& fn, const bool ofGrid,
+                      const std::string& gridName = "the grid to reuse")
   {
     const std::vector<double>& z = profile.redshift;
     const std::vector<double>& m = profile.mps;
-    const std::string subject = ofGrid ? fn + ": the mps profile of the grid to reuse" : "the mps profile";
+    const std::string subject = ofGrid ? (fn.empty() ? "" : fn + ": ") + std::string("the mps profile of ") + gridName
+                                       : "the mps profile";
     if (z.empty() && m.empty())
       throw bitvf::Error(subject + " is empty; it must hold at least one entry");
     if (z.size() != m.size())
-      throw bitvf::Error(fn + ": the redshift and mps lists of " +
-                         (ofGrid ? "the profile of the grid to reuse" : "the profile") + " hold " +
+      throw bitvf::Error((fn.empty() ? "" : fn + ": ") + "the redshift and mps lists of " +
+                         (ofGrid ? "the profile of " + gridName : std::string("the profile")) + " hold " +
                          std::to_string(z.size()) + " and " + std::to_string(m.size()) + " entries");
     for (std::size_t i = 0; i < z.size(); ++i) {
       if (!std::isfinite(z[i]))
@@ -170,10 +172,10 @@ namespace {
                            std::to_string(i) + " (from 0); it must be positive");
   }
 
-  void check_grid (const bitvf::DivergenceGrid& grid, const std::string& fn)
+  void check_grid (const bitvf::DivergenceGrid& grid, const std::string& fn, const std::string& name)
   {
     using bitvf::Error;
-    const std::string bad = fn + ": the grid to reuse ";
+    const std::string bad = (fn.empty() ? "" : fn + ": ") + name + " ";
     if (grid.geometry != otswap::Geometry::Lightcone) throw Error(bad + "is not a lightcone grid");
     if (!std::isfinite(grid.distanceMin) || !std::isfinite(grid.distanceMax) ||
         !(grid.distanceMin >= 0. && grid.distanceMin <= grid.distanceMax))
@@ -190,7 +192,7 @@ namespace {
     if (!std::isfinite(grid.cellSizeMps) || grid.cellSizeMps <= 0.)
       throw Error(bad + "has a cell size of " + num(grid.cellSizeMps) +
                   " mps (cellSizeMps); it must be finite and positive");
-    check_profile(grid.mpsProfile, fn, true);
+    check_profile(grid.mpsProfile, fn, true, name);
     std::string boxField;
     if (!std::isnan(grid.cellSize)) boxField = "cellSize";
     else if (!std::isnan(grid.lower[0]) || !std::isnan(grid.lower[1]) || !std::isnan(grid.lower[2]))
@@ -406,7 +408,7 @@ namespace {
     if (rec == nullptr) bitvf::internal::check_ids(ids, N, fn, false);
     bitvf::internal::check_config(config, grid != nullptr);
     if (grid != nullptr) {
-      check_grid(*grid, fn);
+      check_grid(*grid, fn, "the grid to reuse");
       if (rec == nullptr) compare_profiles(mps, grid->mpsProfile, fn);
     }
 
@@ -805,6 +807,7 @@ bitvf::Result bitvf::internal::runLightcone (const std::vector<double>* tracers,
   result.config = config;
   result.config.divergenceCellSize = lc.cells.cellSizeMps;
   result.nTracers = entry.nTracers;
+  result.nRealizations = entry.nRealizations;
   result.geometry = otswap::Geometry::Lightcone;
   result.ids = ids;
   result.voids = std::move(voids);
@@ -851,7 +854,11 @@ bitvf::Result bitvf::internal::runLightcone (const std::vector<double>* tracers,
     }
     result.assignment = std::move(a);
   }
-  if (config.keepDivergence) result.divergence = std::move(lc.cells);
+  if (config.keepDivergence) {
+    lc.cells.nRealizations = entry.nRealizations;
+    lc.cells.nRealizationsMean = config.nRealizationsMean;
+    result.divergence = std::move(lc.cells);
+  }
   if (report.detailed() && (config.keepAssignment || config.keepDivergence)) {
     std::ostringstream out = Report::line();
     out << "kept the " << (!config.keepDivergence ? "tracer assignment"
@@ -1050,4 +1057,14 @@ bitvf::Result bitvf::findVoidsLightcone (const otswap::Result& reconstruction, c
   const otswap::Result& rec = reconstruction;
   return internal::runLightcone(&rec.tracers, rec.tracersSky, rec.displacement, rec.valid, nullptr, randomsSky, mask,
                                 *rec.distances, rec.mpsProfile, config, cut, rec.ids, grid, &rec);
+}
+
+
+// ============================================================================
+
+
+void bitvf::internal::check_lightcone_record (const DivergenceGrid& grid, const std::string& fn,
+                                              const std::string& name)
+{
+  check_grid(grid, fn, name);
 }

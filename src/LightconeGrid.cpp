@@ -188,8 +188,18 @@ bitvf::internal::LightconeGrid bitvf::internal::lightcone_grid (const Divergence
                                                                 const otswap::DistanceTable& distances,
                                                                 const otswap::Mask& mask, const bool reused)
 {
-  const std::string name = reused ? "the grid to reuse" : "the grid";
-  const std::string of = reused ? " of the grid to reuse" : "";
+  return lightcone_grid(record, distances, &mask, reused ? "the grid to reuse" : "the grid");
+}
+
+
+// ============================================================================
+
+
+bitvf::internal::LightconeGrid bitvf::internal::lightcone_grid (const DivergenceGrid& record,
+                                                                const otswap::DistanceTable& distances,
+                                                                const otswap::Mask* mask, const std::string& name)
+{
+  const std::string of = name == "the grid" ? "" : " of " + name;
   const otswap::MpsProfile& profile = record.mpsProfile;
   const double s = record.cellSizeMps;
   const double d0 = distances.distance().front(), d1 = distances.distance().back();
@@ -417,7 +427,7 @@ bitvf::internal::LightconeGrid bitvf::internal::lightcone_grid (const Divergence
         cells.centre[3*c] = distance * cosDec * otswap::maths::cos(ra);
         cells.centre[3*c+1] = distance * cosDec * otswap::maths::sin(ra);
         cells.centre[3*c+2] = distance * sinDec;
-        cells.masked[c] = mask.allows(ra, decCentre) ? 0 : 1;
+        cells.masked[c] = mask != nullptr && !mask->allows(ra, decCentre) ? 1 : 0;
       }
     }
     catch (...) {

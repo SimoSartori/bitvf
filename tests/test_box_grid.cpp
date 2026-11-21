@@ -345,7 +345,8 @@ int main ()
       return r;
     };
     throws_naming([&] { boxGrid(from([] (otswap::Result& r) { r.geometry = otswap::Geometry::Lightcone; })); },
-                  "boxGrid: the reconstruction is not a box result", "boxGrid: the reconstruction is not a box result");
+                  "boxGrid: the reconstruction is not a box result; use lightconeGrid",
+                  "boxGrid: the reconstruction is not a box result");
     throws_naming([&] { boxGrid(from([] (otswap::Result& r) { r.nRealizations = 0; })); },
                   "boxGrid: the reconstruction is malformed: it holds no realizations", "boxGrid: the reconstruction is malformed: it holds no realizations");
     throws_naming([&] { boxGrid(from([] (otswap::Result& r) { r.box.reset(); })); },

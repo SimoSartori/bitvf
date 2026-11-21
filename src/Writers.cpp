@@ -29,6 +29,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <functional>
 #include <iomanip>
@@ -50,6 +51,8 @@ namespace {
   using otswap::io::Column;
   using otswap::io::Keyword;
 
+  constexpr double kDegrees = 57.295779513082320876798154814105;
+  constexpr std::int64_t kMaxNside = (std::int64_t)1 << 29;
   constexpr int kPrecision = 9;
   constexpr int kLossless = 17;
 
@@ -123,6 +126,9 @@ namespace {
       throw Error(writer + ": the result is malformed: it records no divergence cell size");
     if (result.config.nRealizationsMean == 0)
       throw Error(writer + ": the result is malformed: it records 0 realizations averaged");
+    if (result.geometry == otswap::Geometry::Lightcone && (result.maskNside < 1 || result.maskNside > kMaxNside))
+      throw Error(writer + ": the result is malformed: maskNside is " + std::to_string(result.maskNside) +
+                  "; it must lie in [1, " + std::to_string(kMaxNside) + "]");
   }
 
   std::vector<Keyword> keywords (const std::string& product, const bitvf::Result& result,
@@ -173,7 +179,8 @@ namespace {
   }
 
   void write_table (const std::string& file, const std::vector<Source>& sources, const std::size_t nRows,
-                    const int precision, std::vector<Keyword> keywords)
+                    const int precision, std::vector<Keyword> keywords,
+                    std::vector<otswap::io::TablePart> others = {})
   {
     std::vector<Column> columns;
     columns.reserve(sources.size());
@@ -192,11 +199,178 @@ namespace {
     };
 
     try {
-      otswap::io::write(file, columns, nRows, fill, options);
+      if (others.empty())
+        otswap::io::write(file, columns, nRows, fill, options);
+      else {
+        otswap::io::TablePart main;
+        main.columns = columns;
+        main.nRows = nRows;
+        main.fillRow = fill;
+        main.options = options;
+        others.insert(others.begin(), std::move(main));
+        otswap::io::writeParts(file, others);
+      }
     }
     catch (const otswap::Error& e) {
       std::throw_with_nested(Error(std::string("otswap: ") + e.what()));
     }
+  }
+
+  void write_lightcone_divergence (const std::string& file, const bitvf::Result& result)
+  {
+    using bitvf::DivergenceGrid;
+    const std::string writer = "writeDivergence";
+    const std::string malformed = "writeDivergence: the result is malformed: ";
+    const DivergenceGrid& grid = *result.divergence;
+    const otswap::MpsProfile& profile = result.mpsProfile;
+    if (!result.distances) throw Error(malformed + "it holds no distance table");
+    if (profile.redshift.empty() && profile.mps.empty()) throw Error(malformed + "it holds no mps profile");
+
+    const std::size_t n = grid.nCells;
+    check_size(grid.centre.size(), 3 * n, "divergence.centre", writer);
+    check_size(grid.centreSky.size(), 3 * n, "divergence.centreSky", writer);
+    check_size(grid.divergence.size(), n, "divergence.divergence", writer);
+    if (!grid.divergenceSmoothed.empty())
+      check_size(grid.divergenceSmoothed.size(), n, "divergence.divergenceSmoothed", writer);
+    check_size(grid.volume.size(), n, "divergence.volume", writer);
+    check_size(grid.weight.size(), n, "divergence.weight", writer);
+    if (!grid.weightSmoothed.empty())
+      check_size(grid.weightSmoothed.size(), n, "divergence.weightSmoothed", writer);
+    check_size(grid.nDisplacements.size(), n, "divergence.nDisplacements", writer);
+    check_size(grid.nTracers.size(), n, "divergence.nTracers", writer);
+    check_size(grid.voidIndex.size(), n, "divergence.voidIndex", writer);
+    check_size(grid.overdenseIndex.size(), n, "divergence.overdenseIndex", writer);
+    check_size(grid.masked.size(), n, "divergence.masked", writer);
+    const std::pair<const std::vector<double>*, const char*> limits[6] = {
+      {&grid.cellRaMin, "divergence.cellRaMin"}, {&grid.cellRaMax, "divergence.cellRaMax"},
+      {&grid.cellDecMin, "divergence.cellDecMin"}, {&grid.cellDecMax, "divergence.cellDecMax"},
+      {&grid.cellDistanceMin, "divergence.cellDistanceMin"}, {&grid.cellDistanceMax, "divergence.cellDistanceMax"}};
+    for (const auto& [column, field] : limits)
+      if (!column->empty()) check_size(column->size(), n, field, writer);
+    check_size(profile.mps.size(), profile.redshift.size(), "mpsProfile.mps", writer);
+    check_size(profile.count.size(), profile.redshift.size(), "mpsProfile.count", writer);
+    check_int64(grid.nDisplacements, "divergence.nDisplacements", "cell", writer);
+    check_int64(grid.nTracers, "divergence.nTracers", "cell", writer);
+
+    bitvf::internal::check_lightcone_record(grid, writer, "the divergence grid");
+    bitvf::internal::LightconeGrid rebuilt;
+    try {
+      rebuilt = bitvf::internal::lightcone_grid(grid, *result.distances, nullptr, "the divergence grid");
+    }
+    catch (const Error& e) {
+      std::throw_with_nested(Error(writer + ": " + e.what()));
+    }
+    if (rebuilt.cells.nCells != n)
+      throw Error(writer + ": the divergence grid holds " + std::to_string(n) + " cells but the rebuild from its "
+                  "record gives " + std::to_string(rebuilt.cells.nCells) +
+                  ": the grid does not belong to this result's distance table");
+    const DivergenceGrid& cells = rebuilt.cells;
+
+    const otswap::MpsProfile& gp = grid.mpsProfile;
+    if (gp.redshift.size() != profile.redshift.size())
+      throw Error(malformed + "the mps profile of its divergence grid holds " + std::to_string(gp.redshift.size()) +
+                  " entries, but the search's holds " + std::to_string(profile.redshift.size()) +
+                  "; they must be equal");
+    for (std::size_t i = 0; i < gp.redshift.size(); ++i)
+      for (const bool redshift : {true, false}) {
+        const double a = redshift ? gp.redshift[i] : gp.mps[i];
+        const double b = redshift ? profile.redshift[i] : profile.mps[i];
+        if (std::memcmp(&a, &b, sizeof a) != 0)
+          throw Error(malformed + "the mps profile of its divergence grid differs from the search's at entry " +
+                      std::to_string(i) + " (from 0): " + (redshift ? "redshift " : "mps ") + exact(a) +
+                      " against " + exact(b) + "; they must be equal");
+      }
+    if (grid.cellSizeMps != *result.config.divergenceCellSize)
+      throw Error(malformed + "its divergence grid has a cell size of " + exact(grid.cellSizeMps) +
+                  " mps, but its configuration records " + exact(*result.config.divergenceCellSize) +
+                  "; they must be equal");
+    if (grid.nRealizations != result.nRealizations)
+      throw Error(malformed + "its divergence grid records " + std::to_string(grid.nRealizations) +
+                  " realizations, but the search's are " + std::to_string(result.nRealizations) +
+                  "; they must be equal");
+    if (grid.nRealizationsMean != result.config.nRealizationsMean)
+      throw Error(malformed + "its divergence grid records " + std::to_string(grid.nRealizationsMean) +
+                  " realizations averaged, but its configuration records " +
+                  std::to_string(result.config.nRealizationsMean) + "; they must be equal");
+
+    std::vector<Source> sources = {
+      integer("index", "row of the cell", [] (std::size_t c) { return (std::int64_t)c; }),
+      real("cellX", "x of the cell centre, in coordinate units", [&grid] (std::size_t c) { return grid.centre[3*c]; }),
+      real("cellY", "y of the cell centre, in coordinate units",
+           [&grid] (std::size_t c) { return grid.centre[3*c+1]; }),
+      real("cellZ", "z of the cell centre, in coordinate units",
+           [&grid] (std::size_t c) { return grid.centre[3*c+2]; }),
+      real("cellRA", "right ascension of the cell centre, in degrees",
+           [&grid] (std::size_t c) { return grid.centreSky[3*c] * kDegrees; }),
+      real("cellDec", "declination of the cell centre, in degrees",
+           [&grid] (std::size_t c) { return grid.centreSky[3*c+1] * kDegrees; }),
+      real("cellRed", "redshift of the cell centre", [&grid] (std::size_t c) { return grid.centreSky[3*c+2]; }),
+      real("cellDist", "comoving distance of the cell centre, in coordinate units",
+           [&cells] (std::size_t c) {
+             return cells.cellDistanceMin[c] == 0. ? 0. : (cells.cellDistanceMin[c] + cells.cellDistanceMax[c]) / 2.;
+           }),
+      real("cellRAMin", "lower right ascension of the cell, in degrees",
+           [&cells] (std::size_t c) { return cells.cellRaMin[c] * kDegrees; }),
+      real("cellRAMax", "upper right ascension of the cell, in degrees",
+           [&cells] (std::size_t c) { return cells.cellRaMax[c] * kDegrees; }),
+      real("cellDecMin", "lower declination of the cell, in degrees",
+           [&cells] (std::size_t c) { return cells.cellDecMin[c] * kDegrees; }),
+      real("cellDecMax", "upper declination of the cell, in degrees",
+           [&cells] (std::size_t c) { return cells.cellDecMax[c] * kDegrees; }),
+      real("cellDistMin", "inner distance of the cell, in coordinate units",
+           [&cells] (std::size_t c) { return cells.cellDistanceMin[c]; }),
+      real("cellDistMax", "outer distance of the cell, in coordinate units",
+           [&cells] (std::size_t c) { return cells.cellDistanceMax[c]; }),
+      real("divergence", "divergence of the displacement field, before smoothing",
+           [&grid] (std::size_t c) { return grid.divergence[c]; })};
+    if (!grid.divergenceSmoothed.empty())
+      sources.push_back(real("divergenceSmoothed", "divergence of the displacement field, after smoothing",
+                             [&grid] (std::size_t c) { return grid.divergenceSmoothed[c]; }));
+    sources.push_back(real("volume", "volume of the cell, in coordinate units cubed",
+                           [&grid] (std::size_t c) { return grid.volume[c]; }));
+    sources.push_back(real("weight", "tracer weight of the cell", [&grid] (std::size_t c) { return grid.weight[c]; }));
+    if (!grid.weightSmoothed.empty())
+      sources.push_back(real("weightSmoothed", "tracer weight of the cell, after smoothing",
+                             [&grid] (std::size_t c) { return grid.weightSmoothed[c]; }));
+    sources.push_back(integer("nDispl", "displacement ends counted in the cell",
+                              [&grid] (std::size_t c) { return (std::int64_t)grid.nDisplacements[c]; }));
+    sources.push_back(integer("nTracers", "tracers starting in the cell",
+                              [&grid] (std::size_t c) { return (std::int64_t)grid.nTracers[c]; }));
+    sources.push_back(integer("voidIndex", "row of the void of the cell, -1 none",
+                              [&grid] (std::size_t c) { return grid.voidIndex[c]; }));
+    sources.push_back(integer("overdenseIndex", "row of the overdense basin of the cell, -1 none",
+                              [&grid] (std::size_t c) { return grid.overdenseIndex[c]; }));
+    sources.push_back(flag("masked", "1 when the cell centre is on an unobserved pixel of the mask", grid.masked));
+
+    std::vector<Keyword> k = keywords("divergence", result, "NCELLS", n, "number of cells");
+    k.push_back({"DISTMIN", number(grid.distanceMin), "grid, lower distance, coordinate units"});
+    k.push_back({"DISTMAX", number(grid.distanceMax), "grid, upper distance, coordinate units"});
+    k.push_back({"RAMIN", number(grid.raMin * kDegrees), "grid, lower right ascension, degrees"});
+    k.push_back({"RAMAX", number(grid.raMax * kDegrees), "grid, upper right ascension, degrees"});
+    k.push_back({"DECMIN", number(grid.decMin * kDegrees), "grid, lower declination, degrees"});
+    k.push_back({"DECMAX", number(grid.decMax * kDegrees), "grid, upper declination, degrees"});
+
+    otswap::io::TablePart part;
+    part.extname = "MPSPROF";
+    part.twin = "mps";
+    part.columns = {Column{"redshift", 'D', "centre of the redshift bin", "", {}, {}},
+                    Column{"MPS", 'D', "mean particle separation in the bin", "", {}, {}},
+                    Column{"nTracers", 'J', "tracers in the bin", "", {}, {}}};
+    part.nRows = profile.redshift.size();
+    part.options.precision = kLossless;
+    part.options.keywords = {{"PRODUCT", "divergence mps profile", "what the table holds"},
+                             {"BITVFV", bitvf::internal::version, "bitvf version"},
+                             {"ZMIN", number(grid.mpsProfile.redshiftMin), "lowest redshift binned"},
+                             {"ZMAX", number(grid.mpsProfile.redshiftMax), "highest redshift binned"},
+                             {"MPSREPR", number(grid.mpsProfile.representative),
+                              "count-weighted median mps, coordinate units"}};
+    const otswap::MpsProfile* p = &grid.mpsProfile;
+    part.fillRow = [p] (const std::size_t row, std::vector<double>& values, std::vector<std::int64_t>&) {
+      values[0] = p->redshift[row];
+      values[1] = p->mps[row];
+      values[2] = (double)p->count[row];
+    };
+    write_table(file, sources, n, kLossless, std::move(k), {part});
   }
 
   void write_catalog (const std::string& file, const bitvf::Result& result, const bitvf::BasinCatalog& cat,
@@ -223,7 +397,6 @@ namespace {
     std::vector<Source> sources = {
       integer("index", "row of the basin", [] (std::size_t b) { return (std::int64_t)b; })};
     if (result.geometry == otswap::Geometry::Lightcone) {
-      constexpr double kDegrees = 57.295779513082320876798154814105;
       sources.push_back(real("centreRA", "right ascension of the centre, in degrees",
                              [&cat] (std::size_t b) { return cat.centreSky[3*b] * kDegrees; }));
       sources.push_back(real("centreDec", "declination of the centre, in degrees",
@@ -303,11 +476,13 @@ void bitvf::io::writeOverdense (const std::string& file, const Result& result)
 
 void bitvf::io::writeDivergence (const std::string& file, const Result& result)
 {
-  if (result.geometry != otswap::Geometry::Box)
-    throw Error("writeDivergence: writing a lightcone result is not implemented");
   if (!result.divergence)
     throw Error("writeDivergence: the result holds no divergence grid; run the search with the divergence grid kept");
   check_result(result, "writeDivergence");
+  if (result.geometry == otswap::Geometry::Lightcone) {
+    write_lightcone_divergence(file, result);
+    return;
+  }
 
   const DivergenceGrid& grid = *result.divergence;
   const bool field = is_field(result);

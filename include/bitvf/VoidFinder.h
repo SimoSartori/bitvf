@@ -487,14 +487,15 @@ namespace bitvf {
     /// its own limits apply.
     std::optional<otswap::BoxLimits> limits;
 
-    /// Box: the realizations of the search that filled the grid (keyword
-    /// NREC). A record: a search reusing the grid does not read it. 0 in a
-    /// lightcone and in a result of findVoidsBoxFromField.
+    /// The realizations of the search that filled the grid (keyword NREC).
+    /// A record: a search reusing the grid does not read it. 0 in a grid
+    /// from boxGrid or lightconeGrid and in a result of
+    /// findVoidsBoxFromField.
     unsigned nRealizations = 0;
 
-    /// Box: Config::nRealizationsMean of the search that filled the grid
-    /// (keyword NRECMEAN). A record, as nRealizations. 0 in a lightcone and
-    /// in a result of findVoidsBoxFromField.
+    /// Config::nRealizationsMean of the search that filled the grid
+    /// (keyword NRECMEAN). A record, as nRealizations. 0 in a grid from
+    /// boxGrid or lightconeGrid and in a result of findVoidsBoxFromField.
     unsigned nRealizationsMean = 0;
 
     /// Lightcone, defines the cells: comoving distance range of the
@@ -533,7 +534,8 @@ namespace bitvf {
     otswap::MpsProfile mpsProfile;
 
     /// Lightcone, descriptive: the limits of each cell as built, radians
-    /// and coordinate units; never read by a reuse. Right-ascension edges
+    /// and coordinate units; never read by a reuse, empty in a grid from
+    /// io::readDivergence (io::writeDivergence rebuilds them). Right-ascension edges
     /// are continuous across RA = 0 within a ring; a ring of a single
     /// sector spans 2 pi. The central sphere, when present, has distance
     /// limits [0, r] and the full sky; a polar cap reaches declination
@@ -748,6 +750,9 @@ namespace bitvf {
   struct Result {
 
     std::size_t nTracers = 0;
+
+    /// The realizations the search read; 0 in a result of
+    /// findVoidsBoxFromField.
     unsigned    nRealizations = 0;
 
     /// The geometry of the search.
@@ -1396,6 +1401,48 @@ namespace bitvf {
                              const Config& config,
                              const DivergenceGrid* grid = nullptr);
 
+  /**
+   *  @brief The grid findVoidsLightcone builds from this reconstruction and
+   *  these randoms, bit for bit: on the tracers and randoms the search
+   *  keeps, with the reconstruction's profile and distance table, so that
+   *  one grid can be shared by several searches (findVoidsLightcone's
+   *  grid), the two passes of a pipeline or a set of mocks.
+   *
+   *  Only the fields that define the cells are set: geometry, nCells,
+   *  distanceMin, distanceMax, raMin, raMax, decMin, decMax, cellSizeMps
+   *  and mpsProfile; every per-cell field is left empty, and nRealizations
+   *  and nRealizationsMean are 0. The grid passes the checks of a grid to
+   *  reuse.
+   *
+   *  @param divergenceCellSize the cell size in units of mps, as
+   *  Config::divergenceCellSize; without it, the default for the
+   *  reconstruction's realizations, min(1, (20 / nRealizations)^(1/3))
+   *  mps
+   *  @exception Error on every case of the entry of the same overload of
+   *  findVoidsLightcone, the checks of the displacements included,
+   *  and of the grid's construction
+   */
+  DivergenceGrid lightconeGrid (const otswap::Result& reconstruction, const std::vector<double>& randomsSky,
+                                const otswap::Mask& mask,
+                                std::optional<double> divergenceCellSize = std::nullopt);
+
+  /**
+   *  @brief The grid the sky-position overload of findVoidsLightcone
+   *  builds, bit for bit: the same selection of the tracers and randoms,
+   *  as the overload above, without displacements.
+   *
+   *  @param divergenceCellSize the cell size in units of mps; finite and
+   *  positive. A reasonable starting value is min(1, (20 / R)^(1/3)), R
+   *  the number of realizations the search will read.
+   *  @exception Error on every case of the entry of findVoidsLightcone
+   *  that does not concern displacements, ids or the configuration, and
+   *  of the grid's construction
+   */
+  DivergenceGrid lightconeGrid (const std::vector<double>& tracersSky, const std::vector<double>& randomsSky,
+                                const otswap::Mask& mask, const otswap::DistanceTable& distances,
+                                const otswap::MpsProfile& mps, double divergenceCellSize,
+                                const otswap::RedshiftCut& redshiftCut = {});
+
   // ==========================================================================
   // Grid and watershed
   // ==========================================================================
@@ -1451,9 +1498,10 @@ namespace bitvf {
    *  Config::divergenceCellSize; finite and positive. Empty for the
    *  default.
    *
-   *  @exception Error if the reconstruction is not a box result; if its
-   *  nRealizations is 0; if its box is missing, has a bound not finite or
-   *  a lower bound above the upper one, or differs from
+   *  @exception Error if the reconstruction is not a box result (use
+   *  lightconeGrid); if its nRealizations is 0; if its box is missing,
+   *  has a bound not finite or a lower bound above the upper one, or
+   *  differs from
    *  selection.boxLimits when those are set; if its mps is not finite and
    *  positive; if divergenceCellSize is set and not finite and positive;
    *  if the grid would hold more cells than an int64 index can address.

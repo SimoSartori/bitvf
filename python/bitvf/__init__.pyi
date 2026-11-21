@@ -731,6 +731,10 @@ class Result:
         """Lightcone: the NSIDE of the mask the search was given; 0 in a
         box."""
     @property
+    def redshift_cut(self) -> Optional[otswap.RedshiftCut]:
+        """Lightcone: the closed range of observed redshift the search
+        kept; None in a box."""
+    @property
     def distances(self) -> Optional[otswap.DistanceTable]:
         """Lightcone only; None in a box."""
     @property

@@ -46,7 +46,7 @@
  *  - PRODUCT, what the file holds: voids, overdense_basins, divergence or
  *    galaxies;
  *  - BITVFV, the bitvf version that wrote it;
- *  - GEOMETRY, box;
+ *  - GEOMETRY, box or lightcone;
  *  - the row count: NBASINS (voids, overdense basins), NCELLS (divergence)
  *    or NOBJECTS (galaxies, the input tracers);
  *  - NREC, Result::nRealizations;
@@ -54,11 +54,14 @@
  *  - SIGMA and SIGUNIT, the smoothing sigma and its unit, mps or
  *    coordinate;
  *  - CELLSIZE, the divergence cell size used, in units of the mps;
- *  - MPS, the mean particle separation, in coordinate units;
+ *  - MPS, the mean particle separation, in coordinate units (a box);
  *  - RANDSEED, Result::randomSeed, when set;
- *  - BOXLIM = 1, then BOXXLO, BOXXHI, BOXYLO, BOXYHI, BOXZLO, BOXZHI, the
- *    box limits of the search in coordinate units, when Result::limits is
- *    set.
+ *  - a lightcone: ZCUTMIN and ZCUTMAX, the bounds of Result::redshiftCut,
+ *    each only when finite; NRANDUSE, the randoms used
+ *    (Counts::randoms); MASKNSID, Result::maskNside;
+ *  - a box: BOXLIM = 1, then BOXXLO, BOXXHI, BOXYLO, BOXYHI, BOXZLO,
+ *    BOXZHI, the box limits of the search in coordinate units, when
+ *    Result::limits is set.
  *
  *  A number is written as the shortest decimal of at most 17 significant
  *  digits that reads back as the same double, an integer as an integer;
@@ -70,7 +73,9 @@
  *  displacements; its voids and overdense basins files carry fieldCentre.
  *  It has no galaxies file.
  *
- *  Only box results are written.
+ *  A lightcone result is written as a box one, with the sky columns and
+ *  keywords above in place of the box's. Its divergence file also holds
+ *  the mps(z) profile, in a second table (see writeDivergence).
  *
  *  @author Simone Sartori <simone.sartori@inaf.it>
  */
@@ -118,23 +123,25 @@ namespace bitvf::io {
   /**
    *  @brief Write the voids, one row per void (Result::voids).
    *
-   *  Columns: index (K); centreX, centreY, centreZ, in coordinate units;
-   *  radius, radiusExt, in coordinate units; deltaAv; delta2Mps; edgeFlag
+   *  Columns: index (K); in a lightcone centreRA and centreDec, in
+   *  degrees, and centreRed; centreX, centreY, centreZ, in coordinate
+   *  units; radius, radiusExt, in coordinate units; deltaAv; delta2Mps; edgeFlag
    *  (J); contamination; nTracers (K). A field result has no deltaAv,
    *  delta2Mps and nTracers, and has fieldCentre after contamination.
    *  Keywords as listed in the file description, the row count NBASINS.
    *  ASCII: 9 significant digits.
    *
    *  @param file the file to write; its extension sets the format.
-   *  @param result the result of a box search.
+   *  @param result the result of a box or lightcone search.
    *
    *  @exception Error
-   *  - if the result is not a box result;
    *  - if it is malformed, the message starting with "writeVoids: ":
    *    Config::divergenceCellSize empty (in a field
    *    result, only when Result::mps is a number),
    *    Config::nRealizationsMean 0, a column of the catalogue not of
-   *    nBasins entries (centre 3 * nBasins), centreSky not empty, a column
+   *    nBasins entries (centre 3 * nBasins; centreSky 3 * nBasins in a
+   *    lightcone, empty in a box), in a lightcone maskNside outside
+   *    [1, 536870912], a column
    *    of the other kind of result not empty (fieldCentre, or deltaAv,
    *    delta2Mps and nTracers in a field result), a count above the
    *    largest 64-bit integer;
@@ -158,13 +165,19 @@ namespace bitvf::io {
    *  (Result::divergence).
    *
    *  Columns: index (K); cellX, cellY, cellZ, the cell centre, in
-   *  coordinate units; divergence, before smoothing; divergenceSmoothed,
+   *  coordinate units; in a lightcone cellRA, cellDec (degrees), cellRed,
+   *  cellDist (the distance of the centre), cellRAMin, cellRAMax,
+   *  cellDecMin, cellDecMax (degrees), cellDistMin, cellDistMax, which
+   *  describe the cells, are taken from the grid rebuilt from its record
+   *  and are not read back as the grid; divergence,
+   *  before smoothing; divergenceSmoothed,
    *  only when DivergenceGrid::divergenceSmoothed is not empty; volume, in
    *  coordinate units cubed; weight; weightSmoothed, only when
    *  DivergenceGrid::weightSmoothed is not empty; nDispl (K), the
    *  displacement ends counted; nTracers (K); voidIndex (K);
-   *  overdenseIndex (K). A field result has no nDispl and nTracers. ASCII:
-   *  17 significant digits.
+   *  overdenseIndex (K); in a lightcone masked (J), 1 on an unobserved
+   *  pixel. A field result has no nDispl and nTracers. ASCII: 17
+   *  significant digits.
    *
    *  Keywords as listed in the file description, the row count NCELLS,
    *  followed by the record of the grid: LOWERX, LOWERY, LOWERZ, UPPERX,
@@ -173,19 +186,46 @@ namespace bitvf::io {
    *  cells at 17 significant digits, so the grid read back is the same bit
    *  for bit.
    *
+   *  A lightcone file has, after the common keywords, the record of the
+   *  grid: DISTMIN, DISTMAX, in coordinate units, and RAMIN, RAMAX, DECMIN,
+   *  DECMAX, in degrees, with CELLSIZE (the angles read back equal to the
+   *  rounding of the conversion). The mps(z) profile follows in a second
+   *  table, HDU MPSPROF in FITS and the twin file <stem>.mps.<ext> in
+   *  ASCII (otswap::io::twinFile), with columns redshift, MPS and nTracers
+   *  (J), 17 digits, and keywords PRODUCT (divergence mps profile), BITVFV,
+   *  ZMIN, ZMAX and MPSREPR. It holds no GEOMETRY. The grid is written
+   *  only if it passes the checks of a grid to reuse and is rebuilt from
+   *  its record and Result::distances with the same number of cells, and
+   *  if it agrees with the result, so that every file written reads back
+   *  as a grid to reuse; this costs one grid build.
+   *
    *  @param file the file to write, as writeVoids.
-   *  @param result the result of a box search, with its divergence grid.
+   *  @param result the result of a box or lightcone search, with its
+   *  divergence grid.
    *
    *  @exception Error
-   *  - if the result is not a box result, or holds no divergence grid
-   *    (Config::keepDivergence);
-   *  - if the grid fails the checks of a grid to reuse (see findVoidsBox),
+   *  - if the result holds no divergence grid (Config::keepDivergence);
+   *  - lightcone: if the result holds no distance table or no mps profile,
+   *    or its maskNside is outside [1, 536870912], the message starting
+   *    with "writeDivergence: the result is malformed: "; if the grid
+   *    fails the checks of a grid to reuse (see findVoidsLightcone), the
+   *    message starting with "writeDivergence: the divergence grid ..."; if
+   *    its rebuild from the record fails, the builder's message after
+   *    "writeDivergence: ", naming the divergence grid, or gives another
+   *    number of cells; if a column of the grid is not of nCells entries
+   *    (centre and centreSky 3 * nCells; divergenceSmoothed,
+   *    weightSmoothed and the limits of the cells nCells or none); if its
+   *    mps profile,
+   *    cellSizeMps, nRealizations or nRealizationsMean differ from
+   *    Result::mpsProfile, Config::divergenceCellSize, Result::nRealizations
+   *    or Config::nRealizationsMean, bit for bit;
+   *  - box: if the grid fails the checks of a grid to reuse (see findVoidsBox),
    *    the message starting with "writeDivergence: cannot write the
    *    divergence: "; in a
    *    field result, which no search reuses, only if its cell side is not
    *    finite and positive, a bound of lower or upper is not finite, or
    *    nCells is not the product of nCellsAxis;
-   *  - if it is malformed, the message starting with "writeDivergence: ", as
+   *  - box: if it is malformed, the message starting with "writeDivergence: ", as
    *    writeVoids; a column of the grid not of
    *    nCells entries (centre 3 * nCells; divergenceSmoothed and
    *    weightSmoothed nCells or none); outside a field result, the mps,
@@ -205,26 +245,29 @@ namespace bitvf::io {
    *  cellIndex (K); voidIndex (K); overdenseIndex (K); distance, from the
    *  centre of the tracer's basin, in coordinate units, NaN for a tracer
    *  not in a basin; inMask (J), only when TracerAssignment::inMask is
-   *  not empty (a lightcone); inBox (J), only when Result::limits is
+   *  not empty (a lightcone); inCut (J), only in a lightcone with a
+   *  bounded Result::redshiftCut; inBox (J), only when Result::limits is
    *  set; used (J), only when TracerAssignment::used is not empty (it is
    *  empty after findVoidsBoxFromDivergence); uncorrected (J), only when
    *  Result::uncorrected is not empty; outsideGrid (J), only when
-   *  Result::outsideGrid is not empty.
+   *  Result::outsideGrid is not empty; outsideCut (J), only when
+   *  Result::outsideCut is not empty.
    *  Keywords as listed in the file description, the row count NOBJECTS.
    *  ASCII: 9 significant digits.
    *
    *  @param file the file to write, as writeVoids.
-   *  @param result the result of a box search on tracers, with its tracer
-   *  assignment.
+   *  @param result the result of a box or lightcone search on tracers, with
+   *  its tracer assignment.
    *
    *  @exception Error
-   *  - if the result is not a box result, is a field result, or holds no
-   *    tracer assignment (Config::keepAssignment);
+   *  - if the result is a field result, or holds no tracer assignment
+   *    (Config::keepAssignment);
    *  - if it is malformed, the message starting with "writeGalaxies: ":
    *    Config::divergenceCellSize empty,
-   *    Config::nRealizationsMean 0; ids, uncorrected or outsideGrid
-   *    neither empty nor of nTracers entries; a column of the assignment
-   *    not of nTracers entries;
+   *    Config::nRealizationsMean 0; ids, uncorrected, outsideGrid or
+   *    outsideCut neither empty nor of nTracers entries; a column of the
+   *    assignment not of nTracers entries (inMask, and inCut with a
+   *    bounded cut, in a lightcone; inBox in a box; the others empty);
    *  - if the file cannot be written, as writeVoids.
    */
   void writeGalaxies (const std::string& file, const Result& result);
@@ -241,7 +284,15 @@ namespace bitvf::io {
    *  findVoidsBox as grid; the per-search fields are records, which a
    *  search reusing the grid does not read.
    *
-   *  Reading a lightcone divergence file is not implemented.
+   *  A lightcone file gives a lightcone grid: the record (distances and
+   *  cellSizeMps bit for bit, the angles within the rounding of their
+   *  conversion from degrees, so a tracer within rounding of a cell edge
+   *  can change cell; a right-ascension range of at most 360 degrees is
+   *  kept within 2 pi), the mps profile from its part, the cell centres,
+   *  their sky positions, the fields, the counts, the basin indices and
+   *  masked. The limits of the cells (cellRaMin ... cellDistanceMax) are
+   *  not read; writeDivergence rebuilds them. It passes the checks of a grid to reuse, so it can be passed
+   *  to findVoidsLightcone as grid.
    *
    *  @param file the file, FITS or ASCII by its extension.
    *
@@ -250,7 +301,12 @@ namespace bitvf::io {
    *    holds anything but an integer: the message starts with "otswap: ",
    *    the otswap::Error nested;
    *  - if it has no PRODUCT keyword, its PRODUCT is not divergence, or
-   *    GEOMETRY is not box;
+   *    GEOMETRY is not box or lightcone; if a keyword of the other
+   *    geometry is present (the box's MPS, CELLSIDE, LOWER*, UPPER*, NCELL*,
+   *    BOXLIM, BOX*; the lightcone's DISTMIN, DISTMAX, RAMIN, RAMAX, DECMIN,
+   *    DECMAX);
+   *  - lightcone: if the profile part is missing, "the mps profile part is
+   *    missing", or its PRODUCT is not divergence mps profile;
    *  - if a keyword of the grid record is missing, not a number, or not a
    *    whole number in range; if NREC or NRECMEAN is 0; if BOXLIM holds
    *    anything but 1, or BOXLIM and the six box keywords do not come
@@ -259,7 +315,8 @@ namespace bitvf::io {
    *    a count is negative, or a basin index is below -1: the message
    *    names the data row, counted from 1 among the data rows (comment
    *    and blank lines do not count), as "data row k (from 1)";
-   *  - if the grid fails the checks of a grid to reuse.
+   *  - if the grid fails the checks of a grid to reuse (lightcone: of the
+   *    record and the profile only, there being no distance table).
    *
    *  The divergence file of a field result has no NREC and is refused;
    *  read it with readField.

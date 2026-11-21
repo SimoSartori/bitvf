@@ -694,6 +694,7 @@ int main ()
     lc.assignment->inMask.assign(kN + kOut, 1);
     for (BasinCatalog* c : {&lc.voids, &lc.overdense}) c->centreSky.assign(3 * c->nBasins, 0.5);
     lc.limits.reset();
+    lc.maskNside = 16;
     auto bad = [&lc] (auto&& change, auto write, const std::string& message, const std::string& what) {
       Result b = lc;
       change(b);
@@ -719,8 +720,6 @@ int main ()
   {
     Result lightcone = r;
     lightcone.geometry = otswap::Geometry::Lightcone;
-    refused(write_divergence, lightcone, "writeDivergence: writing a lightcone result is not implemented",
-            "lightcone divergence");
 
     auto malformed = [&r] (auto&& change, auto write, const std::string& message, const std::string& what) {
       Result bad = r;

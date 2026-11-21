@@ -179,7 +179,7 @@ bitvf::DivergenceGrid bitvf::boxGrid (const otswap::Result& reconstruction,
   const otswap::Result& rec = reconstruction;
 
   if (rec.geometry != otswap::Geometry::Box)
-    throw Error("boxGrid: the reconstruction is not a box result; use the lightcone grid builder");
+    throw Error("boxGrid: the reconstruction is not a box result; use lightconeGrid");
 
   if (rec.nRealizations == 0)
     throw Error("boxGrid: the reconstruction is malformed: it holds no realizations");

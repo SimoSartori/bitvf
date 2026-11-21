@@ -838,6 +838,32 @@ namespace bitvf {
                                   const otswap::Mask& mask, bool reused = false);
 
     /**
+     *  @brief The same grid, with a null @p mask leaving every cell
+     *  unmasked: for the cells and their limits as a writer needs them.
+     *
+     *  @param name what the messages call the grid: "the grid" as the
+     *  overload above without reuse, "the grid to reuse" as with it, or
+     *  another name, e.g. "the divergence grid"
+     */
+    LightconeGrid lightcone_grid (const DivergenceGrid& record, const otswap::DistanceTable& distances,
+                                  const otswap::Mask* mask, const std::string& name);
+
+    /**
+     *  @brief The checks of the record of a lightcone grid, in the order
+     *  of a grid to reuse: the geometry, the distance, right-ascension
+     *  and declination ranges, the cell size, the mps profile, and no box
+     *  field set.
+     *
+     *  @param fn the function the message starts with, followed by ": ";
+     *  empty for none
+     *  @param name what the message calls the grid, e.g. "the grid to
+     *  reuse"
+     *  @exception Error as findVoidsLightcone on a grid to reuse, with
+     *  @p fn and @p name in place of its words
+     */
+    void check_lightcone_record (const DivergenceGrid& grid, const std::string& fn, const std::string& name);
+
+    /**
      *  @brief The cell of a lightcone grid that holds a point.
      *
      *  Every lookup of a point in a lightcone grid goes through this
@@ -1598,47 +1624,6 @@ namespace bitvf {
                                                const LightconeGrid& grid, const otswap::DistanceTable& distances);
 
   }
-
-  /**
-   *  @brief The grid findVoidsLightcone builds from this reconstruction and
-   *  these randoms, bit for bit: on the tracers and randoms the search
-   *  keeps, with the reconstruction's profile and distance table. Not
-   *  public yet.
-   *
-   *  Only the fields that define the cells are set: geometry, nCells,
-   *  distanceMin, distanceMax, raMin, raMax, decMin, decMax, cellSizeMps
-   *  and mpsProfile; every per-cell field is left empty. The grid passes
-   *  the checks of a grid to reuse, so that several searches can share
-   *  it.
-   *
-   *  @param divergenceCellSize the cell size in units of mps, as
-   *  Config::divergenceCellSize; without it, the default for the
-   *  reconstruction's realizations, min(1, (20 / nRealizations)^(1/3))
-   *  mps
-   *  @exception Error on every case of the entry of the same overload of
-   *  findVoidsLightcone, the checks of the displacements included,
-   *  and of the grid's construction
-   */
-  DivergenceGrid lightconeGrid (const otswap::Result& reconstruction, const std::vector<double>& randomsSky,
-                                const otswap::Mask& mask,
-                                std::optional<double> divergenceCellSize = std::nullopt);
-
-  /**
-   *  @brief The grid the sky-position overload of findVoidsLightcone
-   *  builds, bit for bit: the same selection of the tracers and randoms,
-   *  as the overload above, without displacements.
-   *
-   *  @param divergenceCellSize the cell size in units of mps; finite and
-   *  positive. A reasonable starting value is min(1, (20 / R)^(1/3)), R
-   *  the number of realizations the search will read.
-   *  @exception Error on every case of the entry of findVoidsLightcone
-   *  that does not concern displacements, ids or the configuration, and
-   *  of the grid's construction
-   */
-  DivergenceGrid lightconeGrid (const std::vector<double>& tracersSky, const std::vector<double>& randomsSky,
-                                const otswap::Mask& mask, const otswap::DistanceTable& distances,
-                                const otswap::MpsProfile& mps, double divergenceCellSize,
-                                const otswap::RedshiftCut& redshiftCut = {});
 
 }
 
