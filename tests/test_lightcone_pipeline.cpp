@@ -418,6 +418,110 @@ int main ()
           "a seed of 0 is replaced by a non-zero one before the offset is added");
   }
 
+  // External second-pass randoms: the selection, the checks before the first reconstruction, the grid removal, the count needed and the report line.
+  group("external second-pass randoms");
+  {
+    std::vector<double> pixels(12, 1.);
+    pixels[4] = 0.;
+    const otswap::Mask partial(pixels, otswap::PixelOrdering::Ring);
+    const std::vector<double> rSky = {0.2, 0.1, 0.3,   0.2, 0.1, 0.5,   4., 0.1, 0.3,
+                                      4., 0.1, 0.3,   4., 0.1, 0.5,   4., 0.1, 0.1};
+    const internal::ExternalSelection sel =
+      internal::select_external_randoms(rSky, partial, table(), otswap::RedshiftCut{0.2, 0.4}, "test");
+    check(sel.rows == std::vector<std::size_t>({2, 3}) && sel.nGiven == 6 && sel.outsideMask == 2 &&
+          sel.outsideCut == 2, "the rows kept and the counts are those of the mask and the cut");
+    std::vector<double> far = rSky;
+    far[2] = 5.;
+    far[5] = 5.;
+    check(internal::select_external_randoms(far, partial, table(), otswap::RedshiftCut{0.2, 0.4}, "test").rows.size() == 2,
+          "a redshift outside the table is not read on a masked or cut row");
+    far[8] = 5.;
+    throws_naming([&] { internal::select_external_randoms(far, partial, table(), otswap::RedshiftCut{}, "test"); },
+                  "the redshift of second-pass random 2 (from 0) is 5, outside the distance table [",
+                  "a kept row outside the table fails, naming its row");
+    throws_naming([&] { internal::select_external_randoms(rSky, partial, table(), otswap::RedshiftCut{0.6, 0.7}, "test"); },
+                  "no second-pass random is left: of 6 randoms, 2 lie on unobserved pixels and 4 outside the redshift cut",
+                  "no row kept is an error giving the removals");
+    throws_naming([&] { internal::select_external_randoms({1., 2., 3., 4.}, partial, table(), {}, "test"); },
+                  "test: randomsSkySecondPass holds 4 entries; it must hold 3 per object", "the array size is checked");
+    throws_naming([&] { internal::select_external_randoms({1., 3., 0.3}, partial, table(), {}, "test"); },
+                  "the sky positions of the second-pass randoms hold a declination of 3 radians for object 0 (from 0)",
+                  "a declination outside range is named for the second-pass randoms");
+
+    LightconeConfig c = base_config(nullptr);
+    c.rsd->secondPassRandoms = SecondPassRandoms::External;
+    std::ostringstream otLog;
+    c.ot.verbosity = otswap::Verbosity::Normal;
+    c.ot.log = &otLog;
+    std::vector<double> bad = patch(1500, 13);
+    bad[2] = 5.;
+    LightconeConfig wide = c;
+    wide.cut = {0., 10.};
+    throws_naming([&] { runLightcone(tracers(), randoms(), full_mask(), table(), wide, bad, ids()); },
+                  "the redshift of second-pass random 0 (from 0) is 5, outside the distance table",
+                  "the run checks the external randoms");
+    check(otLog.str().empty(), "the first reconstruction never ran");
+    c.ot.verbosity = otswap::Verbosity::Silent;
+    c.ot.log = nullptr;
+
+    // The test mask hides nothing here, so the second-pass randoms cut and the grid decide the counts.
+    const std::vector<double> external = patch(1500, 13);
+    const Chain ref = chain(c);
+    const internal::LightconeGrid lc = internal::lightcone_grid(ref.grid, table(), full_mask(), true);
+    const internal::ExternalSelection kept =
+      internal::select_external_randoms(external, full_mask(), table(), c.cut, "test");
+    const std::vector<std::size_t> inside = internal::external_in_grid(external, kept.rows, lc, table());
+    check(inside.size() <= kept.rows.size() && !inside.empty(), "the grid keeps some of the randoms");
+    for (const std::size_t r : inside)
+      check(r < 1500, "the rows inside the grid are rows of the array");
+    const std::size_t needed = c.ot.nRealizations * ref.pass.rows.size();
+    check(inside.size() >= needed, "the test randoms are enough");
+
+    auto run_external = [&] (const std::vector<double>& second, std::string& message, const otswap::Verbosity v) {
+      std::ostringstream log;
+      LightconeConfig cc = c;
+      cc.voids.verbosity = v;
+      cc.voids.log = &log;
+      try {
+        runLightcone(tracers(), randoms(), full_mask(), table(), cc, second, ids());
+        message = "returned";
+      }
+      catch (const Error& e) {
+        message = e.what();
+      }
+      return log.str();
+    };
+    std::string message;
+    const std::string log = run_external(external, message, otswap::Verbosity::Normal);
+    std::ostringstream line;
+    line << "bitvf: external randoms: 1500 given, 0 on unobserved pixels, " << kept.outsideCut
+         << " outside the redshift cut, " << kept.rows.size() - inside.size() << " outside the first pass's grid, "
+         << inside.size() << " kept of " << needed << " needed\n";
+    check(log.find(line.str()) != std::string::npos, "the Normal line gives the removals, the kept and the needed");
+    check(log.find("second-pass randoms: the first pass's") == std::string::npos, "no other randoms line");
+    check(message.find("findVoidsLightcone") != std::string::npos, "an External run reaches the second search");
+    const std::string detailed = run_external(external, message, otswap::Verbosity::Detailed);
+    check(detailed.find(line.str()) != std::string::npos && detailed.find("second pass on ") != std::string::npos,
+          "the line is also written at Detailed, with the second-pass line");
+
+    // Too few randoms left: the counts of the removals and the number needed.
+    std::vector<double> few(external.begin(), external.begin() + 3 * 5);
+    std::size_t fewKept = 0;
+    {
+      const internal::ExternalSelection s = internal::select_external_randoms(few, full_mask(), table(), c.cut, "test");
+      fewKept = internal::external_in_grid(few, s.rows, lc, table()).size();
+    }
+    check(fewKept < needed, "five randoms are too few");
+    std::ostringstream tooFew;
+    tooFew << "the external randoms leave " << fewKept << " of the " << needed
+           << " needed (the number of realizations times the " << ref.pass.rows.size()
+           << " tracers the mask keeps): of 5 given, 0 lie on unobserved pixels and ";
+    run_external(few, message, otswap::Verbosity::Silent);
+    check(message.find(tooFew.str()) == 0 && message.find("(removed by the reconstruction), and ") != std::string::npos &&
+          message.find(" outside the first pass's grid") != std::string::npos,
+          "too few randoms is an error giving the counts");
+  }
+
   // The tracers chosen are identical bit for bit with any number of threads and match the recorded hash.
   group("the second pass is the same with 1 and 4 threads, and matches the recorded hash");
   {

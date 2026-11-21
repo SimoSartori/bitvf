@@ -840,6 +840,56 @@ bitvf::internal::PipelineSelection bitvf::internal::check_pipeline_sky (const st
 // ============================================================================
 
 
+bitvf::internal::ExternalSelection bitvf::internal::select_external_randoms (const std::vector<double>& sky,
+                                                                             const otswap::Mask& mask,
+                                                                             const otswap::DistanceTable& distances,
+                                                                             const otswap::RedshiftCut& cut,
+                                                                             const std::string& fn)
+{
+  const std::size_t E = check_sky(sky, "randomsSkySecondPass", fn);
+  check_sky_rows(sky, "second-pass randoms", "");
+  std::vector<double> folded = sky;
+  fold_right_ascension(folded);
+  const Selection s = select_rows(folded, mask, cut);
+  const double lo = distances.minRedshift(), hi = distances.maxRedshift();
+  ExternalSelection out;
+  out.nGiven = E;
+  out.outsideMask = s.outsideMask;
+  out.outsideCut = s.outsideCut;
+  for (std::size_t i = 0; i < E; ++i) {
+    if (!s.inMask[i] || !s.inCut[i]) continue;
+    const double z = folded[3*i+2];
+    if (!(z >= lo && z <= hi))
+      throw Error("the redshift of second-pass random " + std::to_string(i) + " (from 0) is " + num(z) +
+                  ", outside the distance table [" + num(lo) + ", " + num(hi) + "]");
+    out.rows.push_back(i);
+  }
+  if (out.rows.empty())
+    throw Error("no second-pass random is left: of " + std::to_string(E) + " randoms, " +
+                left_out(s.outsideMask, s.outsideCut));
+  return out;
+}
+
+std::vector<std::size_t> bitvf::internal::external_in_grid (const std::vector<double>& sky,
+                                                            const std::vector<std::size_t>& rows,
+                                                            const LightconeGrid& grid,
+                                                            const otswap::DistanceTable& distances)
+{
+  std::vector<std::size_t> inside;
+  inside.reserve(rows.size());
+  for (const std::size_t r : rows) {
+    std::vector<double> row(sky.begin() + 3*r, sky.begin() + 3*r + 3);
+    fold_right_ascension(row);
+    const double d = call_otswap([&] { return distances.distanceAt(row[2]); });
+    if (lightcone_cell(grid, d, row[0], row[1]) >= 0) inside.push_back(r);
+  }
+  return inside;
+}
+
+
+// ============================================================================
+
+
 bitvf::DivergenceGrid bitvf::lightconeGrid (const otswap::Result& reconstruction, const std::vector<double>& randomsSky,
                                             const otswap::Mask& mask, const std::optional<double> divergenceCellSize)
 {

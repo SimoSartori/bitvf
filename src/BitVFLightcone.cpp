@@ -122,7 +122,8 @@ namespace {
                                                 const otswap::DistanceTable& distances,
                                                 const bitvf::LightconeConfig& config,
                                                 const std::vector<double>& randomsSkySecondPass,
-                                                const std::vector<std::int64_t>& ids, const std::string& fn)
+                                                const std::vector<std::int64_t>& ids, const std::string& fn,
+                                                bitvf::internal::ExternalSelection& external)
   {
     using bitvf::Error;
 
@@ -144,7 +145,7 @@ namespace {
         throw Error("the smoothing width is " + std::to_string(rsd.sigma) +
                          " in coordinate units; it must be finite and non-negative");
       if (rsd.secondPassRandoms == bitvf::SecondPassRandoms::External)
-        throw Error(fn + ": external second-pass randoms are not implemented yet");
+        external = bitvf::internal::select_external_randoms(randomsSkySecondPass, mask, distances, config.cut, fn);
       bitvf::internal::call_otswap([&] { return otswap::rsdFactor(selected.redshift, distances, rsd.bias); });
     }
 
@@ -166,8 +167,9 @@ bitvf::BitVFResult bitvf::runLightcone (const std::vector<double>& tracersSky, c
   const std::string fn = "runLightcone";
   internal::Report report(config.voids.verbosity, config.voids.log);
 
+  internal::ExternalSelection external;
   const internal::PipelineSelection selected =
-    check_run(tracersSky, randomsSky, mask, distances, config, randomsSkySecondPass, ids, fn);
+    check_run(tracersSky, randomsSky, mask, distances, config, randomsSkySecondPass, ids, fn, external);
 
   otswap::Config ot = config.ot;
   if (ot.seed == 0) {
@@ -227,14 +229,40 @@ bitvf::BitVFResult bitvf::runLightcone (const std::vector<double>& tracersSky, c
         report.write(line.str());
       }
     }
-    else if (report.detailed()) {
+    std::vector<double> reduced;
+    if (rsd.secondPassRandoms == SecondPassRandoms::External) {
+      const std::vector<std::size_t> inside = internal::external_in_grid(randomsSkySecondPass, external.rows, lc, distances);
+      const std::size_t needed = (std::size_t)config.ot.nRealizations * pass.rows.size();
+      const std::size_t outsideGrid = external.rows.size() - inside.size();
+      if (report.normal()) {
+        std::ostringstream line = internal::Report::line();
+        line << "external randoms: " << external.nGiven << " given, " << external.outsideMask
+             << " on unobserved pixels, " << external.outsideCut << " outside the redshift cut, " << outsideGrid
+             << " outside the first pass's grid, " << inside.size() << " kept of " << needed << " needed";
+        report.write(line.str());
+      }
+      if (inside.size() < needed)
+        throw Error("the external randoms leave " + std::to_string(inside.size()) + " of the " +
+                    std::to_string(needed) + " needed (the number of realizations times the " +
+                    std::to_string(pass.rows.size()) + " tracers the mask keeps): of " +
+                    std::to_string(external.nGiven) + " given, " + std::to_string(external.outsideMask) +
+                    " lie on unobserved pixels and " + std::to_string(external.outsideCut) +
+                    " outside the redshift cut (removed by the reconstruction), and " +
+                    std::to_string(outsideGrid) + " outside the first pass's grid");
+      reduced.reserve(3 * inside.size());
+      for (const std::size_t r : inside)
+        reduced.insert(reduced.end(), randomsSkySecondPass.begin() + 3*r, randomsSkySecondPass.begin() + 3*r + 3);
+    }
+    else if (!randomSeed && report.detailed()) {
       std::ostringstream line = internal::Report::line();
       line << "second-pass randoms: the first pass's " << selected.nRandomsKept;
       report.write(line.str());
     }
-    const std::vector<double>& randoms2 = randomSeed ? resampled : randomsSky;
+    const bool external2 = rsd.secondPassRandoms == SecondPassRandoms::External;
+    const std::vector<double>& randoms2 = external2 ? randomsSkySecondPass : randomSeed ? resampled : randomsSky;
+    const std::vector<double>& otRandoms2 = external2 ? reduced : randoms2;
 
-    otswap::Result second = reconstruct(pass.tracersSky, randoms2);
+    otswap::Result second = reconstruct(pass.tracersSky, otRandoms2);
     second.ids = std::move(pass.ids);
     out.voids = findVoidsLightcone(second, randoms2, mask, voids, &grid);
     out.voids.randomSeed = randomSeed;

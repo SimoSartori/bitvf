@@ -1549,6 +1549,46 @@ namespace bitvf {
                                           const std::vector<std::size_t>& rows,
                                           const std::vector<double>& tracersSky, unsigned seed);
 
+    /// What select_external_randoms keeps of the second-pass randoms given.
+    struct ExternalSelection {
+
+      /// The input row of each random on an observed pixel inside the cut,
+      /// increasing.
+      std::vector<std::size_t> rows;
+
+      /// The randoms given.
+      std::size_t nGiven = 0;
+
+      /// The randoms on unobserved pixels, and the others outside the cut.
+      std::size_t outsideMask = 0;
+      std::size_t outsideCut = 0;
+    };
+
+    /**
+     *  @brief Check the second-pass randoms of SecondPassRandoms::External
+     *  and select the rows the reconstruction keeps.
+     *
+     *  @param sky the randoms, 3 per random (right ascension, declination,
+     *  redshift)
+     *  @param fn the function named in the messages about array sizes
+     *  @exception Error if @p sky is empty, does not hold 3 entries per
+     *  random, holds a non-finite value or a declination outside
+     *  [-pi/2, pi/2]; if a random on an observed pixel inside the cut has a
+     *  redshift outside the distance table; if none is kept by the mask and
+     *  the cut
+     */
+    ExternalSelection select_external_randoms (const std::vector<double>& sky, const otswap::Mask& mask,
+                                               const otswap::DistanceTable& distances,
+                                               const otswap::RedshiftCut& cut, const std::string& fn);
+
+    /**
+     *  @brief The rows of @p rows of @p sky that lie inside @p grid, in
+     *  order, by lightcone_cell on the row's distance and its right
+     *  ascension folded into [0, 2 pi).
+     */
+    std::vector<std::size_t> external_in_grid (const std::vector<double>& sky, const std::vector<std::size_t>& rows,
+                                               const LightconeGrid& grid, const otswap::DistanceTable& distances);
+
   }
 
   /// The randoms of the second reconstruction of a lightcone pipeline.
@@ -1646,6 +1686,20 @@ namespace bitvf {
    *  recorded in Result::randomSeed of the real-space search only. The
    *  search removes and counts the resampled randoms that fall outside
    *  the first pass's grid.
+   *
+   *  @par Randoms external
+   *  With SecondPassRandoms::External, @p randomsSkySecondPass is checked
+   *  before the first reconstruction as @p randomsSky is (those on
+   *  unobserved pixels or outside the redshift cut are not read further).
+   *  After the second pass's tracers are chosen, those of its randoms that
+   *  lie outside the first pass's grid are removed from the array the
+   *  second reconstruction takes; the search takes the whole array and
+   *  removes and counts them itself. At least n = config.ot.nRealizations
+   *  times the k tracers of the second reconstruction must remain; fewer
+   *  is an error giving the counts. At config.voids.verbosity Normal, in
+   *  place of the lines of the other modes:
+   *
+   *      bitvf: external randoms: <E> given, <m> on unobserved pixels, <c> outside the redshift cut, <g> outside the first pass's grid, <K> kept of <n> needed
    *
    *  At config.voids.verbosity Detailed, after choosing the tracers:
    *
