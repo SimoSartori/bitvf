@@ -609,6 +609,10 @@ namespace bitvf {
     /// mask. Empty in a box.
     std::vector<std::uint8_t> inMask;
 
+    /// Lightcone: 0 when the tracer lies outside the redshift cut of the
+    /// search, and so was skipped; all 1 without a cut. Empty in a box.
+    std::vector<std::uint8_t> inCut;
+
     /// Box: 0 when the tracer lies outside the box limits, and so was
     /// skipped; all 1 without limits.
     std::vector<std::uint8_t> inBox;
@@ -653,9 +657,10 @@ namespace bitvf {
     std::size_t tracersOutsideMask = 0;
 
     /// Lightcone: of the tracers on observed pixels, those outside the
-    /// redshift cut, and so skipped. A tracer both masked and outside the
-    /// cut counts only in tracersOutsideMask, where its flag
-    /// TracerAssignment::inMask is 0: the counts give the mask priority.
+    /// redshift cut, and so skipped (TracerAssignment::inCut is 0). A
+    /// tracer both masked and outside the cut counts only in
+    /// tracersOutsideMask, where its flag TracerAssignment::inMask is 0:
+    /// the counts give the mask priority, while its inCut is 0 as well.
     /// 0 in a box.
     std::size_t tracersOutsideRedshiftCut = 0;
 

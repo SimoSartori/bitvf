@@ -28,6 +28,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <random>
 #include <sstream>
@@ -110,6 +111,46 @@ namespace {
 
   /// The offset from the reconstruction's seed to the seed of the resampled randoms
   constexpr unsigned kRandomSeedOffset = 104729u;
+
+  /**
+   *  @brief Describe every input row in the result of the real-space
+   *  search, which holds the rows of the second pass only: the sizes,
+   *  the flags and the counts of the run, and the assignment's columns
+   *  one per input row.
+   *  @param result the result of the second search, its rows those of pass.rows
+   *  @param pass the second pass; its flags are moved into result
+   */
+  void map_back (bitvf::Result& result, bitvf::internal::LightconeSecondPass& pass, const std::size_t N,
+                 const std::vector<std::int64_t>& ids)
+  {
+    result.nTracers = N;
+    result.ids = ids;
+    result.counts.tracers = N;
+    result.counts.tracersUncorrected = pass.nUncorrected;
+    result.counts.tracersOutsideCut = pass.nOutsideCut;
+    result.counts.tracersOutsideGrid = pass.nOutsideGrid;
+    result.uncorrected = std::move(pass.uncorrected);
+    result.outsideCut = std::move(pass.outsideCut);
+    result.outsideGrid = std::move(pass.outsideGrid);
+
+    if (!result.assignment) return;
+    const bitvf::TracerAssignment& from = *result.assignment;
+    bitvf::TracerAssignment to;
+    to.cellIndex.assign(N, -1);
+    to.voidIndex.assign(N, -1);
+    to.overdenseIndex.assign(N, -1);
+    to.distance.assign(N, std::numeric_limits<double>::quiet_NaN());
+    if (!from.used.empty()) to.used.assign(N, 0);
+    for (std::size_t j = 0; j < pass.rows.size(); ++j) {
+      const std::size_t i = pass.rows[j];
+      to.cellIndex[i] = from.cellIndex[j];
+      to.voidIndex[i] = from.voidIndex[j];
+      to.overdenseIndex[i] = from.overdenseIndex[j];
+      to.distance[i] = from.distance[j];
+      if (!from.used.empty()) to.used[i] = from.used[j];
+    }
+    result.assignment = std::move(to);
+  }
 
   /**
    *  @brief Check every argument of runLightcone that can be checked before
@@ -266,6 +307,7 @@ bitvf::BitVFResult bitvf::runLightcone (const std::vector<double>& tracersSky, c
     second.ids = std::move(pass.ids);
     out.voids = findVoidsLightcone(second, randoms2, mask, voids, &grid);
     out.voids.randomSeed = randomSeed;
+    map_back(out.voids, pass, N, ids);
 
     if (config.keepReconstructions) {
       out.reconstruction = std::move(second);
@@ -274,5 +316,14 @@ bitvf::BitVFResult bitvf::runLightcone (const std::vector<double>& tracersSky, c
     }
   }
 
-  throw Error(fn + ": the result of the run is not implemented yet");
+  if (report.normal()) {
+    const std::size_t N = tracersSky.size() / 3;
+    std::ostringstream line = internal::Report::line();
+    line << fn << ": ";
+    internal::Report::basins(line, out.voids.voids.nBasins, out.voids.overdense.nBasins);
+    line << " from " << N << (N == 1 ? " tracer " : " tracers ");
+    internal::Report::time(line, report.elapsed());
+    report.write(line.str());
+  }
+  return out;
 }

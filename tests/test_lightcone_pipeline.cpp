@@ -51,6 +51,7 @@ using namespace bitvf;
 namespace {
 
   constexpr std::uint64_t kRecordedHash = 0x89e3a8a3e04a4e10ull;
+  constexpr std::uint64_t kRecordedRunHash = 0xf5a4059579f881bbull;
   constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 
   const otswap::DistanceTable& table ()
@@ -167,6 +168,72 @@ namespace {
       h ^= p[i];
       h *= 0x100000001b3ull;
     }
+  }
+
+  template <typename T>
+  void hash_vector (std::uint64_t& h, const std::vector<T>& v)
+  {
+    const std::uint64_t n = v.size();
+    hash_bytes(h, &n, sizeof n);
+    hash_bytes(h, v.data(), v.size() * sizeof(T));
+  }
+
+  void hash_result (std::uint64_t& h, const Result& r)
+  {
+    for (const BasinCatalog* c : {&r.voids, &r.overdense}) {
+      hash_bytes(h, &c->nBasins, sizeof c->nBasins);
+      hash_vector(h, c->centre);
+      hash_vector(h, c->centreSky);
+      hash_vector(h, c->radius);
+      hash_vector(h, c->deltaAv);
+      hash_vector(h, c->delta2Mps);
+      hash_vector(h, c->edgeFlag);
+      hash_vector(h, c->contamination);
+      hash_vector(h, c->nTracers);
+    }
+    hash_vector(h, r.ids);
+    hash_vector(h, r.uncorrected);
+    hash_vector(h, r.outsideCut);
+    hash_vector(h, r.outsideGrid);
+    if (r.assignment) {
+      hash_vector(h, r.assignment->cellIndex);
+      hash_vector(h, r.assignment->voidIndex);
+      hash_vector(h, r.assignment->overdenseIndex);
+      hash_vector(h, r.assignment->distance);
+      hash_vector(h, r.assignment->used);
+    }
+    const Counts& k = r.counts;
+    for (const std::size_t v : {k.tracers, k.tracersUsed, k.tracersUncorrected, k.tracersOutsideGrid,
+                                k.tracersOutsideCut, k.randoms, k.randomsOutsideGrid, k.displacements,
+                                k.displacementsRejected})
+      hash_bytes(h, &v, sizeof v);
+  }
+
+  std::vector<double> external_randoms ()
+  {
+    return patch(1500, 13);
+  }
+
+  BitVFResult run_mode (const SecondPassRandoms mode, const bool keep, const unsigned seed = 7)
+  {
+    LightconeConfig c = base_config(nullptr);
+    c.voids.verbosity = otswap::Verbosity::Silent;
+    c.ot.seed = seed;
+    c.rsd->secondPassRandoms = mode;
+    c.keepReconstructions = keep;
+    c.voids.keepAssignment = keep;
+    c.voids.keepDivergence = keep;
+    const std::vector<double> second = mode == SecondPassRandoms::External ? external_randoms() : std::vector<double>();
+    return runLightcone(tracers(), randoms(), full_mask(), table(), c, second, ids());
+  }
+
+  std::uint64_t run_hash ()
+  {
+    std::uint64_t h = 0xcbf29ce484222325ull;
+    for (const SecondPassRandoms mode : {SecondPassRandoms::None, SecondPassRandoms::Resample,
+                                         SecondPassRandoms::External})
+      hash_result(h, run_mode(mode, true).voids);
+    return h;
   }
 
   std::uint64_t pass_hash ()
@@ -342,9 +409,7 @@ int main ()
     z.rsd->zspaceVoids = true;
     const std::string zLog = run_log(z, zMessage);
     const std::string rLog = run_log(c, rMessage);
-    check(zMessage.find("findVoidsLightcone") != std::string::npos &&
-          rMessage.find("findVoidsLightcone") != std::string::npos,
-          "both runs reach a search, which stops at the steps not written yet");
+    check(zMessage == "returned" && rMessage == "returned", "both runs complete");
     const Chain ref = chain(c);
     std::ostringstream refLog;
     Config v = c.voids;
@@ -399,8 +464,7 @@ int main ()
     check(rLog.find("bitvf: resampled the redshifts of " + std::to_string(kept) + " randoms from " +
                     std::to_string(p.rows.size()) + " tracers with seed " + std::to_string(c.ot.seed + 104729u) + "\n") !=
           std::string::npos, "the Resample line gives the randoms kept, the tracers and the seed");
-    check(message.find("findVoidsLightcone") != std::string::npos,
-          "a Resample run reaches the second search");
+    check(message == "returned", "a Resample run completes");
 
     auto seed_printed = [&] (const unsigned seed, unsigned& value) {
       LightconeConfig cs = resample;
@@ -499,7 +563,7 @@ int main ()
          << inside.size() << " kept of " << needed << " needed\n";
     check(log.find(line.str()) != std::string::npos, "the Normal line gives the removals, the kept and the needed");
     check(log.find("second-pass randoms: the first pass's") == std::string::npos, "no other randoms line");
-    check(message.find("findVoidsLightcone") != std::string::npos, "an External run reaches the second search");
+    check(message == "returned", "an External run completes");
     const std::string detailed = run_external(external, message, otswap::Verbosity::Detailed);
     check(detailed.find(line.str()) != std::string::npos && detailed.find("second pass on ") != std::string::npos,
           "the line is also written at Detailed, with the second-pass line");
@@ -536,6 +600,129 @@ int main ()
     check(one == four, "1 and 4 threads give the same hash");
     if (one != kRecordedHash) std::cerr << "second pass hash: 0x" << std::hex << one << std::dec << std::endl;
     check(one == kRecordedHash, "the hash equals the recorded one");
+  }
+
+  // The run's result describes every input row: sizes, ids, one flag per excluded row, counts, assignment, the
+  // reconstructions kept, and the final line.
+  group("runLightcone's result, in each mode of the second-pass randoms");
+  {
+    for (const SecondPassRandoms mode : {SecondPassRandoms::None, SecondPassRandoms::Resample,
+                                         SecondPassRandoms::External}) {
+      const BitVFResult run = run_mode(mode, true);
+      const Result& r = run.voids;
+      const LightconeConfig c = base_config(nullptr);
+      const Chain ref = chain(c);
+      const internal::LightconeSecondPass& p = ref.pass;
+      check(r.nTracers == 500 && r.ids == ids(), "the result has one row per input tracer, with the ids given");
+      check(r.uncorrected == p.uncorrected && r.outsideCut == p.outsideCut && r.outsideGrid == p.outsideGrid,
+            "the flags are those of the second pass");
+      bool oneFlag = true;
+      for (std::size_t i = 0; i < 500; ++i)
+        oneFlag = oneFlag && r.uncorrected[i] + r.outsideCut[i] + r.outsideGrid[i] <= 1;
+      check(oneFlag, "a tracer carries at most one flag");
+      check(r.counts.tracers == 500 && r.counts.tracersUncorrected == p.nUncorrected &&
+            r.counts.tracersOutsideCut == p.nOutsideCut && r.counts.tracersOutsideGrid == p.nOutsideGrid,
+            "the counts are those of the second pass");
+      check(r.counts.tracersUsed > 0 && r.counts.tracersUsed <= p.rows.size(), "the tracers used are among those chosen");
+      check(r.geometry == otswap::Geometry::Lightcone && r.voids.nBasins > 0 && r.distances, "a lightcone result");
+      check(r.divergence && r.divergence->nCells == r.divergence->voidIndex.size(), "the divergence grid is kept");
+
+      check(r.assignment && r.assignment->cellIndex.size() == 500 && r.assignment->voidIndex.size() == 500 &&
+            r.assignment->overdenseIndex.size() == 500 && r.assignment->distance.size() == 500 &&
+            r.assignment->used.size() == 500, "the assignment has one row per input tracer");
+      std::vector<std::uint8_t> chosen(500, 0);
+      for (const std::size_t row : p.rows) chosen[row] = 1;
+      bool mapped = true, excluded = true;
+      for (std::size_t i = 0; i < 500; ++i) {
+        if (chosen[i]) mapped = mapped && r.assignment->cellIndex[i] >= 0;
+        else excluded = excluded && r.assignment->cellIndex[i] == -1 && r.assignment->voidIndex[i] == -1 &&
+                         r.assignment->overdenseIndex[i] == -1 && std::isnan(r.assignment->distance[i]) &&
+                         r.assignment->used[i] == 0;
+      }
+      check(mapped, "a tracer of the second pass starts in a cell");
+      check(excluded, "an excluded tracer has no cell, basin or distance");
+
+      check(run.reconstruction && run.reconstruction->nObjects == p.rows.size() &&
+            run.zspaceReconstruction && run.zspaceReconstruction->nObjects == 500 && run.realSpace &&
+            run.realSpace->nObjects == 500, "the reconstructions are kept as configured");
+      check(!run.zspaceVoids, "no redshift-space voids unless requested");
+      const bool resample = mode == SecondPassRandoms::Resample;
+      check(r.randomSeed.has_value() == resample && (!resample || *r.randomSeed == 7u + 104729u),
+            "only a Resample run records the seed of its randoms");
+
+      const BitVFResult lean = run_mode(mode, false);
+      check(!lean.voids.assignment && !lean.voids.divergence && !lean.reconstruction && !lean.zspaceReconstruction &&
+            !lean.realSpace, "the large outputs are only kept when asked");
+      check(lean.voids.voids.centre == r.voids.centre && lean.voids.counts.tracersUsed == r.counts.tracersUsed,
+            "keeping the outputs does not change the voids");
+    }
+
+    const BitVFResult none = run_mode(SecondPassRandoms::None, false);
+    const BitVFResult resampled = run_mode(SecondPassRandoms::Resample, false);
+    const BitVFResult resampledAgain = run_mode(SecondPassRandoms::Resample, false);
+    const BitVFResult otherSeed = run_mode(SecondPassRandoms::Resample, false, 8);
+    check(resampled.voids.voids.delta2Mps == resampledAgain.voids.voids.delta2Mps &&
+          resampled.voids.voids.centre == resampledAgain.voids.voids.centre,
+          "a seed reproduces a Resample run");
+    check(resampled.voids.voids.delta2Mps != otherSeed.voids.voids.delta2Mps &&
+          *otherSeed.voids.randomSeed == 8u + 104729u, "another seed gives other randoms and is recorded");
+    check(none.voids.voids.delta2Mps != resampled.voids.voids.delta2Mps, "Resample draws randoms of its own");
+
+    LightconeConfig z = base_config(nullptr);
+    z.voids.verbosity = otswap::Verbosity::Silent;
+    z.rsd->zspaceVoids = true;
+    const BitVFResult both = runLightcone(tracers(), randoms(), full_mask(), table(), z, {}, ids());
+    check(both.zspaceVoids && both.zspaceVoids->nTracers == 500 && both.zspaceVoids->uncorrected.empty() &&
+          both.zspaceVoids->outsideGrid.size() == 500 && both.zspaceVoids->counts.tracersOutsideGrid == 0 &&
+          both.voids.voids.centre == none.voids.voids.centre, "the redshift-space voids are the first pass's search");
+
+    // Without a correction the single search is the run's result.
+    LightconeConfig plain = base_config(nullptr);
+    plain.voids.verbosity = otswap::Verbosity::Silent;
+    plain.rsd.reset();
+    const BitVFResult one = runLightcone(tracers(), randoms(), full_mask(), table(), plain, {}, ids());
+    check(one.voids.nTracers == 500 && one.voids.uncorrected.empty() && one.voids.outsideCut.empty() &&
+          !one.zspaceVoids && !one.reconstruction, "without a correction: one search, no flags");
+  }
+
+  // The lines of the final result: the search's call line and the run's, with the tracers read without a displacement.
+  group("the call line of the search and the final line of the run");
+  {
+    LightconeConfig c = base_config(nullptr);
+    c.voids.verbosity = otswap::Verbosity::Normal;
+    std::ostringstream log;
+    c.voids.log = &log;
+    const BitVFResult run = runLightcone(tracers(), randoms(), full_mask(), table(), c, {}, ids());
+    const std::string text = log.str();
+    const Result& r = run.voids;
+    std::ostringstream basins;
+    basins << r.voids.nBasins << " voids and " << r.overdense.nBasins << " overdense basins";
+    const std::size_t search = text.find("bitvf: findVoidsLightcone: ");
+    check(search != std::string::npos && text.find(" without a valid displacement\n", search) != std::string::npos,
+          "the search's line ends with the tracers read without a displacement");
+    const std::size_t last = text.rfind("bitvf: runLightcone: " + basins.str() + " from 500 tracers in ");
+    check(last != std::string::npos && last > search && text.find(" s\n", last) != std::string::npos,
+          "the run's line follows the search's");
+    check(text.find("runLightcone: ", last + 8) == std::string::npos, "the run's line is the last");
+  }
+
+  // The result of a run is identical bit for bit with any number of threads and matches the recorded hash.
+  group("the run is the same with 1 and 4 threads, and matches the recorded hash");
+  {
+#ifdef _OPENMP
+    omp_set_num_threads(1);
+    const std::uint64_t one = run_hash();
+    omp_set_num_threads(4);
+    const std::uint64_t four = run_hash();
+    omp_set_num_threads(1);
+    check(one == four, "1 and 4 threads give the same hash");
+    if (one != kRecordedRunHash) std::cerr << "run hash: 0x" << std::hex << one << std::dec << std::endl;
+    check(one == kRecordedRunHash, "the hash equals the recorded one");
+#else
+    const std::uint64_t h = run_hash();
+    if (h != kRecordedRunHash) std::cerr << "run hash: 0x" << std::hex << h << std::dec << std::endl;
+    check(h == kRecordedRunHash, "the hash equals the recorded one");
+#endif
   }
 
   return report("test_lightcone_pipeline");

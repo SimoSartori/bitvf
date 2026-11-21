@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <exception>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -792,7 +793,77 @@ bitvf::Result bitvf::internal::runLightcone (const std::vector<double>* tracers,
     lightcone_densities(lc, basins, read, entry.randoms, voids, overdense);
   }
 
-  throw Error("findVoidsLightcone: the search after the divergence is not implemented yet");
+  Result result;
+  result.config = config;
+  result.config.divergenceCellSize = lc.cells.cellSizeMps;
+  result.nTracers = entry.nTracers;
+  result.geometry = otswap::Geometry::Lightcone;
+  result.ids = ids;
+  result.voids = std::move(voids);
+  result.overdense = std::move(overdense);
+  result.outsideGrid = div.outsideGrid;
+  result.mpsProfile = lc.cells.mpsProfile;
+  result.distances = reconstruction != nullptr ? reconstruction->distances
+                                               : std::make_shared<const otswap::DistanceTable>(distances);
+  result.counts = entry.counts;
+  if (report.detailed()) {
+    std::ostringstream out = Report::line();
+    out << "catalogues of the basins";
+    report.step(out);
+  }
+
+  if (config.keepAssignment) {
+    TracerAssignment a;
+    a.cellIndex = div.cell;
+    a.used = div.used;
+    a.inMask = entry.tracerSelection.inMask;
+    a.inCut = entry.tracerSelection.inCut;
+    a.voidIndex.assign(entry.nTracers, -1);
+    a.overdenseIndex.assign(entry.nTracers, -1);
+    a.distance.assign(entry.nTracers, std::numeric_limits<double>::quiet_NaN());
+    const std::int64_t N = (std::int64_t)entry.nTracers;
+#pragma omp parallel for schedule(static)
+    for (std::int64_t i = 0; i < N; ++i) {
+      const std::int64_t c = div.cell[(std::size_t)i];
+      if (c < 0) continue;
+      const std::int64_t v = lc.cells.voidIndex[(std::size_t)c];
+      const std::int64_t o = lc.cells.overdenseIndex[(std::size_t)c];
+      a.voidIndex[(std::size_t)i] = v;
+      a.overdenseIndex[(std::size_t)i] = o;
+      const double* centre = v >= 0 ? &result.voids.centre[3 * (std::size_t)v]
+                                    : &result.overdense.centre[3 * (std::size_t)o];
+      const double* x = &entry.tracers[3 * (std::size_t)i];
+      const double dx = x[0] - centre[0];
+      const double dy = x[1] - centre[1];
+      const double dz = x[2] - centre[2];
+      a.distance[(std::size_t)i] = std::sqrt(dx*dx + dy*dy + dz*dz);
+    }
+    result.assignment = std::move(a);
+  }
+  if (config.keepDivergence) result.divergence = std::move(lc.cells);
+  if (report.detailed() && (config.keepAssignment || config.keepDivergence)) {
+    std::ostringstream out = Report::line();
+    out << "kept the " << (!config.keepDivergence ? "tracer assignment"
+                           : !config.keepAssignment ? "divergence grid"
+                           : "tracer assignment and the divergence grid");
+    report.step(out);
+  }
+
+  result.elapsedSeconds = report.elapsed();
+  if (report.normal()) {
+    const Counts& counts = result.counts;
+    std::ostringstream out = Report::line();
+    out << (randoms != nullptr ? "findVoidsLightconeFromCartesian" : "findVoidsLightcone") << ": ";
+    Report::basins(out, result.voids.nBasins, result.overdense.nBasins);
+    out << " from " << counts.tracers << (counts.tracers == 1 ? " tracer " : " tracers ");
+    Report::time(out, result.elapsedSeconds);
+    out << "; "
+        << counts.tracers - counts.tracersOutsideMask - counts.tracersOutsideRedshiftCut - counts.tracersOutsideGrid -
+           counts.tracersUsed
+        << " without a valid displacement";
+    report.write(out.str());
+  }
+  return result;
 }
 
 

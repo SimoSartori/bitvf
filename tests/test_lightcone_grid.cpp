@@ -185,7 +185,7 @@ namespace {
     return kept;
   }
 
-  /// @p f must stop after the grid: with no void found, or at the steps not implemented yet.
+  /// @p f must get through the grid: it returns, or finds no void.
   template <typename F>
   void passes_grid (F&& f, const std::string& what)
   {
@@ -194,15 +194,14 @@ namespace {
     }
     catch (const Error& e) {
       const std::string m = e.what();
-      check(m.find("no void found") != std::string::npos || m.find("not implemented yet") != std::string::npos,
-            what + " (the message is \"" + m + "\")");
+      check(m.find("no void found") != std::string::npos, what + " (the message is \"" + m + "\")");
       return;
     }
     catch (const std::exception& e) {
       check(false, what + " (threw the wrong type: " + e.what() + ")");
       return;
     }
-    check(false, what + " (did not throw)");
+    check(true, what);
   }
 
   std::string run_log (const Case& c)
