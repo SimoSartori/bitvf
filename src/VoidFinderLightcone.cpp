@@ -811,6 +811,7 @@ bitvf::Result bitvf::internal::runLightcone (const std::vector<double>* tracers,
   result.overdense = std::move(overdense);
   result.outsideGrid = div.outsideGrid;
   result.mpsProfile = lc.cells.mpsProfile;
+  result.maskNside = mask.nside();
   result.distances = reconstruction != nullptr ? reconstruction->distances
                                                : std::make_shared<const otswap::DistanceTable>(distances);
   result.counts = entry.counts;
@@ -906,6 +907,10 @@ bitvf::internal::PipelineSelection bitvf::internal::check_pipeline_sky (const st
     throw Error("no random is left: of " + std::to_string(M) + " randoms, " + left_out(rs.outsideMask, rs.outsideCut));
 
   PipelineSelection out;
+  out.inMask = ts.inMask;
+  out.inCut = ts.inCut;
+  out.tracersOutsideMask = ts.outsideMask;
+  out.tracersOutsideRedshiftCut = ts.outsideCut;
   out.redshift.reserve(N - ts.outsideMask - ts.outsideCut);
   for (std::size_t i = 0; i < N; ++i)
     if (ts.inMask[i] && ts.inCut[i]) out.redshift.push_back(tSky[3*i+2]);

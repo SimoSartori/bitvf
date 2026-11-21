@@ -249,6 +249,28 @@ namespace bitvf {
     ///   findVoidsBoxFromDivergence, as "outside the divergence grid". \<W\>
     ///   counts the tracers read without a valid displacement. A count of 1
     ///   takes the singular.
+    ///
+    ///   In a lightcone, the lines are:
+    ///
+    ///       bitvf: kept <k> of <N> tracers: <m> on unobserved pixels, <c> outside the redshift cut
+    ///       bitvf: kept <k> of <M> randoms: <m> on unobserved pixels, <c> outside the redshift cut
+    ///       bitvf: grid of <C> cells in <S> shells, cell size <s> mps (<source>), distances [<d0>, <d1>], RA [<a0>, <a1>] deg, Dec [<b0>, <b1>] deg (<from>) in <t> s
+    ///       bitvf: kept <k'> of <k> tracers: <g> outside the reused grid
+    ///       bitvf: <n> tracers start in a masked cell, in no basin
+    ///       bitvf: divergence of the valid displacements of <u> tracers, <r> displacements rejected (masked cells, outside or below the grid) in <t> s
+    ///       bitvf: filled <f> cells in <p> passes, <e> left empty in <t> s
+    ///       bitvf: findVoidsLightcone: <V> voids and <O> overdense basins from <N> tracers in <T> s; <W> without a valid displacement
+    ///
+    ///   The redshift cut appears in the selection lines only when it has a
+    ///   finite bound; the grid line adds ", central sphere included" when
+    ///   the grid has one, its source is default, given or reused, and it
+    ///   ends "(from the tracers and randoms)" or "(from the reused grid)";
+    ///   the reused-grid line is written whenever a grid is reused; the
+    ///   masked-cell, divergence and fill lines only when \<n\>, \<r\>
+    ///   or \<e\> is not 0 (Counts::tracersInMaskedCells,
+    ///   displacementsRejected). The call line names
+    ///   findVoidsLightconeFromCartesian for that function; \<W\> counts
+    ///   the tracers kept and inside the grid without a valid displacement.
     /// - Detailed: as Normal, with one line per step of the search in the
     ///   order it runs, each with its time, and the values that describe
     ///   it: the mean particle separation and its source, the grid, its
@@ -343,15 +365,24 @@ namespace bitvf {
     /// Contact with the boundary: 0 none; 1 only the extended basin
     /// touches it; 2 the core already touches it. The boundary is, in a
     /// box, the faces of the grid, with or without box limits; in a
-    /// lightcone, the masked cells, the cells outside the survey and the
-    /// borders of the grid. In a box, a basin touches the boundary when one
-    /// of its cells lies on a face of the grid.
+    /// lightcone, the masked cells (DivergenceGrid::masked) and the border
+    /// of the grid. In a box, a basin touches the boundary when one of its
+    /// cells lies on a face of the grid. In a lightcone, when one of its
+    /// cells shares a face with a masked cell, or lies on the border: the
+    /// first shell unless it is the central sphere, the last shell, the
+    /// first and the last declination ring of a shell unless its edge is
+    /// on a pole, and the first and the last sector of a ring that is not a
+    /// full circle. A masked cell that touches a basin's cell only along
+    /// an edge or at a corner does not count.
     std::vector<std::uint8_t> edgeFlag;
 
     /// Fraction of the basin's surface that lies on the boundary of
     /// edgeFlag. In a box, the faces of its cells on the faces of the grid,
     /// over those faces plus the faces its cells share with cells of other
-    /// basins; 1 for a basin that fills the grid.
+    /// basins; 1 for a basin that fills the grid. In a lightcone, the area
+    /// its cells share with masked cells plus their area on the border,
+    /// over that area plus the area they share with cells of other basins;
+    /// 0 when that sum is not positive.
     std::vector<double> contamination;
 
     /// Tracers starting in the cells of the core: the count behind
@@ -790,6 +821,10 @@ namespace bitvf {
     /// Mpc/h when it comes from otswap's cosmology. Null in a box.
     std::shared_ptr<const otswap::DistanceTable> distances;
 
+    /// Lightcone: the NSIDE of the mask the search was given
+    /// (otswap::Mask::nside), which the files record. 0 in a box.
+    int maskNside = 0;
+
     /// What the search counted.
     Counts counts;
 
@@ -1130,6 +1165,231 @@ namespace bitvf {
                                 const Config& config,
                                 const std::vector<double>& weights = {},
                                 std::optional<double> mps = std::nullopt);
+
+  /**
+   *  @brief Find voids and overdense basins in a lightcone, from sky
+   *  positions.
+   *
+   *  The divergence of the displacement field is computed on a grid of
+   *  shells in comoving distance, declination rings and right-ascension
+   *  sectors (DivergenceGrid), smoothed (Config::smoothing) and divided
+   *  by a watershed into basins around its local minima: the voids, below
+   *  0, and the overdense basins, at or above 0 (BasinCatalog). The
+   *  observer is at the origin. Reports as Config::verbosity describes.
+   *
+   *  @par Selection
+   *  A tracer on an unobserved pixel of the mask, or with a redshift
+   *  outside the redshift cut, keeps its row but is skipped
+   *  (TracerAssignment::inMask and inCut, Counts::tracersOutsideMask and
+   *  tracersOutsideRedshiftCut); its displacements are not read. A random
+   *  on an unobserved pixel or outside the cut is removed
+   *  (Counts::randomsOutsideMask, randomsOutsideRedshiftCut). Any finite
+   *  right ascension is accepted and folded into [0, 2 pi).
+   *
+   *  @par Grid
+   *  Without grid, it covers the tracers and randoms kept: their range of
+   *  comoving distance, right ascension and declination. Its cells are
+   *  Config::divergenceCellSize times mps(z) wide at the centre of each
+   *  shell. A cell whose centre falls on an unobserved pixel is masked
+   *  (DivergenceGrid::masked): it holds no divergence and belongs to no
+   *  basin. A valid displacement whose start or end lies in a masked cell,
+   *  whose end lies outside every cell, or that passes closer to the
+   *  observer than the first shell when the grid has no central sphere, is
+   *  rejected (Counts::displacementsRejected).
+   *
+   *  @param tracersSky sky positions of the tracers, [tracer][ra, dec, z],
+   *  radians, z the observed redshift; 3 * nTracers entries. Every row must
+   *  be finite, with a declination in [-pi/2, pi/2]; the redshift of a row
+   *  kept must lie inside the distance table.
+   *
+   *  @param displacement Cartesian displacements, in the unit of the
+   *  distance table, 3 * nRealizations * nTracers entries,
+   *  [realization][tracer][xyz]; nRealizations is their size over that of
+   *  tracersSky, at least 1. They start from the tracers' Cartesian
+   *  positions, otswap::toCartesian of tracersSky with the distance table.
+   *  Every valid displacement of a tracer kept must be finite; the others
+   *  are not read.
+   *
+   *  @param valid validity of each displacement, nRealizations * nTracers
+   *  entries, [realization][tracer], each 0 or 1; or empty, which means
+   *  all valid.
+   *
+   *  @param randomsSky sky positions of the randoms, as tracersSky;
+   *  required. They describe the survey: they set the extent of a new grid
+   *  with the tracers, and give the expected counts of
+   *  BasinCatalog::delta2Mps. Pass the randoms of the reconstruction.
+   *
+   *  @param mask the observed pixels of the survey; the mask of the
+   *  reconstruction, or a stricter one. Result::maskNside records its
+   *  NSIDE.
+   *
+   *  @param distances the redshift-distance table; coordinates are in its
+   *  distance unit (Mpc/h when it comes from otswap's cosmology).
+   *  Result::distances holds a copy.
+   *
+   *  @param mps the mean particle separation as a function of redshift,
+   *  otswap::Result::mpsProfile of the reconstruction. It sets the cell
+   *  size of each shell, a smoothing in Mps, the mean density of deltaAv
+   *  and the radius of delta2Mps. It must be positive over the redshifts
+   *  of the tracers and randoms kept. With grid, it must equal the grid's
+   *  profile bit for bit.
+   *
+   *  @param config the parameters of the search.
+   *
+   *  @param redshiftCut the closed range of observed redshift searched;
+   *  the default cuts nothing. Pass the cut of the reconstruction.
+   *
+   *  @param ids the identity of each tracer, copied into Result::ids: one
+   *  per tracer, no value twice; or empty.
+   *
+   *  @param grid a lightcone grid to reuse, or null to build one. Its
+   *  cells are rebuilt from the fields that define them (distanceMin,
+   *  distanceMax, raMin, raMax, decMin, decMax, cellSizeMps, mpsProfile)
+   *  with the call's distance table and mask, and its mps profile sets the
+   *  smoothing in Mps and the densities. Tracers kept but outside every
+   *  cell are excluded (Result::outsideGrid, Counts::tracersOutsideGrid),
+   *  randoms outside are removed (Counts::randomsOutsideGrid).
+   *  config.divergenceCellSize must be empty. Use a grid kept from an
+   *  earlier search of the same distance table (Config::keepDivergence)
+   *  to search several catalogues on the same cells.
+   *
+   *  @exception Error
+   *  - on the arrays: if tracersSky or randomsSky is empty or its size is
+   *    not a multiple of three; if a row is not finite or has a
+   *    declination outside [-pi/2, pi/2]; if the size of displacement is
+   *    not 3 * nRealizations * nTracers for a whole nRealizations of at
+   *    least 1 that fits in an unsigned; if valid is neither empty nor of
+   *    size nRealizations * nTracers, or holds a value other than 0 and 1;
+   *    if ids is neither empty nor of size nTracers, or holds a value
+   *    twice;
+   *  - if a bound of the redshift cut is NaN or its lower bound exceeds the
+   *    upper one; if the mps profile is empty, its lists differ in size,
+   *    an entry is not finite, its redshifts are not strictly increasing
+   *    or an mps is not positive;
+   *  - on config as findVoidsBox, and if config.divergenceCellSize is set
+   *    with a grid;
+   *  - on grid: if it is not a lightcone grid; if a field that defines the
+   *    cells is invalid, or a field of a box grid is set; if mps differs
+   *    from its profile; if the rebuild gives another number of cells than
+   *    its nCells, which means another distance table or a modified grid;
+   *  - on the data: if a tracer or random kept has a redshift outside the
+   *    distance table; if a valid displacement of a tracer kept is not
+   *    finite; if no tracer, no valid displacement or no random is left
+   *    after the mask, the cut and a reused grid; if the search reads more
+   *    than 4294967295 tracers or randoms, the most the counts of
+   *    delta2Mps support; if the mps profile is not positive over the
+   *    redshifts the grid spans; if the grid reaches a distance outside
+   *    the distance table, has a shell with no declination ring or a full
+   *    ring with no sector (use a smaller cell or a central sphere), or
+   *    needs more than 2097151 shells, rings or sectors (increase the cell
+   *    size); if every valid displacement read is rejected; if the
+   *    divergence is 0 or positive in every unmasked cell, so that no
+   *    void can be found.
+   *
+   *  @return the voids and overdense basins, with Result::geometry
+   *  Lightcone, Result::mpsProfile the profile of the search (the grid's
+   *  when one was given), Result::distances and Result::maskNside set.
+   */
+  Result findVoidsLightcone (const std::vector<double>& tracersSky,
+                             const std::vector<double>& displacement,
+                             const std::vector<std::uint8_t>& valid,
+                             const std::vector<double>& randomsSky,
+                             const otswap::Mask& mask,
+                             const otswap::DistanceTable& distances,
+                             const otswap::MpsProfile& mps,
+                             const Config& config,
+                             const otswap::RedshiftCut& redshiftCut = {},
+                             const std::vector<std::int64_t>& ids = {},
+                             const DivergenceGrid* grid = nullptr);
+
+  /**
+   *  @brief Find voids and overdense basins in a lightcone, with the
+   *  tracers and randoms given as Cartesian positions, the observer at the
+   *  origin.
+   *
+   *  As findVoidsLightcone from sky positions. The sky coordinates of
+   *  every row are computed first with otswap::toSky and the distance
+   *  table given: the right ascension folded into [0, 2 pi), the
+   *  declination, and the redshift at the row's distance from the origin.
+   *  They alone decide the mask, the redshift cut and the cell of every
+   *  tracer and random; the Cartesian positions are those the
+   *  displacements start from. A position and its sky coordinates can then
+   *  disagree on a cell only by rounding, for a point within rounding of a
+   *  cell edge.
+   *
+   *  Every row must be finite, must not lie at the origin, and must lie
+   *  within the distance table, rows on unobserved pixels or outside the
+   *  cut included, since its sky coordinates decide whether it is kept. A
+   *  table covering a wider redshift range than the catalogue's is a safe
+   *  choice.
+   *
+   *  @param tracers 3 per tracer, x, y, z, in the unit of the distance
+   *  table
+   *  @param randoms as tracers, for the randoms; required
+   *  @exception Error as findVoidsLightcone from sky positions, and if a
+   *  row of tracers or randoms is not finite, lies at the origin, or lies
+   *  at a distance outside the distance table; the message names the
+   *  object
+   *  @return as findVoidsLightcone from sky positions
+   */
+  Result findVoidsLightconeFromCartesian (const std::vector<double>& tracers,
+                                          const std::vector<double>& displacement,
+                                          const std::vector<std::uint8_t>& valid,
+                                          const std::vector<double>& randoms,
+                                          const otswap::Mask& mask,
+                                          const otswap::DistanceTable& distances,
+                                          const otswap::MpsProfile& mps,
+                                          const Config& config,
+                                          const otswap::RedshiftCut& redshiftCut = {},
+                                          const std::vector<std::int64_t>& ids = {},
+                                          const DivergenceGrid* grid = nullptr);
+
+  /**
+   *  @brief Find voids and overdense basins in a lightcone, from a
+   *  reconstruction.
+   *
+   *  As findVoidsLightcone from sky positions, with tracersSky, the
+   *  Cartesian tracers, displacement, valid, ids, the distance table and,
+   *  without a grid, the mps profile taken from the reconstruction. A
+   *  tracer is read only if neither otswap::Result::outsideMask nor
+   *  outsideRedshiftCut flags it and the mask given allows it. The randoms
+   *  are converted with the reconstruction's distance table and cut by its
+   *  redshift cut (otswap::SelectionCounts::redshiftCut). Reports as
+   *  Config::verbosity describes.
+   *
+   *  @param reconstruction a lightcone result of
+   *  otswap::reconstructLightcone, or the mean of one read with
+   *  otswap::io::readDisplacementMean (set Config::nRealizationsMean to
+   *  the number averaged, so that bitvf's files record it).
+   *
+   *  @param randomsSky the randoms of the reconstruction, as in
+   *  findVoidsLightcone.
+   *
+   *  @param mask the mask of the reconstruction, or a stricter one; it
+   *  must not allow a tracer the reconstruction left out as masked.
+   *
+   *  @param config the parameters of the search.
+   *
+   *  @param grid a grid to reuse, or null, as in findVoidsLightcone. Its
+   *  mps profile wins over the reconstruction's, which is then not read.
+   *
+   *  @exception Error if the reconstruction is not a lightcone result; if
+   *  it lacks tracersSky, distances or, without a grid, its mps profile; if
+   *  it is malformed: nObjects or nRealizations 0, an array of a size that
+   *  does not match them, valid holding a value other than 0 and 1, ids
+   *  holding a value twice, a redshift cut with a NaN bound or a lower
+   *  bound above the upper one; if it was filtered against a mask of
+   *  another NSIDE than the mask given; if the mask given allows a tracer
+   *  flagged in outsideMask; and as findVoidsLightcone from sky positions.
+   *
+   *  @return as findVoidsLightcone from sky positions; Result::distances
+   *  shares the reconstruction's table.
+   */
+  Result findVoidsLightcone (const otswap::Result& reconstruction,
+                             const std::vector<double>& randomsSky,
+                             const otswap::Mask& mask,
+                             const Config& config,
+                             const DivergenceGrid* grid = nullptr);
 
   // ==========================================================================
   // Grid and watershed

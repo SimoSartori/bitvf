@@ -51,7 +51,7 @@ using namespace bitvf;
 namespace {
 
   constexpr std::uint64_t kRecordedHash = 0x89e3a8a3e04a4e10ull;
-  constexpr std::uint64_t kRecordedRunHash = 0xf5a4059579f881bbull;
+  constexpr std::uint64_t kRecordedRunHash = 0x9b58c381b98ab148ull;
   constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 
   const otswap::DistanceTable& table ()
@@ -201,12 +201,15 @@ namespace {
       hash_vector(h, r.assignment->overdenseIndex);
       hash_vector(h, r.assignment->distance);
       hash_vector(h, r.assignment->used);
+      hash_vector(h, r.assignment->inMask);
+      hash_vector(h, r.assignment->inCut);
     }
     const Counts& k = r.counts;
     for (const std::size_t v : {k.tracers, k.tracersUsed, k.tracersUncorrected, k.tracersOutsideGrid,
                                 k.tracersOutsideCut, k.randoms, k.randomsOutsideGrid, k.displacements,
-                                k.displacementsRejected})
+                                k.displacementsRejected, k.tracersOutsideMask, k.tracersOutsideRedshiftCut})
       hash_bytes(h, &v, sizeof v);
+    hash_bytes(h, &r.maskNside, sizeof r.maskNside);
   }
 
   std::vector<double> external_randoms ()
@@ -675,6 +678,37 @@ int main ()
     check(both.zspaceVoids && both.zspaceVoids->nTracers == 500 && both.zspaceVoids->uncorrected.empty() &&
           both.zspaceVoids->outsideGrid.size() == 500 && both.zspaceVoids->counts.tracersOutsideGrid == 0 &&
           both.voids.voids.centre == none.voids.voids.centre, "the redshift-space voids are the first pass's search");
+
+    // The real-space result carries the first pass's selection: its mask and cut flags and counts.
+    std::vector<double> pixels(12, 1.);
+    pixels[5] = 0.;
+    const otswap::Mask partial(pixels, otswap::PixelOrdering::Ring);
+    LightconeConfig sel = base_config(nullptr);
+    sel.voids.verbosity = otswap::Verbosity::Silent;
+    sel.voids.keepAssignment = true;
+    sel.rsd->zspaceVoids = true;
+    const BitVFResult carried = runLightcone(tracers(), randoms(), partial, table(), sel, {}, ids());
+    const Result& rv = carried.voids;
+    const Result& zv = *carried.zspaceVoids;
+    check(rv.counts.tracersOutsideMask > 0 && rv.counts.tracersOutsideRedshiftCut > 0 &&
+          rv.counts.tracersOutsideMask == zv.counts.tracersOutsideMask &&
+          rv.counts.tracersOutsideRedshiftCut == zv.counts.tracersOutsideRedshiftCut,
+          "the counts of the mask and the cut are the first pass's");
+    check(rv.assignment->inMask.size() == 500 && rv.assignment->inMask == zv.assignment->inMask &&
+          rv.assignment->inCut == zv.assignment->inCut, "inMask and inCut are the first pass's, one per input row");
+    std::size_t masked = 0, cut = 0;
+    bool leftOut = true;
+    for (std::size_t i = 0; i < 500; ++i) {
+      masked += rv.assignment->inMask[i] == 0;
+      cut += rv.assignment->inMask[i] == 1 && rv.assignment->inCut[i] == 0;
+      if (!rv.assignment->inMask[i] || !rv.assignment->inCut[i])
+        leftOut = leftOut && rv.uncorrected[i] == 1 && rv.assignment->cellIndex[i] == -1;
+    }
+    check(masked == rv.counts.tracersOutsideMask && cut == rv.counts.tracersOutsideRedshiftCut,
+          "the flags agree with the counts, the mask first");
+    check(leftOut, "a tracer outside the mask or the cut is also uncorrected, and in no cell");
+    check(rv.assignment->inBox.empty() && zv.assignment->inBox.empty(), "a lightcone assignment has no inBox");
+    check(rv.maskNside == 1 && zv.maskNside == 1, "both results record the mask's NSIDE");
 
     // Without a correction the single search is the run's result.
     LightconeConfig plain = base_config(nullptr);

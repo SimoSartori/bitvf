@@ -614,8 +614,13 @@ int main ()
   {
     Result lightcone = r;
     lightcone.geometry = otswap::Geometry::Lightcone;
-    for (auto write : {write_voids, write_overdense, write_divergence, write_galaxies})
-      refused(write, lightcone, "writing a lightcone result is not implemented", "writing a lightcone result is not implemented");
+    refused(write_voids, lightcone, "writeVoids: writing a lightcone result is not implemented", "lightcone voids");
+    refused(write_overdense, lightcone, "writeOverdense: writing a lightcone result is not implemented",
+            "lightcone overdense");
+    refused(write_divergence, lightcone, "writeDivergence: writing a lightcone result is not implemented",
+            "lightcone divergence");
+    refused(write_galaxies, lightcone, "writeGalaxies: writing a lightcone result is not implemented",
+            "lightcone galaxies");
 
     auto malformed = [&r] (auto&& change, auto write, const std::string& message, const std::string& what) {
       Result bad = r;
@@ -777,7 +782,7 @@ int main ()
     c.smoothing.sigma = 1.5;
     const Result f = findVoidsBoxFromField(lf.centres, lf.values, c, lf.weights);
     const Result m = findVoidsBoxFromField(lf.centres, lf.values, c, lf.weights, 3.);
-    refused(write_galaxies, f, "the result is a search on a field (findVoidsBoxFromField), which has no tracers",
+    refused(write_galaxies, f, "writeGalaxies: the result is a search on a field (findVoidsBoxFromField), which has no tracers",
             "writeGalaxies on a field result");
 
     auto changed = [] (const Result& base, auto&& change) {

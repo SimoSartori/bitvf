@@ -119,8 +119,10 @@ namespace {
    *  one per input row.
    *  @param result the result of the second search, its rows those of pass.rows
    *  @param pass the second pass; its flags are moved into result
+   *  @param first the first pass's selection, carried into result
    */
-  void map_back (bitvf::Result& result, bitvf::internal::LightconeSecondPass& pass, const std::size_t N,
+  void map_back (bitvf::Result& result, bitvf::internal::LightconeSecondPass& pass,
+                 const bitvf::internal::PipelineSelection& first, const std::size_t N,
                  const std::vector<std::int64_t>& ids)
   {
     result.nTracers = N;
@@ -129,6 +131,8 @@ namespace {
     result.counts.tracersUncorrected = pass.nUncorrected;
     result.counts.tracersOutsideCut = pass.nOutsideCut;
     result.counts.tracersOutsideGrid = pass.nOutsideGrid;
+    result.counts.tracersOutsideMask = first.tracersOutsideMask;
+    result.counts.tracersOutsideRedshiftCut = first.tracersOutsideRedshiftCut;
     result.uncorrected = std::move(pass.uncorrected);
     result.outsideCut = std::move(pass.outsideCut);
     result.outsideGrid = std::move(pass.outsideGrid);
@@ -140,6 +144,8 @@ namespace {
     to.voidIndex.assign(N, -1);
     to.overdenseIndex.assign(N, -1);
     to.distance.assign(N, std::numeric_limits<double>::quiet_NaN());
+    to.inMask = first.inMask;
+    to.inCut = first.inCut;
     if (!from.used.empty()) to.used.assign(N, 0);
     for (std::size_t j = 0; j < pass.rows.size(); ++j) {
       const std::size_t i = pass.rows[j];
@@ -307,7 +313,7 @@ bitvf::BitVFResult bitvf::runLightcone (const std::vector<double>& tracersSky, c
     second.ids = std::move(pass.ids);
     out.voids = findVoidsLightcone(second, randoms2, mask, voids, &grid);
     out.voids.randomSeed = randomSeed;
-    map_back(out.voids, pass, N, ids);
+    map_back(out.voids, pass, selected, N, ids);
 
     if (config.keepReconstructions) {
       out.reconstruction = std::move(second);

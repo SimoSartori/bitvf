@@ -372,6 +372,7 @@ int main ()
           v.counts.tracersOutsideBox == byHand.counts.tracersOutsideBox + excludedOutside &&
           v.counts.displacements == byHand.counts.displacements && inBoxZeros == v.counts.tracersOutsideBox,
           "nTracers, ids, counts; the inBox zeros equal tracersOutsideBox");
+    check(a.inMask.empty() && a.inCut.empty() && v.maskNside == 0, "a box assignment has no inMask or inCut");
     check(excludedOutside > 0 && a.inMask.empty(), "tracers outside the limits are among the excluded; no inMask in a box");
     check(v.outsideCut.empty() && v.randomSeed == derived, "no outsideCut in a box; randomSeed set");
   }

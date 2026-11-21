@@ -583,9 +583,13 @@ class TracerAssignment:
         """False when the tracer falls on an unobserved pixel of the mask.
         Shape (0,) in a box."""
     @property
+    def in_cut(self) -> NDArray[np.bool_]:
+        """False when the tracer lies outside the redshift cut, and so was
+        skipped. Shape (0,) in a box."""
+    @property
     def in_box(self) -> NDArray[np.bool_]:
         """False for a tracer outside the box limits, which was skipped; all
-        True without limits."""
+        True without limits. Shape (0,) in a lightcone."""
     @property
     def used(self) -> NDArray[np.bool_]:
         """True when at least one valid displacement of the tracer entered
@@ -722,6 +726,10 @@ class Result:
     @property
     def mps_profile(self) -> Optional[otswap.MpsProfile]:
         """Lightcone only; None in a box."""
+    @property
+    def mask_nside(self) -> int:
+        """Lightcone: the NSIDE of the mask the search was given; 0 in a
+        box."""
     @property
     def distances(self) -> Optional[otswap.DistanceTable]:
         """Lightcone only; None in a box."""

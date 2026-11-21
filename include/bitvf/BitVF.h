@@ -21,10 +21,10 @@
 /**
  *  @file include/bitvf/BitVF.h
  *
- *  @brief The BitVF pipeline in one call: the optimal transport
- *  reconstruction, optionally the correction of redshift-space
- *  distortions and a second reconstruction in real space, and the void
- *  search.
+ *  @brief The BitVF pipeline in one call, in a box or a lightcone: the
+ *  optimal transport reconstruction, optionally the correction of
+ *  redshift-space distortions and a second reconstruction in real space,
+ *  and the void search.
  *
  *  The pipeline calls otswap and the void finder of bitvf/VoidFinder.h
  *  through their public functions only; each step can also be run by
@@ -119,12 +119,88 @@ namespace bitvf {
     bool keepReconstructions = false;
   };
 
+  /// The randoms of the second, real-space, reconstruction of a lightcone
+  /// run (runLightcone).
+  enum class SecondPassRandoms {
+    None,      ///< the first reconstruction's randoms, unchanged
+    Resample,  ///< the first reconstruction's randoms, with redshifts drawn from the corrected tracers
+    External   ///< randoms given to runLightcone for the second reconstruction
+  };
+
+  /**
+   *  @brief Correction of redshift-space distortions in a lightcone, as
+   *  otswap::realSpaceLightcone applies it.
+   *
+   *  bias and sigma have no default: each must be set.
+   */
+  struct LightconeRsd {
+
+    /// The linear bias of the tracers as a function of redshift; it must
+    /// give a positive bias at the redshift of every tracer kept.
+    otswap::BiasTable bias;
+
+    /// Width of the neighbour average of the displacements, in coordinate
+    /// units; 0 for none, finite and non-negative. For coordinates in
+    /// Mpc/h, 10 Mpc/h is a reasonable starting value; the best value
+    /// depends on the sample, and should be checked in each analysis.
+    double sigma = std::numeric_limits<double>::quiet_NaN();
+
+    /// The weighting of the neighbour average, and what the correction
+    /// reports; passed to otswap::realSpaceLightcone unchanged.
+    otswap::CorrectionConfig correction;
+
+    /// The randoms of the second reconstruction. Resample, the default,
+    /// gives them the redshift distribution of the corrected tracers; None
+    /// keeps the observed one; External takes randoms built by the user
+    /// for the real-space sample.
+    SecondPassRandoms secondPassRandoms = SecondPassRandoms::Resample;
+
+    /// Also search voids on the first, redshift-space, reconstruction
+    /// (BitVFResult::zspaceVoids).
+    bool zspaceVoids = false;
+  };
+
+  /**
+   *  @brief The parameters of runLightcone.
+   */
+  struct LightconeConfig {
+
+    /// The reconstruction, used for both reconstructions of a run with
+    /// correction, with the same seed. A seed of 0 is replaced by one
+    /// drawn from std::random_device before the first reconstruction, and
+    /// both use it; otswap::Result::config records it.
+    otswap::Config ot;
+
+    /// The redshift bins of the mps(z) profile of each reconstruction
+    /// (otswap::reconstructLightcone); at least 1. 50 is a reasonable
+    /// starting value.
+    unsigned nBins = 0;
+
+    /// The closed range of observed redshift of the run, given to both
+    /// reconstructions and to every search: the tracers outside keep their
+    /// row and are skipped, the randoms outside are removed. The default
+    /// cuts nothing.
+    otswap::RedshiftCut cut;
+
+    /// The correction of redshift-space distortions. Empty: one
+    /// reconstruction and one search, no correction.
+    std::optional<LightconeRsd> rsd;
+
+    /// The void search, on every pass. Its verbosity and log also govern
+    /// the lines of the pipeline itself (runLightcone).
+    Config voids;
+
+    /// Keep the otswap results and the corrected catalogue in
+    /// BitVFResult.
+    bool keepReconstructions = false;
+  };
+
   // ==========================================================================
   // Result
   // ==========================================================================
 
   /**
-   *  @brief Output of runBox.
+   *  @brief Output of runBox and runLightcone.
    *
    *  Given the same inputs and a seed other than 0, every field but the
    *  searches' elapsedSeconds is the same bit for bit whatever the number
@@ -136,14 +212,15 @@ namespace bitvf {
     /// the only pass without. One row per input tracer, in input order.
     Result voids;
 
-    /// The voids of the redshift-space pass, when BoxRsd::zspaceVoids is
-    /// set: findVoidsBox on zspaceReconstruction.
+    /// The voids of the redshift-space pass, when BoxRsd::zspaceVoids or
+    /// LightconeRsd::zspaceVoids is set: the search of zspaceReconstruction
+    /// (findVoidsBox, findVoidsLightcone).
     std::optional<Result> zspaceVoids;
 
     /// With keepReconstructions: the reconstruction the voids were found
     /// on. With a correction its rows are the second reconstruction's
-    /// tracers only (runBox), and its ids are their identity among the
-    /// input's.
+    /// tracers only (runBox, runLightcone), and its ids are their identity
+    /// among the input's.
     std::optional<otswap::Result> reconstruction;
 
     /// With keepReconstructions and a correction: the first,
@@ -327,6 +404,170 @@ namespace bitvf {
                       const otswap::DistanceTable& distances,
                       const BoxConfig& config,
                       const std::vector<std::int64_t>& ids = {});
+
+  /**
+   *  @brief Reconstruct a lightcone and find its voids, optionally
+   *  correcting its redshift-space distortions and reconstructing it
+   *  again in real space.
+   *
+   *  The run:
+   *
+   *  1. Checks every argument and every field of config that can be
+   *     checked before any work, so that an invalid run fails before the
+   *     reconstruction. With a correction, the factor of the correction
+   *     is computed once at the observed redshifts of the tracers kept, so
+   *     that a table without growth rate or an unusable bias fails here.
+   *  2. Reconstructs with otswap::reconstructLightcone: the randoms, the
+   *     mask, config.nBins, the distance table, config.ot and config.cut.
+   *     The tracers on unobserved pixels or outside the cut take no part.
+   *  3. Without config.rsd, searches that reconstruction with
+   *     findVoidsLightcone (reconstruction, randomsSky, mask, config.voids)
+   *     and returns.
+   *
+   *  With config.rsd, after step 2:
+   *
+   *  4. Builds the grid of the first reconstruction, with
+   *     config.voids.divergenceCellSize: the grid of every search of the
+   *     run, the one the redshift-space search would build.
+   *  5. With LightconeRsd::zspaceVoids, searches the first reconstruction
+   *     on it (BitVFResult::zspaceVoids).
+   *  6. Corrects the tracers with otswap::realSpaceLightcone (LightconeRsd,
+   *     distances). The correction moves a tracer in redshift only.
+   *  7. Selects, in input order, the tracers corrected (status Corrected or
+   *     MovedByNeighbours) whose corrected redshift lies inside config.cut
+   *     and whose corrected position lies in a cell of the grid. The others
+   *     are excluded, with their row kept, and flagged: those the
+   *     correction left unmoved (NoValidNeighbour, and LeftOut, which
+   *     includes the tracers on unobserved pixels or outside the cut) in
+   *     Result::uncorrected, those moved outside the cut in
+   *     Result::outsideCut, those moved outside every cell in
+   *     Result::outsideGrid.
+   *  8. Reconstructs the selected tracers at their corrected redshifts, with
+   *     the randoms of LightconeRsd::secondPassRandoms (below), the same
+   *     mask, cut, bins and seed. Their ids are the input's ids of the rows
+   *     selected, or the rows themselves when no ids were given.
+   *  9. Searches that reconstruction on the grid of step 4: the same cells,
+   *     and the first reconstruction's mps(z) profile for the smoothing and
+   *     the densities. The second reconstruction's own profile serves its
+   *     reconstruction only.
+   *  10. Returns the search with one row per input tracer.
+   *
+   *  @par Rows of Result::voids
+   *  The selected rows carry the search's values. An excluded row carries
+   *  -1 in every index, NaN in TracerAssignment::distance and 0 in
+   *  TracerAssignment::used, and exactly one flag, uncorrected before
+   *  outsideCut before outsideGrid. TracerAssignment::inMask and inCut are
+   *  those of the first reconstruction for every row: a tracer on an
+   *  unobserved pixel or outside the cut is uncorrected (LeftOut) as well,
+   *  and uncorrected means only that the correction did not move it.
+   *  Result::ids are the ids given, or empty when none. nTracers is N;
+   *  Result::counts counts the input rows: tracers N; tracersUncorrected,
+   *  tracersOutsideCut and tracersOutsideGrid the rows flagged;
+   *  tracersOutsideMask and tracersOutsideRedshiftCut those of the first
+   *  reconstruction; tracersUsed, tracersInMaskedCells, displacements,
+   *  displacementsRejected and the counts of the randoms as the second
+   *  search counted them.
+   *
+   *  @par Second-pass randoms
+   *  - None: the randoms given, unchanged; both reconstructions remove the
+   *    same ones by the mask and the cut.
+   *  - Resample: one random for each of the K randoms given that lie on
+   *    observed pixels inside the cut, in row order, with the same right
+   *    ascension and declination, bit for bit. Their redshifts are drawn
+   *    from the k tracers selected at step 7: the seed is s =
+   *    config.ot.seed + 104729, modulo 2^32, a seed of 0 counting as the
+   *    one drawn to replace it; one std::mt19937 seeded with s gives, for
+   *    each random in turn, otswap::uniformInt(engine, k) (Lemire's
+   *    multiply-and-reject), and the random takes the corrected redshift of
+   *    the selected tracer of that index, counted in row order. The draw is
+   *    serial and takes nothing else from the engine, so s alone
+   *    reproduces the redshifts. s is recorded in Result::randomSeed of
+   *    BitVFResult::voids only. The search removes and counts the
+   *    randoms that fall outside the grid.
+   *  - External: @p randomsSkySecondPass, checked before the first
+   *    reconstruction as @p randomsSky is (those on unobserved pixels or
+   *    outside the cut are not read further). After step 7, those outside
+   *    the grid are removed from the array the second reconstruction
+   *    takes; the search takes the whole array and removes and counts them
+   *    itself. At least config.ot.nRealizations times the k tracers
+   *    selected must remain.
+   *
+   *  @par Identity
+   *  ids are the tracers' identity: empty means the rows received. They go
+   *  to otswap::Result::ids and Result::ids.
+   *
+   *  @par Reports
+   *  Each step reports at its own configuration's level:
+   *  config.ot.verbosity for the reconstructions,
+   *  LightconeRsd::correction::verbosity for the correction,
+   *  config.voids.verbosity for the searches (Config::verbosity). At
+   *  config.voids.verbosity Detailed, runLightcone adds, after step 7:
+   *
+   *      bitvf: second pass on <k> of <N> tracers: <u> uncorrected, <c> outside the redshift cut, <g> outside the first pass's grid in <t> s
+   *
+   *  followed, with None, by
+   *
+   *      bitvf: second-pass randoms: the first pass's <K>
+   *
+   *  K the randoms on observed pixels inside the cut, or, with Resample, by
+   *
+   *      bitvf: resampled the redshifts of <K> randoms from <k> tracers with seed <s>
+   *
+   *  With External, at Normal, in place of that line:
+   *
+   *      bitvf: external randoms: <E> given, <m> on unobserved pixels, <c> outside the redshift cut, <g> outside the first pass's grid, <K> kept of <n> needed
+   *
+   *  and at Normal, last:
+   *
+   *      bitvf: runLightcone: <V> voids and <O> overdense basins from <N> tracers in <T> s
+   *
+   *  T the time of the whole call. Each line is written as soon as its step
+   *  finishes, from the calling thread; a call that throws never writes the
+   *  call line. The second search's own lines count the selected tracers.
+   *
+   *  @param tracersSky sky positions of the tracers, [tracer][ra, dec, z],
+   *  radians, z the observed redshift, as findVoidsLightcone takes them.
+   *  @param randomsSky sky positions of the randoms, as tracersSky;
+   *  required. They describe the survey: every systematic belongs in them.
+   *  The reconstruction needs at least config.ot.nRealizations times the
+   *  tracers kept on observed pixels inside the cut.
+   *  @param mask the observed pixels of the survey, given to both
+   *  reconstructions and to every search.
+   *  @param distances the redshift-distance table, carrying the growth
+   *  rate when config.rsd is set.
+   *  @param config the parameters.
+   *  @param randomsSkySecondPass the randoms of the second reconstruction
+   *  with SecondPassRandoms::External, as randomsSky; empty otherwise.
+   *  @param ids the tracers' identity, or empty; one per tracer, no value
+   *  twice.
+   *
+   *  @return the voids, and as config asks the redshift-space voids, the
+   *  reconstructions and the corrected catalogue.
+   *
+   *  @exception Error
+   *  - before the first reconstruction: on tracersSky, randomsSky, ids and
+   *    config.cut as findVoidsLightcone; if no random is left on observed
+   *    pixels inside the cut; if config.nBins or config.ot.nRealizations is
+   *    0; on config.voids as findVoidsLightcone; if randomsSkySecondPass is
+   *    given without a correction or with None or Resample, or is empty
+   *    with External; if LightconeRsd::sigma is not finite and
+   *    non-negative; with External, if randomsSkySecondPass is malformed,
+   *    has a kept row with a redshift outside the distance table, or keeps
+   *    no row; if the factor of the correction cannot be computed (the
+   *    table has no growth rate, the bias is not positive), from otswap;
+   *  - during the run: from otswap (prefixed "otswap: ", the original
+   *    nested), a corrected distance outside the table included; from each
+   *    search and from the grid of step 4, as findVoidsLightcone; if no
+   *    tracer is selected at step 7, giving the three counts; with
+   *    External, if fewer randoms remain than needed, giving the counts.
+   */
+  BitVFResult runLightcone (const std::vector<double>& tracersSky,
+                            const std::vector<double>& randomsSky,
+                            const otswap::Mask& mask,
+                            const otswap::DistanceTable& distances,
+                            const LightconeConfig& config,
+                            const std::vector<double>& randomsSkySecondPass = {},
+                            const std::vector<std::int64_t>& ids = {});
 
 }
 

@@ -1077,9 +1077,12 @@ NB_MODULE(_bitvf, m)
     .def_prop_ro("in_mask", [] (AssignmentHandle self) {
         return rows<bool>(self, assignment_of(self).inMask);
       }, "False when the tracer falls on an unobserved pixel of the mask; (0,) in a box.")
+    .def_prop_ro("in_cut", [] (AssignmentHandle self) {
+        return rows<bool>(self, assignment_of(self).inCut);
+      }, "False when the tracer lies outside the redshift cut, and so was skipped; (0,) in a box.")
     .def_prop_ro("in_box", [] (AssignmentHandle self) {
         return rows<bool>(self, assignment_of(self).inBox);
-      }, "False when the tracer lies outside the box limits, and so was skipped.")
+      }, "False when the tracer lies outside the box limits, and so was skipped; (0,) in a lightcone.")
     .def_prop_ro("used", [] (AssignmentHandle self) {
         return rows<bool>(self, assignment_of(self).used);
       }, "True when a valid displacement of the tracer entered the divergence; (0,) after "
@@ -1152,6 +1155,8 @@ NB_MODULE(_bitvf, m)
     .def_prop_ro("mps_profile", [] (const bitvf::Result& r) -> const otswap::MpsProfile* {
         return r.mpsProfile.redshift.empty() ? nullptr : &r.mpsProfile;
       }, nb::rv_policy::reference_internal, "Lightcone: the mps(z) profile; None for a box.")
+    .def_prop_ro("mask_nside", [] (const bitvf::Result& r) { return r.maskNside; },
+                 "Lightcone: the NSIDE of the mask the search was given; 0 in a box.")
     .def_prop_ro("distances", [] (const bitvf::Result& r) -> nb::object {
         if (!r.distances) return nb::none();
         return nb::cast(otswap::DistanceTable(*r.distances));

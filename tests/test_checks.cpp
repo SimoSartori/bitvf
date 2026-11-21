@@ -558,7 +558,7 @@ int main ()
     accepted([&] { findVoidsBox(in.reconstruction(), config); }, "a valid reconstruction");
 
     with([] (otswap::Result& r) { r.geometry = otswap::Geometry::Lightcone; },
-         "not a box result", "not a box result");
+         "findVoidsBox: the reconstruction is not a box result; use findVoidsLightcone", "not a box result");
     with([] (otswap::Result& r) { r.nObjects = 0; }, "holds no objects", "no objects");
     with([] (otswap::Result& r) { r.nRealizations = 0; }, "holds no realizations",
          "no realizations");

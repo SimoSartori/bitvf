@@ -418,7 +418,7 @@ bitvf::internal::BoxSearch bitvf::internal::check_box (const otswap::Result& rec
   const std::string fn = "findVoidsBox";
 
   if (rec.geometry != otswap::Geometry::Box)
-    throw Error(fn + ": the reconstruction is not a box result; use the lightcone void finder");
+    throw Error(fn + ": the reconstruction is not a box result; use findVoidsLightcone");
 
   const std::size_t N = rec.nObjects;
   const std::size_t R = rec.nRealizations;

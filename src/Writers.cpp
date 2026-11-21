@@ -120,7 +120,7 @@ namespace {
   void check_result (const bitvf::Result& result, const std::string& writer)
   {
     if (result.geometry != otswap::Geometry::Box)
-      throw Error("writing a lightcone result is not implemented");
+      throw Error(writer + ": writing a lightcone result is not implemented");
     if (!result.config.divergenceCellSize && !(is_field(result) && std::isnan(result.mps)))
       throw Error(writer + ": the result is malformed: it records no divergence cell size");
     if (result.config.nRealizationsMean == 0)
@@ -285,7 +285,7 @@ void bitvf::io::writeOverdense (const std::string& file, const Result& result)
 void bitvf::io::writeDivergence (const std::string& file, const Result& result)
 {
   if (result.geometry != otswap::Geometry::Box)
-    throw Error("writing a lightcone result is not implemented");
+    throw Error("writeDivergence: writing a lightcone result is not implemented");
   if (!result.divergence)
     throw Error("writeDivergence: the result holds no divergence grid; run the search with the divergence grid kept");
   check_result(result, "writeDivergence");
@@ -414,9 +414,9 @@ void bitvf::io::writeDivergence (const std::string& file, const Result& result)
 void bitvf::io::writeGalaxies (const std::string& file, const Result& result)
 {
   if (result.geometry != otswap::Geometry::Box)
-    throw Error("writing a lightcone result is not implemented");
+    throw Error("writeGalaxies: writing a lightcone result is not implemented");
   if (is_field(result))
-    throw Error("the result is a search on a field (findVoidsBoxFromField), which has no tracers: "
+    throw Error("writeGalaxies: the result is a search on a field (findVoidsBoxFromField), which has no tracers: "
                 "it has no galaxies file");
   if (!result.assignment)
     throw Error("writeGalaxies: the result holds no tracer assignment; run the search with the tracer assignment kept");
