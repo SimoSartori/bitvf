@@ -825,6 +825,11 @@ namespace bitvf {
     /// (otswap::Mask::nside), which the files record. 0 in a box.
     int maskNside = 0;
 
+    /// Lightcone: the closed range of observed redshift the search kept,
+    /// which the files record when a bound is finite. The default cuts
+    /// nothing, as in a box.
+    otswap::RedshiftCut redshiftCut;
+
     /// What the search counted.
     Counts counts;
 

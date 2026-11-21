@@ -114,13 +114,11 @@ namespace {
   /// Whether a result is a field result (findVoidsBoxFromField).
   bool is_field (const bitvf::Result& result)
   {
-    return result.nTracers == 0;
+    return result.geometry == otswap::Geometry::Box && result.nTracers == 0;
   }
 
   void check_result (const bitvf::Result& result, const std::string& writer)
   {
-    if (result.geometry != otswap::Geometry::Box)
-      throw Error(writer + ": writing a lightcone result is not implemented");
     if (!result.config.divergenceCellSize && !(is_field(result) && std::isnan(result.mps)))
       throw Error(writer + ": the result is malformed: it records no divergence cell size");
     if (result.config.nRealizationsMean == 0)
@@ -133,10 +131,11 @@ namespace {
     const bitvf::Config& config = result.config;
     const bool inMps = config.smoothing.unit == bitvf::LengthUnit::Mps;
     const bool field = is_field(result);
+    const bool lightcone = result.geometry == otswap::Geometry::Lightcone;
     std::vector<Keyword> k = {
       {"PRODUCT", product, "what the file holds"},
       {"BITVFV", bitvf::internal::version, "bitvf version"},
-      {"GEOMETRY", "box", "geometry of the search"},
+      {"GEOMETRY", lightcone ? "lightcone" : "box", "geometry of the search"},
       {countName, std::to_string(count), countComment}};
     if (!field) {
       k.push_back({"NREC", std::to_string(result.nRealizations), "realizations"});
@@ -147,10 +146,19 @@ namespace {
     k.push_back({"SIGUNIT", inMps ? "mps" : "coordinate", "unit of SIGMA"});
     if (!field || !std::isnan(result.mps)) {
       k.push_back({"CELLSIZE", number(*config.divergenceCellSize), "divergence cell size, in units of the mps"});
-      k.push_back({"MPS", number(result.mps), "mean particle separation, in coordinate units"});
+      if (!lightcone)
+        k.push_back({"MPS", number(result.mps), "mean particle separation, in coordinate units"});
     }
     if (result.randomSeed)
       k.push_back({"RANDSEED", std::to_string(*result.randomSeed), "seed of the randoms bitvf drew"});
+    if (lightcone) {
+      if (std::isfinite(result.redshiftCut.min))
+        k.push_back({"ZCUTMIN", number(result.redshiftCut.min), "lower bound of the redshift cut"});
+      if (std::isfinite(result.redshiftCut.max))
+        k.push_back({"ZCUTMAX", number(result.redshiftCut.max), "upper bound of the redshift cut"});
+      k.push_back({"NRANDUSE", std::to_string(result.counts.randoms), "randoms used"});
+      k.push_back({"MASKNSID", std::to_string(result.maskNside), "NSIDE of the mask"});
+    }
     if (result.limits) {
       k.push_back({"BOXLIM", "1", "the search had box limits"});
       static const char* const axis[3] = {"X", "Y", "Z"};
@@ -200,7 +208,8 @@ namespace {
     const std::size_t n = cat.nBasins;
     const std::size_t nt = field ? 0 : n;
     check_size(cat.centre.size(), 3 * n, name + ".centre", writer);
-    check_size(cat.centreSky.size(), 0, name + ".centreSky", writer);
+    check_size(cat.centreSky.size(), result.geometry == otswap::Geometry::Lightcone ? 3 * n : 0,
+               name + ".centreSky", writer);
     check_size(cat.radius.size(), n, name + ".radius", writer);
     check_size(cat.radiusExt.size(), n, name + ".radiusExt", writer);
     check_size(cat.deltaAv.size(), nt, name + ".deltaAv", writer);
@@ -212,14 +221,24 @@ namespace {
     check_int64(cat.nTracers, name + ".nTracers", "basin", writer);
 
     std::vector<Source> sources = {
-      integer("index", "row of the basin", [] (std::size_t b) { return (std::int64_t)b; }),
+      integer("index", "row of the basin", [] (std::size_t b) { return (std::int64_t)b; })};
+    if (result.geometry == otswap::Geometry::Lightcone) {
+      constexpr double kDegrees = 57.295779513082320876798154814105;
+      sources.push_back(real("centreRA", "right ascension of the centre, in degrees",
+                             [&cat] (std::size_t b) { return cat.centreSky[3*b] * kDegrees; }));
+      sources.push_back(real("centreDec", "declination of the centre, in degrees",
+                             [&cat] (std::size_t b) { return cat.centreSky[3*b+1] * kDegrees; }));
+      sources.push_back(real("centreRed", "redshift of the centre",
+                             [&cat] (std::size_t b) { return cat.centreSky[3*b+2]; }));
+    }
+    sources.insert(sources.end(), {
       real("centreX", "x of the centre, in coordinate units", [&cat] (std::size_t b) { return cat.centre[3*b]; }),
       real("centreY", "y of the centre, in coordinate units", [&cat] (std::size_t b) { return cat.centre[3*b+1]; }),
       real("centreZ", "z of the centre, in coordinate units", [&cat] (std::size_t b) { return cat.centre[3*b+2]; }),
       real("radius", "equal-volume radius of the core, in coordinate units",
            [&cat] (std::size_t b) { return cat.radius[b]; }),
       real("radiusExt", "equal-volume radius of the extended basin, in coordinate units",
-           [&cat] (std::size_t b) { return cat.radiusExt[b]; })};
+           [&cat] (std::size_t b) { return cat.radiusExt[b]; })});
     if (!field) {
       sources.push_back(real("deltaAv", "mean density contrast of the tracers in the core",
                              [&cat] (std::size_t b) { return cat.deltaAv[b]; }));
@@ -413,8 +432,6 @@ void bitvf::io::writeDivergence (const std::string& file, const Result& result)
 
 void bitvf::io::writeGalaxies (const std::string& file, const Result& result)
 {
-  if (result.geometry != otswap::Geometry::Box)
-    throw Error("writeGalaxies: writing a lightcone result is not implemented");
   if (is_field(result))
     throw Error("writeGalaxies: the result is a search on a field (findVoidsBoxFromField), which has no tracers: "
                 "it has no galaxies file");
@@ -427,12 +444,17 @@ void bitvf::io::writeGalaxies (const std::string& file, const Result& result)
   if (!result.ids.empty()) check_size(result.ids.size(), n, "ids", "writeGalaxies");
   if (!result.uncorrected.empty()) check_size(result.uncorrected.size(), n, "uncorrected", "writeGalaxies");
   if (!result.outsideGrid.empty()) check_size(result.outsideGrid.size(), n, "outsideGrid", "writeGalaxies");
+  if (!result.outsideCut.empty()) check_size(result.outsideCut.size(), n, "outsideCut", "writeGalaxies");
   check_size(a.cellIndex.size(), n, "assignment.cellIndex", "writeGalaxies");
   check_size(a.voidIndex.size(), n, "assignment.voidIndex", "writeGalaxies");
   check_size(a.overdenseIndex.size(), n, "assignment.overdenseIndex", "writeGalaxies");
   check_size(a.distance.size(), n, "assignment.distance", "writeGalaxies");
-  if (!a.inMask.empty()) check_size(a.inMask.size(), n, "assignment.inMask", "writeGalaxies");
-  check_size(a.inBox.size(), n, "assignment.inBox", "writeGalaxies");
+  const bool lightcone = result.geometry == otswap::Geometry::Lightcone;
+  const bool boundedCut = std::isfinite(result.redshiftCut.min) || std::isfinite(result.redshiftCut.max);
+  check_size(a.inMask.size(), lightcone ? n : 0, "assignment.inMask", "writeGalaxies");
+  if (lightcone && (boundedCut || !a.inCut.empty())) check_size(a.inCut.size(), n, "assignment.inCut", "writeGalaxies");
+  if (!lightcone) check_size(a.inCut.size(), 0, "assignment.inCut", "writeGalaxies");
+  check_size(a.inBox.size(), lightcone ? 0 : n, "assignment.inBox", "writeGalaxies");
   if (!a.used.empty()) check_size(a.used.size(), n, "assignment.used", "writeGalaxies");
 
   const std::vector<std::int64_t>& ids = result.ids;
@@ -446,7 +468,8 @@ void bitvf::io::writeGalaxies (const std::string& file, const Result& result)
             [&a] (std::size_t i) { return a.overdenseIndex[i]; }),
     real("distance", "distance from the centre of its basin, in coordinate units",
          [&a] (std::size_t i) { return a.distance[i]; })};
-  if (!a.inMask.empty()) sources.push_back(flag("inMask", "0 on an unobserved pixel of the mask", a.inMask));
+  if (lightcone) sources.push_back(flag("inMask", "0 on an unobserved pixel of the mask", a.inMask));
+  if (lightcone && boundedCut) sources.push_back(flag("inCut", "0 outside the redshift cut, skipped", a.inCut));
   if (result.limits) sources.push_back(flag("inBox", "0 outside the box limits, skipped", a.inBox));
   if (!a.used.empty())
     sources.push_back(flag("used", "1 when a displacement of the tracer entered the divergence", a.used));
@@ -455,6 +478,8 @@ void bitvf::io::writeGalaxies (const std::string& file, const Result& result)
                            result.uncorrected));
   if (!result.outsideGrid.empty())
     sources.push_back(flag("outsideGrid", "1 when outside the reused grid, excluded", result.outsideGrid));
+  if (!result.outsideCut.empty())
+    sources.push_back(flag("outsideCut", "1 when moved outside the redshift cut, excluded", result.outsideCut));
 
   write_table(file, sources, n, kPrecision, keywords("galaxies", result, "NOBJECTS", n, "number of input tracers"));
 }

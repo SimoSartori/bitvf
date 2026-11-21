@@ -610,17 +610,117 @@ int main ()
     round_trip(big, "big", "K values");
   }
 
+  group("a lightcone result: sky columns, inMask always, inCut only with a bounded cut, no inBox, no MPS, "
+        "ZCUTMIN, ZCUTMAX, NRANDUSE and MASKNSID in order");
+  {
+    constexpr double kInf = std::numeric_limits<double>::infinity();
+    const double cuts[4][2] = {{-kInf, kInf}, {0.2, kInf}, {-kInf, 0.9}, {0.2, 0.9}};
+    for (int variant = 0; variant < 4; ++variant) {
+      Result lc = r;
+      lc.geometry = otswap::Geometry::Lightcone;
+      lc.limits.reset();
+      lc.mps = std::numeric_limits<double>::quiet_NaN();
+      lc.divergence.reset();
+      lc.redshiftCut = {cuts[variant][0], cuts[variant][1]};
+      lc.maskNside = 16;
+      lc.counts.randoms = 1234;
+      if (variant == 3) lc.randomSeed = 77u;
+      lc.outsideCut.assign(kN + kOut, 0);
+      lc.outsideCut[2] = 1;
+      for (BasinCatalog* c : {&lc.voids, &lc.overdense})
+        for (std::size_t i = 0; i < 3 * c->nBasins; ++i) c->centreSky.push_back(0.1 * (double)i + 0.25);
+      lc.assignment->inBox.clear();
+      lc.assignment->inMask.assign(kN + kOut, 1);
+      lc.assignment->inMask[1] = 0;
+      lc.assignment->inCut.assign(kN + kOut, 1);
+      lc.assignment->inCut[3] = 0;
+      const bool bounded = variant != 0;
+      const std::string what = "lightcone cut " + std::to_string(variant);
+
+      auto keys = [&] (const std::string& product, const std::string& count, const std::size_t n) {
+        std::vector<Key> k = {text("PRODUCT", product), text("BITVFV", internal::version),
+                              text("GEOMETRY", "lightcone"), text(count, std::to_string(n)),
+                              text("NREC", std::to_string(lc.nRealizations)),
+                              text("NRECMEAN", std::to_string(lc.config.nRealizationsMean)),
+                              number("SIGMA", lc.config.smoothing.sigma),
+                              text("SIGUNIT", lc.config.smoothing.unit == LengthUnit::Mps ? "mps" : "coordinate"),
+                              number("CELLSIZE", *lc.config.divergenceCellSize)};
+        if (lc.randomSeed) k.push_back(text("RANDSEED", std::to_string(*lc.randomSeed)));
+        if (std::isfinite(cuts[variant][0])) k.push_back(number("ZCUTMIN", cuts[variant][0]));
+        if (std::isfinite(cuts[variant][1])) k.push_back(number("ZCUTMAX", cuts[variant][1]));
+        k.push_back(text("NRANDUSE", "1234"));
+        k.push_back(text("MASKNSID", "16"));
+        return k;
+      };
+
+      for (const char* format : kFormats) {
+        const bool fits = std::string(format) == ".fits";
+        const int digits = fits ? 17 : 9;
+        const std::string tag = what + " " + format;
+        for (int which = 0; which < 2; ++which) {
+          const BasinCatalog& c = which == 0 ? lc.voids : lc.overdense;
+          std::vector<Expected> columns = catalogue_columns(c);
+          columns.insert(columns.begin() + 1, {
+            real("centreRA", [&c] (std::size_t b) { return c.centreSky[3*b] * (180. / 3.14159265358979323846); }),
+            real("centreDec", [&c] (std::size_t b) { return c.centreSky[3*b+1] * (180. / 3.14159265358979323846); }),
+            real("centreRed", [&c] (std::size_t b) { return c.centreSky[3*b+2]; })});
+          const std::string file = temporary(std::string("lc_catalogue") + format);
+          if (which == 0) io::writeVoids(file, lc); else io::writeOverdense(file, lc);
+          const std::string product = which == 0 ? "voids" : "overdense_basins";
+          reads_back(file, columns, c.nBasins, digits, tag + " " + product);
+          keywords_are(file, keys(product, "NBASINS", c.nBasins), tag + " " + product);
+          std::remove(file.c_str());
+        }
+
+        std::vector<Expected> columns = galaxies_columns(lc);
+        const TracerAssignment& a = *lc.assignment;
+        std::size_t at = 5;
+        columns.insert(columns.begin() + at, integer("inMask", 'J', [&a] (std::size_t i) { return (std::int64_t)a.inMask[i]; }));
+        if (bounded)
+          columns.insert(columns.begin() + at + 1,
+                         integer("inCut", 'J', [&a] (std::size_t i) { return (std::int64_t)a.inCut[i]; }));
+        columns.push_back(integer("outsideCut", 'J', [&lc] (std::size_t i) { return (std::int64_t)lc.outsideCut[i]; }));
+        const std::string file = temporary(std::string("lc_galaxies") + format);
+        io::writeGalaxies(file, lc);
+        reads_back(file, columns, lc.nTracers, digits, tag + " galaxies");
+        keywords_are(file, keys("galaxies", "NOBJECTS", lc.nTracers), tag + " galaxies");
+        std::remove(file.c_str());
+      }
+    }
+
+    Result lc = r;
+    lc.geometry = otswap::Geometry::Lightcone;
+    lc.assignment->inBox.clear();
+    lc.assignment->inMask.assign(kN + kOut, 1);
+    for (BasinCatalog* c : {&lc.voids, &lc.overdense}) c->centreSky.assign(3 * c->nBasins, 0.5);
+    lc.limits.reset();
+    auto bad = [&lc] (auto&& change, auto write, const std::string& message, const std::string& what) {
+      Result b = lc;
+      change(b);
+      refused(write, b, message, what);
+    };
+    bad([] (Result& b) { b.voids.centreSky.pop_back(); }, write_voids,
+        "writeVoids: cannot write voids.centreSky: it holds", "a lightcone centreSky of the wrong size");
+    bad([] (Result& b) { b.assignment->inMask.clear(); }, write_galaxies,
+        "writeGalaxies: cannot write assignment.inMask: it holds 0 entries where 204 are expected", "inMask missing");
+    bad([] (Result& b) { b.assignment->inBox.assign(kN + kOut, 1); }, write_galaxies,
+        "writeGalaxies: cannot write assignment.inBox", "inBox in a lightcone");
+    bad([] (Result& b) { b.redshiftCut.min = 0.1; }, write_galaxies,
+        "writeGalaxies: cannot write assignment.inCut: it holds 0 entries where 204 are expected",
+        "inCut missing with a bounded cut");
+    bad([] (Result& b) { b.outsideCut = {1}; }, write_galaxies, "writeGalaxies: cannot write outsideCut", "outsideCut");
+    Result boxCut = r;
+    boxCut.assignment->inCut.assign(kN + kOut, 1);
+    refused(write_galaxies, boxCut, "writeGalaxies: cannot write assignment.inCut: it holds 204 entries where 0 are expected",
+            "inCut in a box");
+  }
+
   group("errors of the writers, each before the file is opened");
   {
     Result lightcone = r;
     lightcone.geometry = otswap::Geometry::Lightcone;
-    refused(write_voids, lightcone, "writeVoids: writing a lightcone result is not implemented", "lightcone voids");
-    refused(write_overdense, lightcone, "writeOverdense: writing a lightcone result is not implemented",
-            "lightcone overdense");
     refused(write_divergence, lightcone, "writeDivergence: writing a lightcone result is not implemented",
             "lightcone divergence");
-    refused(write_galaxies, lightcone, "writeGalaxies: writing a lightcone result is not implemented",
-            "lightcone galaxies");
 
     auto malformed = [&r] (auto&& change, auto write, const std::string& message, const std::string& what) {
       Result bad = r;

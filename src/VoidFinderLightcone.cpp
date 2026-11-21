@@ -812,6 +812,7 @@ bitvf::Result bitvf::internal::runLightcone (const std::vector<double>* tracers,
   result.outsideGrid = div.outsideGrid;
   result.mpsProfile = lc.cells.mpsProfile;
   result.maskNside = mask.nside();
+  result.redshiftCut = redshiftCut;
   result.distances = reconstruction != nullptr ? reconstruction->distances
                                                : std::make_shared<const otswap::DistanceTable>(distances);
   result.counts = entry.counts;
