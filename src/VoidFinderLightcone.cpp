@@ -830,6 +830,9 @@ bitvf::internal::PipelineSelection bitvf::internal::check_pipeline_sky (const st
   for (std::size_t i = 0; i < N; ++i)
     if (ts.inMask[i] && ts.inCut[i]) out.redshift.push_back(tSky[3*i+2]);
   out.nRandomsKept = M - rs.outsideMask - rs.outsideCut;
+  out.randomRows.reserve(out.nRandomsKept);
+  for (std::size_t i = 0; i < M; ++i)
+    if (rs.inMask[i] && rs.inCut[i]) out.randomRows.push_back(i);
   return out;
 }
 

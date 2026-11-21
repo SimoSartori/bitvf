@@ -207,6 +207,41 @@ int main ()
     const internal::PipelineSelection open =
       internal::check_pipeline_sky(tSky, rSky, full_mask(), table(), otswap::RedshiftCut{}, {}, "test");
     check(open.redshift.size() == 3 && open.nRandomsKept == 6, "without a cut and with a full mask, all are kept");
+    check(sel.randomRows == std::vector<std::size_t>({2, 3}) &&
+          open.randomRows == std::vector<std::size_t>({0, 1, 2, 3, 4, 5}),
+          "the rows of the randoms kept are listed in order");
+  }
+
+  // The resampled randoms keep each kept random's sky position and take a redshift of the tracers given, from a serial draw of the seed alone.
+  group("the resampled randoms");
+  {
+    const std::vector<double> rSky = {0.1, 0.01, 0.30,   0.2, 0.02, 0.31,   0.3, 0.03, 0.32,
+                                      0.4, 0.04, 0.33,   0.5, 0.05, 0.34};
+    const std::vector<double> tSky = {9., 9., 0.25,   9., 9., 0.26,   9., 9., 0.27};
+    const std::vector<std::size_t> rows = {0, 2, 3, 4};
+    const std::vector<double> a = internal::resample_randoms(rSky, rows, tSky, 104736u);
+    check(a.size() == 12, "3 values per row chosen");
+    bool sky = true, redshift = true;
+    for (std::size_t j = 0; j < rows.size(); ++j) {
+      sky = sky && std::memcmp(&a[3*j], &rSky[3*rows[j]], 2 * sizeof(double)) == 0;
+      redshift = redshift && (a[3*j+2] == 0.25 || a[3*j+2] == 0.26 || a[3*j+2] == 0.27);
+    }
+    check(sky, "right ascension and declination are those of the row, bit for bit");
+    check(redshift, "every redshift is one of the tracers'");
+
+    std::mt19937 engine(104736u);
+    bool drawn = true;
+    for (std::size_t j = 0; j < rows.size(); ++j) {
+      std::uint64_t product = (std::uint64_t)engine() * 3u;
+      while ((std::uint32_t)product < 3u && (std::uint32_t)product < (0u - 3u) % 3u)
+        product = (std::uint64_t)engine() * 3u;
+      drawn = drawn && a[3*j+2] == tSky[3 * (product >> 32) + 2];
+    }
+    check(drawn, "one multiply-and-reject draw per row, in order, from an engine seeded with the seed");
+    check(a == internal::resample_randoms(rSky, rows, tSky, 104736u), "the same seed gives the same randoms");
+    bool differs = false;
+    for (unsigned seed = 1; seed < 20 && !differs; ++seed) differs = internal::resample_randoms(rSky, rows, tSky, seed) != a;
+    check(differs, "another seed gives other redshifts");
   }
 
   // A corrected tracer keeps its sky position bit for bit; excluded rows carry one flag, uncorrected before outsideCut before outsideGrid.
@@ -361,6 +396,26 @@ int main ()
     const std::string rLog = run_log(resample, message);
     check(rLog.find(line.str()) != std::string::npos && rLog.find("second-pass randoms") == std::string::npos,
           "the tracers are chosen the same way whatever the randoms");
+    check(rLog.find("bitvf: resampled the redshifts of " + std::to_string(kept) + " randoms from " +
+                    std::to_string(p.rows.size()) + " tracers with seed " + std::to_string(c.ot.seed + 104729u) + "\n") !=
+          std::string::npos, "the Resample line gives the randoms kept, the tracers and the seed");
+    check(message.find("findVoidsLightcone") != std::string::npos,
+          "a Resample run reaches the second search");
+
+    auto seed_printed = [&] (const unsigned seed, unsigned& value) {
+      LightconeConfig cs = resample;
+      cs.ot.seed = seed;
+      const std::string text = run_log(cs, message);
+      const std::size_t at = text.find(" with seed ");
+      if (at == std::string::npos) return false;
+      value = (unsigned)std::stoul(text.substr(at + 11));
+      return true;
+    };
+    unsigned printed = 0;
+    check(seed_printed(4294967295u, printed) && printed == 104728u,
+          "the seed is the reconstruction's plus 104729 modulo 2^32, as printed");
+    check(seed_printed(0u, printed) && (unsigned)(printed - 104729u) != 0,
+          "a seed of 0 is replaced by a non-zero one before the offset is added");
   }
 
   // The tracers chosen are identical bit for bit with any number of threads and match the recorded hash.

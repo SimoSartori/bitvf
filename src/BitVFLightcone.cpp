@@ -28,12 +28,14 @@
 
 #include <cmath>
 #include <cstdint>
+#include <optional>
 #include <random>
 #include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "otswap/Random.h"
 #include "internal.h"
 
 
@@ -83,7 +85,31 @@ bitvf::internal::LightconeSecondPass bitvf::internal::lightcone_second_pass (con
 // ============================================================================
 
 
+std::vector<double> bitvf::internal::resample_randoms (const std::vector<double>& randomsSky,
+                                                       const std::vector<std::size_t>& rows,
+                                                       const std::vector<double>& tracersSky, const unsigned seed)
+{
+  const unsigned k = (unsigned)(tracersSky.size() / 3);
+  std::mt19937 engine(seed);
+  std::vector<double> out;
+  out.reserve(3 * rows.size());
+  for (const std::size_t row : rows) {
+    const unsigned t = otswap::uniformInt(engine, k);
+    out.push_back(randomsSky[3*row]);
+    out.push_back(randomsSky[3*row+1]);
+    out.push_back(tracersSky[3*t+2]);
+  }
+  return out;
+}
+
+
+// ============================================================================
+
+
 namespace {
+
+  /// The offset from the reconstruction's seed to the seed of the resampled randoms
+  constexpr unsigned kRandomSeedOffset = 104729u;
 
   /**
    *  @brief Check every argument of runLightcone that can be checked before
@@ -151,13 +177,13 @@ bitvf::BitVFResult bitvf::runLightcone (const std::vector<double>& tracersSky, c
     ot.seed = drawn;
   }
 
-  auto reconstruct = [&] (const std::vector<double>& sky) {
+  auto reconstruct = [&] (const std::vector<double>& sky, const std::vector<double>& randoms) {
     return internal::call_otswap([&] {
-      return otswap::reconstructLightcone(sky, randomsSky, mask, config.nBins, distances, ot, config.cut);
+      return otswap::reconstructLightcone(sky, randoms, mask, config.nBins, distances, ot, config.cut);
     });
   };
 
-  otswap::Result first = reconstruct(tracersSky);
+  otswap::Result first = reconstruct(tracersSky, randomsSky);
   first.ids = ids;
 
   BitVFResult out;
@@ -188,17 +214,30 @@ bitvf::BitVFResult bitvf::runLightcone (const std::vector<double>& tracersSky, c
       report.step(line);
     }
 
-    if (rsd.secondPassRandoms == SecondPassRandoms::Resample)
-      throw Error(fn + ": resampled second-pass randoms are not implemented yet");
-    if (report.detailed()) {
+    std::vector<double> resampled;
+    std::optional<unsigned> randomSeed;
+    if (rsd.secondPassRandoms == SecondPassRandoms::Resample) {
+      randomSeed = ot.seed + kRandomSeedOffset;
+      resampled = internal::resample_randoms(randomsSky, selected.randomRows, pass.tracersSky, *randomSeed);
+      if (report.detailed()) {
+        const std::size_t k = pass.rows.size();
+        std::ostringstream line = internal::Report::line();
+        line << "resampled the redshifts of " << selected.nRandomsKept << " randoms from " << k
+             << (k == 1 ? " tracer" : " tracers") << " with seed " << *randomSeed;
+        report.write(line.str());
+      }
+    }
+    else if (report.detailed()) {
       std::ostringstream line = internal::Report::line();
       line << "second-pass randoms: the first pass's " << selected.nRandomsKept;
       report.write(line.str());
     }
+    const std::vector<double>& randoms2 = randomSeed ? resampled : randomsSky;
 
-    otswap::Result second = reconstruct(pass.tracersSky);
+    otswap::Result second = reconstruct(pass.tracersSky, randoms2);
     second.ids = std::move(pass.ids);
-    out.voids = findVoidsLightcone(second, randomsSky, mask, voids, &grid);
+    out.voids = findVoidsLightcone(second, randoms2, mask, voids, &grid);
+    out.voids.randomSeed = randomSeed;
 
     if (config.keepReconstructions) {
       out.reconstruction = std::move(second);

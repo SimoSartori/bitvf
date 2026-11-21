@@ -1452,6 +1452,10 @@ namespace bitvf {
       /// the cut, in row order.
       std::vector<double> redshift;
 
+      /// The input row of each random on an observed pixel inside the
+      /// cut, increasing.
+      std::vector<std::size_t> randomRows;
+
       /// The randoms on observed pixels inside the cut.
       std::size_t nRandomsKept = 0;
     };
@@ -1524,6 +1528,26 @@ namespace bitvf {
                                                const otswap::DistanceTable& distances,
                                                const otswap::RedshiftCut& cut,
                                                const std::vector<std::int64_t>& ids);
+
+    /**
+     *  @brief The randoms of SecondPassRandoms::Resample, as runLightcone
+     *  describes them.
+     *
+     *  For each row of @p rows in turn, the right ascension and declination
+     *  of that row of @p randomsSky, bit for bit, and a redshift: the one
+     *  of the tracer otswap::uniformInt(engine, k) of @p tracersSky, k the
+     *  tracers it holds, the engine a std::mt19937 seeded with @p seed and
+     *  advanced only by these draws, serially.
+     *
+     *  @param randomsSky the first pass's randoms, 3 per random
+     *  @param rows the rows to resample, in order
+     *  @param tracersSky the tracers whose redshifts are drawn, 3 per
+     *  tracer; at least one
+     *  @return 3 per row of @p rows
+     */
+    std::vector<double> resample_randoms (const std::vector<double>& randomsSky,
+                                          const std::vector<std::size_t>& rows,
+                                          const std::vector<double>& tracersSky, unsigned seed);
 
   }
 
@@ -1599,15 +1623,39 @@ namespace bitvf {
    *  of the second reconstruction are chosen by lightcone_second_pass,
    *  with the ids given, and keep their row and ids. With
    *  SecondPassRandoms::None the second reconstruction and its search
-   *  take the first pass's randoms in full. Before the first
+   *  take the first pass's randoms in full, which both reconstructions
+   *  filter by the mask and the cut alike. Before the first
    *  reconstruction, the factor of the correction is computed once at the
    *  observed redshifts of the kept tracers, so that a table without
    *  growth rate or an unusable bias fails before any work.
    *
+   *  @par Randoms resampled
+   *  With SecondPassRandoms::Resample, the second reconstruction and its
+   *  search take, instead, one random for each of the K randoms of the
+   *  first pass that lie on observed pixels inside the redshift cut, in
+   *  row order, with the same right ascension and declination, bit for
+   *  bit. Their redshifts are drawn from the k tracers of the second
+   *  reconstruction (corrected, inside the redshift cut and inside the
+   *  first pass's grid): the seed is s = config.ot.seed + 104729, modulo
+   *  2^32, a seed of 0 counting as the one drawn to replace it; one
+   *  std::mt19937 seeded with s gives, for each random in turn,
+   *  otswap::uniformInt(engine, k) (Lemire's multiply-and-reject), and the
+   *  random takes the corrected redshift of the tracer of that index among
+   *  the k, counted in row order. The draw is serial and takes nothing
+   *  else from the engine, so s alone reproduces the redshifts. s is
+   *  recorded in Result::randomSeed of the real-space search only. The
+   *  search removes and counts the resampled randoms that fall outside
+   *  the first pass's grid.
+   *
    *  At config.voids.verbosity Detailed, after choosing the tracers:
    *
    *      bitvf: second pass on <k> of <N> tracers: <u> uncorrected, <c> outside the redshift cut, <g> outside the first pass's grid in <t> s
-   *      bitvf: second-pass randoms: the first pass's <M>
+   *      bitvf: second-pass randoms: the first pass's <K>
+   *
+   *  where K counts the randoms on observed pixels inside the redshift
+   *  cut, or, with Resample, in place of the second line:
+   *
+   *      bitvf: resampled the redshifts of <K> randoms from <k> tracers with seed <s>
    *
    *  @exception Error on every case of the checks before the first
    *  reconstruction, from otswap (prefixed "otswap: ", the original
