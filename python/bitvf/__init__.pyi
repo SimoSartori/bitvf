@@ -623,6 +623,10 @@ class Counts:
     def randoms(self) -> int:
         """Lightcone only; 0 in a box."""
     @property
+    def tracers_in_masked_cells(self) -> int:
+        """Lightcone: tracers on an observed pixel whose cell is masked;
+        they keep their cell but are in no basin. 0 in a box."""
+    @property
     def randoms_outside_grid(self) -> int:
         """Lightcone only; 0 in a box."""
     @property

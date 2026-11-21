@@ -685,6 +685,46 @@ int main ()
           !one.zspaceVoids && !one.reconstruction, "without a correction: one search, no flags");
   }
 
+  // A tracer on an observed pixel that starts in a masked cell keeps its cell, is in no basin, and is counted and reported.
+  group("tracers in masked cells");
+  {
+    std::vector<double> pixels(12, 1.);
+    pixels[5] = 0.;
+    const otswap::Mask partial(pixels, otswap::PixelOrdering::Ring);
+    LightconeConfig c = base_config(nullptr);
+    c.rsd.reset();
+    c.voids.keepAssignment = true;
+    c.voids.keepDivergence = true;
+    std::ostringstream log;
+    c.voids.verbosity = otswap::Verbosity::Normal;
+    c.voids.log = &log;
+    const Result r = runLightcone(tracers(), randoms(), partial, table(), c, {}, ids()).voids;
+    std::size_t inMaskedCell = 0;
+    bool noBasin = true;
+    for (std::size_t i = 0; i < 500; ++i) {
+      const std::int64_t cell = r.assignment->cellIndex[i];
+      if (cell < 0 || !r.divergence->masked[(std::size_t)cell]) continue;
+      ++inMaskedCell;
+      noBasin = noBasin && r.assignment->inMask[i] == 1 && r.assignment->voidIndex[i] == -1 &&
+                r.assignment->overdenseIndex[i] == -1 && std::isnan(r.assignment->distance[i]) &&
+                r.assignment->used[i] == 0;
+    }
+    check(inMaskedCell > 0 && inMaskedCell == r.counts.tracersInMaskedCells,
+          "the count equals the tracers whose cell is masked");
+    check(noBasin, "such a tracer is on an observed pixel, keeps its cell, is in no basin and uses no displacement");
+    const std::string line = "bitvf: " + std::to_string(inMaskedCell) + " tracers start in a masked cell, in no basin\n";
+    check(log.str().find(line) != std::string::npos, "the count is reported on its own line at Normal");
+
+    std::ostringstream quiet;
+    LightconeConfig f = base_config(nullptr);
+    f.rsd.reset();
+    f.voids.verbosity = otswap::Verbosity::Normal;
+    f.voids.log = &quiet;
+    const Result full = runLightcone(tracers(), randoms(), full_mask(), table(), f, {}, ids()).voids;
+    check(full.counts.tracersInMaskedCells == 0 && quiet.str().find("masked cell") == std::string::npos,
+          "with no masked cell, the count is 0 and no line is written");
+  }
+
   // The lines of the final result: the search's call line and the run's, with the tracers read without a displacement.
   group("the call line of the search and the final line of the run");
   {

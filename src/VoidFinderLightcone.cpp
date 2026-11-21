@@ -723,12 +723,20 @@ bitvf::Result bitvf::internal::runLightcone (const std::vector<double>* tracers,
   entry.counts.tracersOutsideGrid = div.nOutsideGrid;
   entry.counts.tracersUsed = div.nUsed;
   entry.counts.displacementsRejected = div.nRejected;
+  for (std::size_t i = 0; i < entry.nTracers; ++i)
+    if (div.cell[i] >= 0 && lc.cells.masked[(std::size_t)div.cell[i]]) ++entry.counts.tracersInMaskedCells;
 
   if (grid != nullptr && report.normal()) {
     const std::size_t kept = entry.nTracers - entry.counts.tracersOutsideMask - entry.counts.tracersOutsideRedshiftCut;
     std::ostringstream out = Report::line();
     out << "kept " << kept - div.nOutsideGrid << " of " << kept << (kept == 1 ? " tracer: " : " tracers: ")
         << div.nOutsideGrid << " outside the reused grid";
+    report.write(out.str());
+  }
+  if (report.normal() && entry.counts.tracersInMaskedCells > 0) {
+    const std::size_t n = entry.counts.tracersInMaskedCells;
+    std::ostringstream out = Report::line();
+    out << n << (n == 1 ? " tracer starts" : " tracers start") << " in a masked cell, in no basin";
     report.write(out.str());
   }
   if (report.detailed() || (report.normal() && div.nRejected > 0)) {
@@ -830,6 +838,7 @@ bitvf::Result bitvf::internal::runLightcone (const std::vector<double>* tracers,
       const std::int64_t o = lc.cells.overdenseIndex[(std::size_t)c];
       a.voidIndex[(std::size_t)i] = v;
       a.overdenseIndex[(std::size_t)i] = o;
+      if (v < 0 && o < 0) continue;
       const double* centre = v >= 0 ? &result.voids.centre[3 * (std::size_t)v]
                                     : &result.overdense.centre[3 * (std::size_t)o];
       const double* x = &entry.tracers[3 * (std::size_t)i];

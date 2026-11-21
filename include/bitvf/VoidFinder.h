@@ -594,7 +594,10 @@ namespace bitvf {
     /// left out.
     std::vector<std::int64_t> cellIndex;
 
-    /// Row of the tracer's void in Result::voids; -1 none.
+    /// Row of the tracer's void in Result::voids; -1 none. In a
+    /// lightcone, a tracer that starts in a masked cell
+    /// (DivergenceGrid::masked) keeps that cell in cellIndex but is in no
+    /// basin (Counts::tracersInMaskedCells).
     std::vector<std::int64_t> voidIndex;
 
     /// Row of the tracer's overdense basin in Result::overdense; -1 none.
@@ -672,6 +675,19 @@ namespace bitvf {
     /// redshift cut, removed. A random both masked and outside the cut counts
     /// only in randomsOutsideMask. 0 in a box.
     std::size_t randomsOutsideRedshiftCut = 0;
+
+    /// Lightcone: of the tracers read, those on an observed pixel whose
+    /// cell is masked (its centre falls on an unobserved pixel,
+    /// DivergenceGrid::masked). They keep their cell in
+    /// TracerAssignment::cellIndex but are in no basin, and their
+    /// displacements are rejected. A smaller cell size makes them fewer.
+    /// At Normal verbosity, when not 0, the search reports them on a line
+    /// of their own:
+    ///
+    ///     bitvf: <n> tracers start in a masked cell, in no basin
+    ///
+    /// 0 in a box.
+    std::size_t tracersInMaskedCells = 0;
 
     std::size_t randomsOutsideGrid = 0;  ///< lightcone, reused grid: randoms outside it, removed
     std::size_t displacements = 0;       ///< valid displacements given

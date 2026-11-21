@@ -1093,6 +1093,9 @@ NB_MODULE(_bitvf, m)
     .def_ro("tracers_outside_grid", &bitvf::Counts::tracersOutsideGrid)
     .def_ro("tracers_outside_cut", &bitvf::Counts::tracersOutsideCut)
     .def_ro("randoms", &bitvf::Counts::randoms)
+    .def_ro("tracers_in_masked_cells", &bitvf::Counts::tracersInMaskedCells,
+            "Lightcone: tracers on an observed pixel whose cell is masked; they keep their cell but are in no "
+            "basin. 0 in a box.")
     .def_ro("randoms_outside_grid", &bitvf::Counts::randomsOutsideGrid)
     .def_ro("displacements", &bitvf::Counts::displacements)
     .def_ro("displacements_rejected", &bitvf::Counts::displacementsRejected);
