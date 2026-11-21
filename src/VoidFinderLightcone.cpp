@@ -799,6 +799,44 @@ bitvf::Result bitvf::internal::runLightcone (const std::vector<double>* tracers,
 // ============================================================================
 
 
+bitvf::internal::PipelineSelection bitvf::internal::check_pipeline_sky (const std::vector<double>& tracersSky,
+                                                         const std::vector<double>& randomsSky,
+                                                         const otswap::Mask& mask,
+                                                         const otswap::DistanceTable& distances,
+                                                         const otswap::RedshiftCut& cut,
+                                                         const std::vector<std::int64_t>& ids, const std::string& fn)
+{
+  const std::size_t N = check_sky(tracersSky, "tracersSky", fn);
+  const std::size_t M = check_sky(randomsSky, "randomsSky", fn);
+  if (std::isnan(cut.min) || std::isnan(cut.max) || cut.min > cut.max)
+    throw Error("the redshift cut is [" + num(cut.min) + ", " + num(cut.max) +
+                "]; neither bound may be NaN and the lower bound must not exceed the upper one");
+  check_ids(ids, N, fn, false);
+  check_sky_rows(tracersSky, "tracers", "");
+  check_sky_rows(randomsSky, "randoms", "");
+
+  std::vector<double> tSky = tracersSky, rSky = randomsSky;
+  fold_right_ascension(tSky);
+  fold_right_ascension(rSky);
+  const Selection ts = select_rows(tSky, mask, cut);
+  const Selection rs = select_rows(rSky, mask, cut);
+  check_usable(tSky, ts, distances, "tracers");
+  check_usable(rSky, rs, distances, "randoms");
+  if (M - rs.outsideMask - rs.outsideCut == 0)
+    throw Error("no random is left: of " + std::to_string(M) + " randoms, " + left_out(rs.outsideMask, rs.outsideCut));
+
+  PipelineSelection out;
+  out.redshift.reserve(N - ts.outsideMask - ts.outsideCut);
+  for (std::size_t i = 0; i < N; ++i)
+    if (ts.inMask[i] && ts.inCut[i]) out.redshift.push_back(tSky[3*i+2]);
+  out.nRandomsKept = M - rs.outsideMask - rs.outsideCut;
+  return out;
+}
+
+
+// ============================================================================
+
+
 bitvf::DivergenceGrid bitvf::lightconeGrid (const otswap::Result& reconstruction, const std::vector<double>& randomsSky,
                                             const otswap::Mask& mask, const std::optional<double> divergenceCellSize)
 {
