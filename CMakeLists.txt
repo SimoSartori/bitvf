@@ -302,6 +302,8 @@ if (BITVF_BUILD_TESTS)
     add_test(NAME executable_example_box COMMAND bitvf_app examples/executable/box.ini
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     set_tests_properties(executable_example_box PROPERTIES FIXTURES_SETUP executable_example_box)
+    add_test(NAME executable_example_lightcone COMMAND bitvf_app examples/executable/lightcone.ini
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME executable_example_field COMMAND bitvf_field_app examples/executable/field.ini
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     set_tests_properties(executable_example_field PROPERTIES FIXTURES_REQUIRED executable_example_box)
