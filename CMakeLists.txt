@@ -263,10 +263,10 @@ if (BITVF_BUILD_TESTS)
     target_compile_options(python_reference PRIVATE -Wall -Wextra)
   endif()
 
-  # The two lightcone examples, built from their sources against this tree
+  # The box and lightcone examples, built from their sources against this tree
   # (each folder is also a project of its own) and run on the examples' data,
   # writing to the build directory.
-  foreach (example lightcone full_recons_lightcone)
+  foreach (example box full_recons_box lightcone full_recons_lightcone)
     add_executable(example_${example} examples/${example}/${example}.cpp)
     target_link_libraries(example_${example} PRIVATE bitvf)
     target_compile_definitions(example_${example} PRIVATE
@@ -277,6 +277,20 @@ if (BITVF_BUILD_TESTS)
     endif()
     add_test(NAME example_${example} COMMAND example_${example})
   endforeach()
+
+  # The field example reads the divergence file of full_recons_box, so that
+  # example runs first.
+  set_tests_properties(example_full_recons_box PROPERTIES FIXTURES_SETUP example_full_recons_box)
+  add_executable(example_field examples/field/field.cpp)
+  target_link_libraries(example_field PRIVATE bitvf)
+  target_compile_definitions(example_field PRIVATE
+    BITVF_EXAMPLE_FIELD="${CMAKE_CURRENT_BINARY_DIR}/examples/full_recons_box/divergence_box.dat"
+    BITVF_EXAMPLE_OUTPUT="${CMAKE_CURRENT_BINARY_DIR}/examples/field")
+  if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    target_compile_options(example_field PRIVATE -Wall -Wextra)
+  endif()
+  add_test(NAME example_field COMMAND example_field)
+  set_tests_properties(example_field PROPERTIES FIXTURES_REQUIRED example_full_recons_box)
 
   # The executables: one test per parameter file of tests/executable/cases,
   # run by run_case.cmake in a fresh directory of its own, which checks
