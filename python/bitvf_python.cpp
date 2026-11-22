@@ -22,7 +22,7 @@
  *  @file python/bitvf_python.cpp
  *
  *  @brief nanobind module bitvf._bitvf: the bindings of
- *  include/bitvf/VoidFinder.h and include/bitvf/BitVF.h, box geometry, as
+ *  include/bitvf/VoidFinder.h and include/bitvf/BitVF.h, as
  *  specified by python/bitvf/__init__.pyi, and of include/bitvf/io.h, as
  *  the submodule bitvf.io specified by python/bitvf/io.pyi.
  *
@@ -36,9 +36,9 @@
  *  RealSpaceCatalog) are otswap's Python types themselves, bound by otswap
  *  and imported first.
  *
- *  Smoothing, Config, BoxRsd and BoxConfig are the C++ structs; their
- *  setters convert each value to its C++ type, and the library checks it
- *  at the call. A nested configuration is read as a reference into the
+ *  Smoothing, Config, BoxRsd, BoxConfig, LightconeRsd and LightconeConfig
+ *  are the C++ structs; their setters convert each value to its C++ type,
+ *  and the library checks it at the call. A nested configuration is read as a reference into the
  *  object that holds it, so that setting one of its fields changes the
  *  holder; assigning one copies it in. The results are the C++ structs,
  *  read-only and without a constructor: their arrays are read-only views
@@ -919,14 +919,14 @@ NB_MODULE(_bitvf, m)
   const bitvf::Smoothing smoothingDefaults;
 
   nb::class_<bitvf::Smoothing>(m, "Smoothing",
-      "Gaussian smoothing of the divergence field before the watershed, as bitvf::Smoothing.")
+      "Gaussian smoothing of the divergence field before the watershed.")
     .def("__init__", [to_unit] (bitvf::Smoothing* self, nb::handle sigma, nb::handle unit) {
           bitvf::Smoothing s;
           s.sigma = to_double(sigma, "sigma");
           s.unit = to_unit(unit);
           new (self) bitvf::Smoothing(s);
         }, nb::kw_only(), "sigma"_a.none() = smoothingDefaults.sigma, "unit"_a.none() = smoothingDefaults.unit,
-        "Every field a keyword, with the defaults of bitvf::Smoothing.")
+        "Every field a keyword, with the defaults.")
     .def_prop_rw("sigma",
         [] (const bitvf::Smoothing& s) { return s.sigma; },
         [] (bitvf::Smoothing& s, nb::handle v) { s.sigma = to_double(v, "sigma"); },
@@ -946,7 +946,7 @@ NB_MODULE(_bitvf, m)
   const bitvf::Config configDefaults;
 
   nb::class_<bitvf::Config>(m, "Config",
-      "Free parameters of the void finder, as bitvf::Config. Its fields are checked by the call that "
+      "Free parameters of the void finder. Its fields are checked by the call that "
       "reads them, not here.")
     .def("__init__",
         [] (bitvf::Config* self, nb::handle smoothing, nb::handle divergenceCellSize, nb::handle keepDivergence,
@@ -966,7 +966,7 @@ NB_MODULE(_bitvf, m)
         "keep_assignment"_a.none() = configDefaults.keepAssignment,
         "n_realizations_mean"_a.none() = configDefaults.nRealizationsMean,
         "verbosity"_a.none() = verbosity_name(configDefaults.verbosity),
-        "Every field a keyword, with the defaults of bitvf::Config.")
+        "Every field a keyword, with the defaults.")
     .def_prop_rw("smoothing",
         [] (bitvf::Config& c) -> bitvf::Smoothing& { return c.smoothing; },
         [] (bitvf::Config& c, nb::handle v) {
@@ -1011,7 +1011,7 @@ NB_MODULE(_bitvf, m)
     .attr("__hash__") = nb::none();
 
   nb::class_<bitvf::BoxRsd>(m, "BoxRsd",
-      "Correction of redshift-space distortions in a box, as bitvf::BoxRsd. axis, redshift, bias "
+      "Correction of redshift-space distortions in a box. axis, redshift, bias "
       "and sigma have no default.")
     .def("__init__",
         [] (bitvf::BoxRsd* self, nb::handle axis, nb::handle redshift, nb::handle bias, nb::handle sigma,
@@ -1076,7 +1076,7 @@ NB_MODULE(_bitvf, m)
     return instance<bitvf::BoxRsd>(value, "rsd", "a bitvf.BoxRsd or None");
   };
 
-  nb::class_<bitvf::BoxConfig>(m, "BoxConfig", "The parameters of run_box, as bitvf::BoxConfig.")
+  nb::class_<bitvf::BoxConfig>(m, "BoxConfig", "The parameters of run_box.")
     .def("__init__",
         [to_rsd] (bitvf::BoxConfig* self, nb::handle ot, nb::handle limits, nb::handle mps, nb::handle rsd,
                   nb::handle voids, nb::handle keepReconstructions) {
@@ -1092,7 +1092,7 @@ NB_MODULE(_bitvf, m)
         nb::kw_only(), "ot"_a.none() = otswap::Config(), "limits"_a.none() = nb::none(),
         "mps"_a.none() = nb::none(), "rsd"_a.none() = nb::none(), "voids"_a.none() = bitvf::Config(),
         "keep_reconstructions"_a.none() = false,
-        "Every field a keyword, with the defaults of bitvf::BoxConfig.")
+        "Every field a keyword, with the defaults.")
     .def_prop_rw("ot",
         [] (bitvf::BoxConfig& c) -> otswap::Config& { return c.ot; },
         [] (bitvf::BoxConfig& c, nb::handle v) { c.ot = instance<otswap::Config>(v, "ot", "an otswap.Config"); },
@@ -1162,7 +1162,7 @@ NB_MODULE(_bitvf, m)
   const bitvf::LightconeRsd lightconeRsdDefaults;
 
   nb::class_<bitvf::LightconeRsd>(m, "LightconeRsd",
-      "Correction of redshift-space distortions in a lightcone, as bitvf::LightconeRsd. bias and sigma "
+      "Correction of redshift-space distortions in a lightcone. bias and sigma "
       "have no default.")
     .def("__init__",
         [to_second_pass] (bitvf::LightconeRsd* self, nb::handle bias, nb::handle sigma, nb::handle correction,
@@ -1222,7 +1222,7 @@ NB_MODULE(_bitvf, m)
   };
 
   nb::class_<bitvf::LightconeConfig>(m, "LightconeConfig",
-      "The parameters of run_lightcone, as bitvf::LightconeConfig. n_bins has no default.")
+      "The parameters of run_lightcone. n_bins has no default.")
     .def("__init__",
         [to_lightcone_rsd] (bitvf::LightconeConfig* self, nb::handle ot, nb::handle nBins, nb::handle cut,
                             nb::handle rsd, nb::handle voids, nb::handle keepReconstructions) {
@@ -1237,7 +1237,7 @@ NB_MODULE(_bitvf, m)
         },
         nb::kw_only(), "ot"_a.none() = otswap::Config(), "n_bins"_a.none(), "cut"_a.none() = nb::none(),
         "rsd"_a.none() = nb::none(), "voids"_a.none() = bitvf::Config(), "keep_reconstructions"_a.none() = false,
-        "n_bins required; the other fields default as in bitvf::LightconeConfig.")
+        "n_bins required; the other fields take their defaults.")
     .def_prop_rw("ot",
         [] (bitvf::LightconeConfig& c) -> otswap::Config& { return c.ot; },
         [] (bitvf::LightconeConfig& c, nb::handle v) {
@@ -1563,7 +1563,7 @@ NB_MODULE(_bitvf, m)
       }, "Cells of each overdense basin's core, where the field is at or above 0.");
 
   nb::class_<bitvf::BitVFResult>(m, "BitVFResult", nb::is_weak_referenceable(),
-      "Output of run_box. Read-only. Its otswap results are otswap's own types.")
+      "Output of run_box and run_lightcone. Read-only. Its otswap results are otswap's own types.")
     .def_prop_ro("voids", [] (PipelineHandle self) {
         return part_of(nb::cast(nb::cast<bitvf::BitVFResult&>(self).voids, nb::rv_policy::reference_internal, self),
                        self);

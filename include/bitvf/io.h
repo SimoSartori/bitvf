@@ -37,7 +37,7 @@
  *  itself, voidIndex, overdenseIndex and cellIndex the rows of the voids,
  *  overdense basins and divergence files of the same result, -1 for none.
  *  Counts and indices are 64-bit integers (FITS K), flags 32-bit integers
- *  (FITS J) holding 0 or 1, and every other column a double (FITS D),
+ *  (FITS J) holding 0 or 1 (edgeFlag: 0, 1 or 2), and every other column a double (FITS D),
  *  written in ASCII with 9 significant digits, or 17 in the divergence
  *  file, which then reads back as the same double. FITS stores the doubles
  *  themselves. NaN is written as NaN.
@@ -126,7 +126,7 @@ namespace bitvf::io {
    *  Columns: index (K); in a lightcone centreRA and centreDec, in
    *  degrees, and centreRed; centreX, centreY, centreZ, in coordinate
    *  units; radius, radiusExt, in coordinate units; deltaAv; delta2Mps; edgeFlag
-   *  (J); contamination; nTracers (K). A field result has no deltaAv,
+   *  (J; 0 none, 1 extended basin only, 2 core); contamination; nTracers (K). A field result has no deltaAv,
    *  delta2Mps and nTracers, and has fieldCentre after contamination.
    *  Keywords as listed in the file description, the row count NBASINS.
    *  ASCII: 9 significant digits.
@@ -156,7 +156,7 @@ namespace bitvf::io {
    *  writeVoids.
    *
    *  @param file the file to write, as writeVoids.
-   *  @param result the result of a box search.
+   *  @param result the result of a box or lightcone search.
    */
   void writeOverdense (const std::string& file, const Result& result);
 
@@ -190,7 +190,7 @@ namespace bitvf::io {
    *  grid: DISTMIN, DISTMAX, in coordinate units, and RAMIN, RAMAX, DECMIN,
    *  DECMAX, in degrees, with CELLSIZE (the angles read back equal to the
    *  rounding of the conversion). The mps(z) profile follows in a second
-   *  table, HDU MPSPROF in FITS and the twin file <stem>.mps.<ext> in
+   *  table, HDU MPSPROF in FITS and the twin file \<stem\>.mps.\<ext\> in
    *  ASCII (otswap::io::twinFile), with columns redshift, MPS and nTracers
    *  (J), 17 digits, and keywords PRODUCT (divergence mps profile), BITVFV,
    *  ZMIN, ZMAX and MPSREPR. It holds no GEOMETRY. The grid is written
@@ -312,7 +312,8 @@ namespace bitvf::io {
    *    anything but 1, or BOXLIM and the six box keywords do not come
    *    together;
    *  - if the rows are not NCELLS, index is not 0 to NCELLS - 1 in order,
-   *    a count is negative, or a basin index is below -1: the message
+   *    a count is negative, a basin index is below -1, or (lightcone) masked
+   *    is not 0 or 1: the message
    *    names the data row, counted from 1 among the data rows (comment
    *    and blank lines do not count), as "data row k (from 1)";
    *  - if the grid fails the checks of a grid to reuse (lightcone: of the

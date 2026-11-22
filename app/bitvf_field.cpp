@@ -98,7 +98,8 @@ namespace {
                                                                                   : bitvf::LengthUnit::Coordinate;
     if (config.smoothing.sigma > 0. && config.smoothing.unit == bitvf::LengthUnit::Mps && !mps) {
       if (f.has("sigma_unit"))
-        p.fail("sigma_unit", "mps needs a value of mps; set mps, or sigma_unit = coordinate, or sigma = 0");
+        p.fail("sigma_unit", "sigma_unit mps needs a value for the key mps; set mps, or sigma_unit = coordinate, "
+                              "or sigma = 0");
       throw app::Error(file + ": sigma is in mps (the default of sigma_unit), but mps has no value; set mps, or "
                        "sigma_unit = coordinate, or sigma = 0");
     }

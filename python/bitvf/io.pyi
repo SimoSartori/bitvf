@@ -13,19 +13,22 @@ columns hold rows of the products: ``index`` is the row of the file itself,
 ``voidIndex``, ``overdenseIndex`` and ``cellIndex`` the rows of the voids,
 overdense basins and divergence files of the same result, -1 for none.
 Counts and indices are 64-bit integers (FITS K), flags 32-bit integers
-(FITS J) holding 0 or 1, and every other column a double (FITS D), written
+(FITS J) holding 0 or 1 (``edgeFlag``: 0, 1 or 2), and every other column a double (FITS D), written
 in ASCII with 9 significant digits, or 17 in the divergence file, which then
 reads back as the same double. FITS stores the doubles themselves. NaN is
 written as NaN.
 
 Every file starts with these keywords, in this order: PRODUCT (voids,
 overdense_basins, divergence or galaxies); BITVFV, the bitvf version that
-wrote it; GEOMETRY, box; the row count, NBASINS, NCELLS or NOBJECTS; NREC,
+wrote it; GEOMETRY, box or lightcone; the row count, NBASINS, NCELLS or NOBJECTS; NREC,
 ``Result.n_realizations``; NRECMEAN, ``Config.n_realizations_mean``; SIGMA
 and SIGUNIT, the smoothing sigma and its unit, mps or coordinate; CELLSIZE,
 the divergence cell size used, in units of the mps; MPS, in coordinate
-units; RANDSEED, ``Result.random_seed``, when set; BOXLIM = 1, then BOXXLO,
-BOXXHI, BOXYLO, BOXYHI, BOXZLO, BOXZHI, when ``Result.limits`` is set. A
+units (a box); RANDSEED, ``Result.random_seed``, when set; for a lightcone,
+ZCUTMIN and ZCUTMAX, the bounds of ``Result.redshift_cut``, each only when
+finite, NRANDUSE, the randoms used (``Counts.randoms``), and MASKNSID,
+``Result.mask_nside``; for a box, BOXLIM = 1, then BOXXLO, BOXXHI, BOXYLO,
+BOXYHI, BOXZLO, BOXZHI, when ``Result.limits`` is set. A
 number is written as the shortest decimal of at most 17 significant digits
 that reads back as the same double; ``otswap.io.read_keywords`` returns the
 keywords as written, in both formats.
@@ -35,7 +38,9 @@ and NRECMEAN, MPS and CELLSIZE only when an mps was given, and none of the
 columns that count tracers or displacements; its voids and overdense basins
 files carry ``fieldCentre``. It has no galaxies file.
 
-Only box results are written.
+A lightcone result is written as a box one, with the sky columns and
+keywords above in place of the box's. Its divergence file also holds the
+mps(z) profile, in a second table (see ``write_divergence``).
 """
 
 import enum
@@ -97,8 +102,10 @@ def file_name(product: Product, directory: Path, name: str, *, zspace: bool) -> 
 def write_voids(file: Path, result: Result) -> None:
     """Write the voids, one row per void (``Result.voids``).
 
-    Columns: index (K); centreX, centreY, centreZ; radius, radiusExt;
-    deltaAv; delta2Mps; edgeFlag (J); contamination; nTracers (K). A field
+    Columns: index (K); in a lightcone centreRA and centreDec, in degrees,
+    and centreRed; centreX, centreY, centreZ; radius, radiusExt; deltaAv;
+    delta2Mps; edgeFlag (J; 0 none, 1 extended basin only, 2 core);
+    contamination; nTracers (K). A field
     result has no deltaAv, delta2Mps and nTracers, and has fieldCentre after
     contamination. Keywords as in the module description, the row count
     NBASINS. ASCII: 9 significant digits.
@@ -108,13 +115,12 @@ def write_voids(file: Path, result: Result) -> None:
     file : str or os.PathLike
         The file to write; its extension sets the format.
     result : bitvf.Result
-        A box result.
+        A box or lightcone result.
 
     Raises
     ------
     Error
-        If the result is not a box result, or is malformed (a result made by
-        bitvf never is).
+        If the result is malformed (a result made by bitvf never is).
     Error
         If the file cannot be written: the message starts with
         ``"otswap: "``.
@@ -131,20 +137,24 @@ def write_overdense(file: Path, result: Result) -> None:
     file : str or os.PathLike
         The file to write; its extension sets the format.
     result : bitvf.Result
-        A box result.
+        A box or lightcone result.
     """
 
 
 def write_divergence(file: Path, result: Result) -> None:
     """Write the divergence grid, one row per cell (``Result.divergence``).
 
-    Columns: index (K); cellX, cellY, cellZ, the cell centre; divergence,
-    before smoothing; divergenceSmoothed, only with sigma > 0
+    Columns: index (K); cellX, cellY, cellZ, the cell centre; in a lightcone
+    cellRA, cellDec (degrees), cellRed, cellDist (the distance of the
+    centre), cellRAMin, cellRAMax, cellDecMin, cellDecMax (degrees),
+    cellDistMin and cellDistMax, which describe the cells and are not read
+    back as the grid; divergence, before smoothing; divergenceSmoothed, only with sigma > 0
     (``DivergenceGrid.divergence_smoothed``); volume, in coordinate units
     cubed; weight; weightSmoothed, only with sigma > 0
     (``DivergenceGrid.weight_smoothed``); nDispl (K), the displacement ends
-    counted; nTracers (K); voidIndex (K); overdenseIndex (K). Rows in the
-    order of the cells, cell (i, j, k) row (i * ny + j) * nz + k. A field
+    counted; nTracers (K); voidIndex (K); overdenseIndex (K); in a lightcone masked (J), 1 on an unobserved pixel.
+    Rows in the order of the cells, in a box cell (i, j, k) row
+    (i * ny + j) * nz + k. A field
     result has no nDispl and nTracers. ASCII: 17 significant digits.
 
     Keywords as in the module description, the row count NCELLS, followed by
@@ -155,17 +165,26 @@ def write_divergence(file: Path, result: Result) -> None:
     searched again with another smoothing
     (``find_voids_box_from_divergence``, ``find_voids_box_from_field``).
 
+    A lightcone file has, after the common keywords, the record of the grid:
+    DISTMIN, DISTMAX, in coordinate units, and RAMIN, RAMAX, DECMIN, DECMAX,
+    in degrees, with CELLSIZE. The mps(z) profile follows in a second table,
+    HDU MPSPROF in FITS and the twin file ``<stem>.mps.<ext>`` in ASCII
+    (``otswap.io.twin_file``), with columns redshift, MPS and nTracers (J),
+    17 digits, and keywords PRODUCT (divergence mps profile), BITVFV, ZMIN,
+    ZMAX and MPSREPR. It holds no GEOMETRY.
+
     Parameters
     ----------
     file : str or os.PathLike
         The file to write; its extension sets the format.
     result : bitvf.Result
-        A box result of a search with ``Config.keep_divergence``.
+        A box or lightcone result of a search with
+        ``Config.keep_divergence``.
 
     Raises
     ------
     Error
-        If the result is not a box result, or holds no divergence grid.
+        If the result holds no divergence grid.
     Error
         If the grid fails the checks of a grid to reuse, the message starting
         with ``"writeDivergence: cannot write the divergence: "``; or if
@@ -183,10 +202,11 @@ def write_galaxies(file: Path, result: Result) -> None:
 
     Columns: id (K), ``Result.ids``; cellIndex (K); voidIndex (K);
     overdenseIndex (K); distance, from the centre of the tracer's basin, NaN
-    for a tracer in no basin; inMask (J), only for a lightcone; inBox (J), only when
-    ``Result.limits`` is set; used (J), except after
-    ``find_voids_box_from_divergence``; uncorrected (J) and outsideGrid (J),
-    only when those flags are filled. Keywords as in the module description,
+    for a tracer in no basin; inMask (J), only for a lightcone; inCut (J),
+    only in a lightcone with a bounded ``Result.redshift_cut``; inBox (J),
+    only when ``Result.limits`` is set; used (J), except after
+    ``find_voids_box_from_divergence``; uncorrected (J), outsideGrid (J) and
+    outsideCut (J), only when those flags are filled. Keywords as in the module description,
     the row count NOBJECTS. ASCII: 9 significant digits.
 
     Parameters
@@ -194,13 +214,14 @@ def write_galaxies(file: Path, result: Result) -> None:
     file : str or os.PathLike
         The file to write; its extension sets the format.
     result : bitvf.Result
-        A box result of a search with ``Config.keep_assignment``.
+        A box or lightcone result of a search with
+        ``Config.keep_assignment``.
 
     Raises
     ------
     Error
-        If the result is not a box result, is a field result, or holds no
-        tracer assignment; or if it is malformed.
+        If the result is a field result, or holds no tracer assignment; or if
+        it is malformed.
     Error
         If the file cannot be written: the message starts with
         ``"otswap: "``.
@@ -270,17 +291,16 @@ def read_divergence(file: Path, *, angle_unit: Optional[str] = None) -> Divergen
     Error
         If it has no PRODUCT keyword, its PRODUCT is not divergence, or
         GEOMETRY is not box or lightcone; if a keyword of the other geometry
-        is present; if a keyword of the
-        grid record is missing, not a number, or not a whole number in
+        is present; if a keyword of the grid record is missing, not a number, or not a whole number in
         range; if NREC or NRECMEAN is 0 or missing (a field result's file:
         read it with ``read_field``); if BOXLIM holds anything but 1, or
         BOXLIM and the six box keywords do not come together.
     Error
         If the rows are not NCELLS, index is not 0 to NCELLS - 1 in order, a
-        count is negative, or a basin index is below -1: the message names
-        the data row, counted from 1 among the data rows (comment and blank
-        lines do not count), as "data row k (from 1)". If the grid fails the checks of a grid to
-        reuse.
+        count is negative, a basin index is below -1, or (lightcone) masked
+        is not 0 or 1: the message names the data row, counted from 1 among
+        the data rows (comment and blank lines do not count), as "data row
+        k (from 1)". If the grid fails the checks of a grid to reuse.
     """
 
 

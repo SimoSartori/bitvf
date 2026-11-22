@@ -203,13 +203,14 @@ namespace bitvf {
    *  @brief Output of runBox and runLightcone.
    *
    *  Given the same inputs and a seed other than 0, every field but the
-   *  searches' elapsedSeconds is the same bit for bit whatever the number
+   *  elapsedSeconds of the searches, of the kept otswap results and of the
+   *  kept catalogue is the same bit for bit whatever the number
    *  of threads.
    */
   struct BitVFResult {
 
     /// The voids of the run: of the real-space pass with a correction, of
-    /// the only pass without. One row per input tracer, in input order.
+    /// the only pass without. Its per-tracer columns have one row per input tracer, in input order.
     Result voids;
 
     /// The voids of the redshift-space pass, when BoxRsd::zspaceVoids or
@@ -312,7 +313,7 @@ namespace bitvf {
    *
    *  @exception Error if an argument or a field of config is invalid, as
    *  findVoidsBox and otswap::reconstructBox require, if config.rsd is
-   *  set, if the bounding box spans no volume, if randoms are to be drawn
+   *  set, if the bounding box spans no volume or has an infinite width on an axis, if randoms are to be drawn
    *  and no tracer lies inside the box, from otswap (prefixed "otswap: ",
    *  the original nested), and from the search, as findVoidsBox.
    */
@@ -326,27 +327,27 @@ namespace bitvf {
    *  reconstruct it again in real space and find its voids.
    *
    *  Without config.rsd, as the overload above, and distances is not read.
-   *  With it, steps 1–4 above, then:
+   *  With it, the first four steps above, then:
    *
-   *  5. With BoxRsd::zspaceVoids, searches the first reconstruction
+   *  - With BoxRsd::zspaceVoids, searches the first reconstruction
    *     (BitVFResult::zspaceVoids).
-   *  6. Builds the grid of the first reconstruction, boxGrid(first
+   *  - Builds the grid of the first reconstruction, boxGrid(first
    *     reconstruction, config.voids.divergenceCellSize): the grid of
    *     every search of the run, the one the redshift-space search builds.
-   *  7. Corrects the tracers with otswap::realSpaceBox (BoxRsd, distances).
-   *  8. Selects, in input order, the tracers corrected (status Corrected or
+   *  - Corrects the tracers with otswap::realSpaceBox (BoxRsd, distances).
+   *  - Selects, in input order, the tracers corrected (status Corrected or
    *     MovedByNeighbours) whose corrected position lies in a cell of that
    *     grid. The others are excluded, with their row kept: those the
    *     correction left unmoved (NoValidNeighbour, and LeftOut, which
    *     includes the tracers outside the box) are flagged in
    *     Result::uncorrected, those moved outside every cell in
    *     Result::outsideGrid.
-   *  9. Reconstructs the selected tracers at their corrected positions,
+   *  - Reconstructs the selected tracers at their corrected positions,
    *     with the randoms of the first reconstruction (given or drawn), the
    *     same box as limits, config.mps when given, and the same seed.
    *     Their ids are the input's ids of the rows selected, or the rows
    *     themselves when no ids were given.
-   *  10. Searches that reconstruction on the grid of step 6, with
+   *  - Searches that reconstruction on the grid built above, with
    *     findVoidsBox's grid argument: the same cells, and the smoothing and
    *     the delta2Mps radius from the first reconstruction's mean particle
    *     separation, which is Result::mps. The second reconstruction's own
@@ -355,7 +356,7 @@ namespace bitvf {
    *     box but into a cell is outside the box for the second
    *     reconstruction and is skipped by the search
    *     (TracerAssignment::inBox).
-   *  11. Returns the search with one row per input tracer.
+   *  - Returns the search with one row per input tracer.
    *
    *  @par Rows of Result::voids
    *  The selected rows carry the search's values. An excluded row carries
@@ -375,7 +376,7 @@ namespace bitvf {
    *  @par Reports
    *  As the overload above, the correction at
    *  BoxRsd::correction::verbosity, and at config.voids.verbosity Detailed,
-   *  after step 8:
+   *  after the selection of the corrected tracers:
    *
    *      bitvf: second pass on <k> of <N> tracers: <u> uncorrected, <g> outside the first pass's grid in <t> s
    *
@@ -424,16 +425,16 @@ namespace bitvf {
    *     findVoidsLightcone (reconstruction, randomsSky, mask, config.voids)
    *     and returns.
    *
-   *  With config.rsd, after step 2:
+   *  With config.rsd, after the first reconstruction:
    *
-   *  4. Builds the grid of the first reconstruction, with
+   *  - Builds the grid of the first reconstruction, with
    *     config.voids.divergenceCellSize: the grid of every search of the
    *     run, the one the redshift-space search would build.
-   *  5. With LightconeRsd::zspaceVoids, searches the first reconstruction
+   *  - With LightconeRsd::zspaceVoids, searches the first reconstruction
    *     on it (BitVFResult::zspaceVoids).
-   *  6. Corrects the tracers with otswap::realSpaceLightcone (LightconeRsd,
+   *  - Corrects the tracers with otswap::realSpaceLightcone (LightconeRsd,
    *     distances). The correction moves a tracer in redshift only.
-   *  7. Selects, in input order, the tracers corrected (status Corrected or
+   *  - Selects, in input order, the tracers corrected (status Corrected or
    *     MovedByNeighbours) whose corrected redshift lies inside config.cut
    *     and whose corrected position lies in a cell of the grid. The others
    *     are excluded, with their row kept, and flagged: those the
@@ -442,15 +443,15 @@ namespace bitvf {
    *     Result::uncorrected, those moved outside the cut in
    *     Result::outsideCut, those moved outside every cell in
    *     Result::outsideGrid.
-   *  8. Reconstructs the selected tracers at their corrected redshifts, with
+   *  - Reconstructs the selected tracers at their corrected redshifts, with
    *     the randoms of LightconeRsd::secondPassRandoms (below), the same
    *     mask, cut, bins and seed. Their ids are the input's ids of the rows
    *     selected, or the rows themselves when no ids were given.
-   *  9. Searches that reconstruction on the grid of step 4: the same cells,
+   *  - Searches that reconstruction on the grid built above: the same cells,
    *     and the first reconstruction's mps(z) profile for the smoothing and
    *     the densities. The second reconstruction's own profile serves its
    *     reconstruction only.
-   *  10. Returns the search with one row per input tracer.
+   *  - Returns the search with one row per input tracer.
    *
    *  @par Rows of Result::voids
    *  The selected rows carry the search's values. An excluded row carries
@@ -474,7 +475,7 @@ namespace bitvf {
    *  - Resample: one random for each of the K randoms given that lie on
    *    observed pixels inside the cut, in row order, with the same right
    *    ascension and declination, bit for bit. Their redshifts are drawn
-   *    from the k tracers selected at step 7: the seed is s =
+   *    from the k tracers selected after the correction: the seed is s =
    *    config.ot.seed + 104729, modulo 2^32, a seed of 0 counting as the
    *    one drawn to replace it; one std::mt19937 seeded with s gives, for
    *    each random in turn, otswap::uniformInt(engine, k) (Lemire's
@@ -486,7 +487,7 @@ namespace bitvf {
    *    randoms that fall outside the grid.
    *  - External: @p randomsSkySecondPass, checked before the first
    *    reconstruction as @p randomsSky is (those on unobserved pixels or
-   *    outside the cut are not read further). After step 7, those outside
+   *    outside the cut are not read further). After the selection, those outside
    *    the grid are removed from the array the second reconstruction
    *    takes; the search takes the whole array and removes and counts them
    *    itself. At least config.ot.nRealizations times the k tracers
@@ -501,7 +502,7 @@ namespace bitvf {
    *  config.ot.verbosity for the reconstructions,
    *  LightconeRsd::correction::verbosity for the correction,
    *  config.voids.verbosity for the searches (Config::verbosity). At
-   *  config.voids.verbosity Detailed, runLightcone adds, after step 7:
+   *  config.voids.verbosity Detailed, runLightcone adds, after the selection of the corrected tracers:
    *
    *      bitvf: second pass on <k> of <N> tracers: <u> uncorrected, <c> outside the redshift cut, <g> outside the first pass's grid in <t> s
    *
@@ -557,8 +558,8 @@ namespace bitvf {
    *    table has no growth rate, the bias is not positive), from otswap;
    *  - during the run: from otswap (prefixed "otswap: ", the original
    *    nested), a corrected distance outside the table included; from each
-   *    search and from the grid of step 4, as findVoidsLightcone; if no
-   *    tracer is selected at step 7, giving the three counts; with
+   *    search and from the grid of the run, as findVoidsLightcone; if no
+   *    tracer is selected, giving the three counts; with
    *    External, if fewer randoms remain than needed, giving the counts.
    */
   BitVFResult runLightcone (const std::vector<double>& tracersSky,

@@ -16,7 +16,7 @@
 
   The two steps are separate calls, so the reconstruction can be kept,
   written, or searched several times with different parameters. The
-  run_box pipeline of the full_recons_box example does both in one call.
+  runBox pipeline of the full_recons_box example does both in one call.
 
   The box is not periodic: nothing flows through its faces, and the
   basins that touch them are flagged (edgeFlag), so that they can be

@@ -132,8 +132,9 @@ int main (int argc, char** argv)
     // ----------------------------------------------
 
     // run.voids is the real-space search, whose per-halo outputs keep
-    // one row per input halo, and run.zspaceVoids the redshift-space one. Redshift-space distortions
-    // stretch voids along the line of sight and change their number
+    // one row per input halo, and run.zspaceVoids the redshift-space one.
+    // Redshift-space distortions stretch voids along the line of sight and
+    // change their number
     const bitvf::Result& real = run.voids;
     const bitvf::Result& zspace = *run.zspaceVoids;
 

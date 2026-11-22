@@ -115,7 +115,8 @@ namespace bitvf {
    *      [basin][3]   BasinCatalog::centre, centreSky
    *      [basin]      BasinCatalog::radius, radiusExt, deltaAv, delta2Mps,
    *                   contamination (double); edgeFlag (uint8);
-   *                   nTracers (size_t)
+   *                   nTracers (size_t); fieldCentre (double,
+   *                   findVoidsBoxFromField only)
    *      [cell][3]    DivergenceGrid::centre, centreSky
    *      [cell]       DivergenceGrid::divergence, divergenceSmoothed,
    *                   volume, weight, weightSmoothed, cellRaMin ..
@@ -126,7 +127,7 @@ namespace bitvf {
    *                   outsideGrid, outsideCut (uint8);
    *                   TracerAssignment::cellIndex, voidIndex,
    *                   overdenseIndex (int64), distance (double), inMask,
-   *                   inBox, used (uint8)
+   *                   inCut, inBox, used (uint8)
    *
    *  Flags are uint8, 0 or 1. Indices of tracers are their input rows;
    *  indices of cells and basins are their rows in the result, and the
@@ -158,11 +159,11 @@ namespace bitvf {
    *  around it, itself included. The weight of a cell is its tracer
    *  weight (DivergenceGrid::weight) times exp(-r^2 / (2 sigma^2)), r the
    *  distance between the two cell centres. A cell whose weights sum to
-   *  at most 1e-12 times the largest tracer weight of the grid takes 0:
-   *  so does a cell filled from its neighbours (weight 0) when the cells
-   *  around hold it alone. A larger sigma merges small basins into larger
-   *  ones; sigma = 0 disables the smoothing. With sigma > 0 the smoothed field and the smoothed weight
-   *  are kept beside the divergence and the weight
+   *  at most 1e-12 times the largest tracer weight of the grid takes 0; this
+   *  includes a filled cell (weight 0) whose surrounding cells hold no
+   *  weight. A larger sigma merges small basins into larger ones; sigma = 0
+   *  disables the smoothing. With sigma > 0 the smoothed field and the
+   *  smoothed weight are kept beside the divergence and the weight
    *  (DivergenceGrid::divergenceSmoothed, weightSmoothed).
    *
    *  Box: the cells around are those within floor(3.5 sigma / s) cells
@@ -174,9 +175,9 @@ namespace bitvf {
    *  mps.
    *
    *  Lightcone: the cells around are those whose centre lies closer than
-   *  4 sigma, with the same weights. Masked cells (DivergenceGrid::masked) enter no mean and take 0. In
-   *  Mps, sigma is multiplied by mps(z) at the redshift of the centre of
-   *  the shell of the cell being smoothed.
+   *  4 sigma, with the same weights. Masked cells (DivergenceGrid::masked)
+   *  enter no mean and take 0. In Mps, sigma is multiplied by mps(z) at the
+   *  redshift of the centre of the shell of the cell being smoothed.
    */
   struct Smoothing {
 
@@ -238,6 +239,7 @@ namespace bitvf {
     ///
     ///       bitvf: kept <k> of <N> tracers: <b> outside the box [<x0>, <x1>] x [<y0>, <y1>] x [<z0>, <z1>]
     ///       bitvf: kept <k'> of <k> tracers: <g> outside the reused grid
+    ///       bitvf: moved <m> tracer(s) onto the box edge
     ///       bitvf: findVoidsBox: <V> voids and <O> overdense basins from <N> tracers in <T> s; <W> without a valid displacement
     ///       bitvf: findVoidsBoxFromDivergence: <V> voids and <O> overdense basins from <N> tracers in <T> s
     ///       bitvf: findVoidsBoxFromField: <V> voids and <O> overdense basins on <nx> x <ny> x <nz> cells in <T> s
@@ -246,7 +248,10 @@ namespace bitvf {
     ///   given, the reconstruction's (otswap::SelectionCounts::boxLimits)
     ///   or the grid's (DivergenceGrid::limits); the grid line whenever a
     ///   grid is reused, even with no tracer outside it, and by
-    ///   findVoidsBoxFromDivergence, as "outside the divergence grid". \<W\>
+    ///   findVoidsBoxFromDivergence, as "outside the divergence grid". The
+    ///   moved line is written by the overload on a reconstruction without
+    ///   box limits, when \<m\> is not 0: a tracer outside the measured box
+    ///   by rounding is moved onto its edge. \<W\>
     ///   counts the tracers read without a valid displacement. A count of 1
     ///   takes the singular.
     ///
@@ -312,8 +317,11 @@ namespace bitvf {
    *  of a basin has a divergence at or above that of its seed.
    *
    *  Each cell flows to the neighbour where the divergence drops the most
-   *  (the largest decrease, not divided by the distance), among the cells
-   *  that share a face, an edge or a corner with it, when that value is
+   *  (the largest decrease, not divided by the distance), among its
+   *  neighbours (box: the cells that share a face, an edge or a corner with
+   *  it; lightcone: the unmasked cells whose centres are closer than
+   *  r (s_i + s_j) / 2, r = (sqrt(3) + 2) / 2, s_i and s_j the sides of the
+   *  two cells, about 1.87 times their mean), when that value is
    *  strictly below its own; among equal smallest values, the neighbour
    *  with the lowest cell index. A cell with no strictly smaller
    *  neighbour is a seed, so two adjacent cells of equal value with no
@@ -424,8 +432,8 @@ namespace bitvf {
    *  largest count is used on all three axes, so the grid is a cube of
    *  cells even when the box is not. The padded box is then placed in the
    *  cells: on each axis, with n the count and S = n s - E the slack, its
-   *  lower face moves down by S / 2, which is lower, and its upper face up
-   *  by S / 4, which is upper. With limits the grid overhangs them.
+   *  lower face moves down by S / 2 and its upper face up by S / 4, so the
+   *  box lies inside the cells, closer to the upper side. With limits the grid overhangs them.
    *
    *  Lightcone. Cells are numbered by shell, then declination ring, then
    *  right-ascension sector. The grid is rebuilt from its construction
@@ -577,10 +585,10 @@ namespace bitvf {
     /// when fewer than three of those hold a value; the passes repeat
     /// until no cell is empty (an Error when a pass fills none).
     ///
-    /// Lightcone: the adjacent cells that are not masked, when there are
-    /// at least three; the passes repeat until one fills no cell. A cell
-    /// left empty keeps a divergence of 0, and a masked cell is never
-    /// filled.
+    /// Lightcone: the neighbouring cells (as BasinCatalog) that hold a
+    /// value, when at least three do; the passes repeat until one fills no
+    /// cell. A cell left empty keeps a divergence of 0, and a masked cell
+    /// is never filled.
     std::vector<double> weight;
 
     /// Smoothed tracer weight of each cell, with sigma > 0: the mean of
@@ -693,11 +701,10 @@ namespace bitvf {
     std::size_t tracersOutsideMask = 0;
 
     /// Lightcone: of the tracers on observed pixels, those outside the
-    /// redshift cut, and so skipped (TracerAssignment::inCut is 0). A
-    /// tracer both masked and outside the cut counts only in
-    /// tracersOutsideMask, where its flag TracerAssignment::inMask is 0:
-    /// the counts give the mask priority, while its inCut is 0 as well.
-    /// 0 in a box.
+    /// redshift cut, and so skipped. Each flag states its own condition:
+    /// TracerAssignment::inCut is 0 for every tracer outside the cut, masked
+    /// or not. The counts do not overlap: a tracer both masked and outside
+    /// the cut is counted in tracersOutsideMask only. 0 in a box.
     std::size_t tracersOutsideRedshiftCut = 0;
 
     /// Lightcone: randoms on unobserved pixels of the mask, removed, whether
@@ -961,8 +968,8 @@ namespace bitvf {
    *  otswap::io::readDisplacementMean (nRealizations 1,
    *  nRealizationsMean the number averaged; set Config::nRealizationsMean
    *  to it, so that bitvf's files record it). The box is the file's box
-   *  keywords, with or without BOXLIM; a file without them (written by
-   *  otswap 0.2) holds no box limits and is refused. The divergence is not
+   *  keywords, with or without BOXLIM; a mean file without box keywords
+   *  holds no box limits and is refused. The divergence is not
    *  linear in the displacement, so a search on the mean of R realizations
    *  does not give the result of the search on the R realizations.
    *
@@ -1336,6 +1343,8 @@ namespace bitvf {
    *  @param tracers 3 per tracer, x, y, z, in the unit of the distance
    *  table
    *  @param randoms as tracers, for the randoms; required
+   *  @param displacement, valid, mask, distances, mps, config, redshiftCut,
+   *  ids, grid as findVoidsLightcone from sky positions
    *  @exception Error as findVoidsLightcone from sky positions, and if a
    *  row of tracers or randoms is not finite, lies at the origin, or lies
    *  at a distance outside the distance table; the message names the
@@ -1414,10 +1423,12 @@ namespace bitvf {
    *  and nRealizationsMean are 0. The grid passes the checks of a grid to
    *  reuse.
    *
+   *  @param reconstruction, randomsSky, mask as findVoidsLightcone
    *  @param divergenceCellSize the cell size in units of mps, as
-   *  Config::divergenceCellSize; without it, the default for the
-   *  reconstruction's realizations, min(1, (20 / nRealizations)^(1/3))
-   *  mps
+   *  Config::divergenceCellSize. Empty for the default,
+   *  min(1, (20 / nRealizations)^(1/3)), nRealizations those of the
+   *  reconstruction
+   *  @return the grid, with geometry lightcone
    *  @exception Error on every case of the entry of the same overload of
    *  findVoidsLightcone, the checks of the displacements included,
    *  and of the grid's construction
@@ -1431,9 +1442,12 @@ namespace bitvf {
    *  builds, bit for bit: the same selection of the tracers and randoms,
    *  as the overload above, without displacements.
    *
+   *  @param tracersSky, randomsSky, mask, distances, mps, redshiftCut as
+   *  findVoidsLightcone from sky positions
    *  @param divergenceCellSize the cell size in units of mps; finite and
    *  positive. A reasonable starting value is min(1, (20 / R)^(1/3)), R
    *  the number of realizations the search will read.
+   *  @return the grid, with geometry lightcone
    *  @exception Error on every case of the entry of findVoidsLightcone
    *  that does not concern displacements, ids or the configuration, and
    *  of the grid's construction
@@ -1489,8 +1503,8 @@ namespace bitvf {
    *  otswap::io::readDisplacementMean (nRealizations 1,
    *  nRealizationsMean the number averaged; set Config::nRealizationsMean
    *  to it, so that bitvf's files record it). The box is the file's box
-   *  keywords, with or without BOXLIM; a file without them (written by
-   *  otswap 0.2) holds no box limits and is refused. The divergence is not
+   *  keywords, with or without BOXLIM; a mean file without box keywords
+   *  holds no box limits and is refused. The divergence is not
    *  linear in the displacement, so a search on the mean of R realizations
    *  does not give the result of the search on the R realizations.
    *
@@ -1515,7 +1529,10 @@ namespace bitvf {
   /// with no catalogue.
   struct Partition {
 
+    /// Number of voids.
     std::size_t nVoids = 0;
+
+    /// Number of overdense basins.
     std::size_t nOverdense = 0;
 
     /// [cell]: row of the cell's void, -1 none.

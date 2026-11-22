@@ -108,8 +108,9 @@ def main():
     # ----------------------------------------------
 
     # run.voids is the real-space search, whose per-halo outputs keep one
-    # row per input halo, and run.zspace_voids the redshift-space one. Redshift-space distortions
-    # stretch voids along the line of sight and change their number
+    # row per input halo, and run.zspace_voids the redshift-space one.
+    # Redshift-space distortions stretch voids along the line of sight and
+    # change their number
     real, zspace = run.voids, run.zspace_voids
 
     print(f"Randoms drawn with seed {real.random_seed}")

@@ -60,17 +60,41 @@ Verbosity: TypeAlias = Literal["silent", "normal", "detailed"]
 
       bitvf: kept <k> of <N> tracers: <b> outside the box [<x0>, <x1>] x [<y0>, <y1>] x [<z0>, <z1>]
       bitvf: kept <k'> of <k> tracers: <g> outside the reused grid
+      bitvf: moved <m> tracer(s) onto the box edge
       bitvf: findVoidsBox: <V> voids and <O> overdense basins from <N> tracers in <T> s; <W> without a valid displacement
 
   The box line is printed when the search has box limits (given, the
   reconstruction's, or the reused grid's); the grid line whenever a grid is
   reused, even with no tracer outside it, and by
-  ``find_voids_box_from_divergence`` as "outside the divergence grid". <W>
+  ``find_voids_box_from_divergence`` as "outside the divergence grid". The
+  moved line is printed by the search of a reconstruction without box
+  limits, when <m> is not 0: a tracer outside the measured box by rounding
+  is moved onto its edge. <W>
   counts the tracers read without a valid displacement. The call lines of
   the other searches are
   ``bitvf: findVoidsBoxFromDivergence: <V> voids and <O> overdense basins from <N> tracers in <T> s``
   and
   ``bitvf: findVoidsBoxFromField: <V> voids and <O> overdense basins on <nx> x <ny> x <nz> cells in <T> s``.
+  In a lightcone the lines are::
+
+      bitvf: kept <k> of <N> tracers: <m> on unobserved pixels, <c> outside the redshift cut
+      bitvf: kept <k> of <M> randoms: <m> on unobserved pixels, <c> outside the redshift cut
+      bitvf: grid of <C> cells in <S> shells, cell size <s> mps (<source>), distances [<d0>, <d1>], RA [<a0>, <a1>] deg, Dec [<b0>, <b1>] deg (<from>) in <t> s
+      bitvf: kept <k'> of <k> tracers: <g> outside the reused grid
+      bitvf: <n> tracers start in a masked cell, in no basin
+      bitvf: divergence of the valid displacements of <u> tracers, <r> displacements rejected (masked cells, outside or below the grid) in <t> s
+      bitvf: filled <f> cells in <p> passes, <e> left empty in <t> s
+      bitvf: findVoidsLightcone: <V> voids and <O> overdense basins from <N> tracers in <T> s; <W> without a valid displacement
+
+  The redshift cut appears in the selection lines only when it has a finite
+  bound; the grid line adds ", central sphere included" when the grid has
+  one, its source is default, given or reused, and it ends "(from the
+  tracers and randoms)" or "(from the reused grid)"; the reused-grid line is
+  printed whenever a grid is reused; the masked-cell, divergence and fill
+  lines only when <n>, <r> or <e> is not 0
+  (``Counts.tracers_in_masked_cells``, ``displacements_rejected``). The
+  call line names ``findVoidsLightconeFromCartesian`` for that function; <W>
+  counts the tracers kept and inside the grid without a valid displacement.
 - ``"detailed"``: as ``"normal"``, with one line per step of the search in
   the order it runs, each with its time: the mean particle separation and
   its source, the grid, its cell side and the box it covers, the smoothing
@@ -110,7 +134,8 @@ class LengthUnit(enum.Enum):
     """Unit of a length the user chooses."""
 
     MPS = 0
-    """Multiples of the mean particle separation: the box mps."""
+    """Multiples of the mean particle separation: the box mps, or in a
+    lightcone mps(z) at each cell's redshift."""
     COORDINATE = 1
     """The same length unit as the tracer coordinates."""
 
@@ -122,19 +147,25 @@ class Smoothing:
     it, itself included. The weight of a cell is its tracer weight
     (``DivergenceGrid.weight``) times exp(-r^2 / (2 sigma^2)), r the distance
     between the two cell centres. A cell whose weights sum to at most 1e-12
-    times the largest tracer weight of the grid takes 0: so does a cell
-    filled from its neighbours (weight 0) when the cells around hold it
-    alone. A larger sigma merges small basins into larger ones; sigma = 0
-    disables the smoothing. With sigma > 0 the smoothed field and the
+    times the largest tracer weight of the grid takes 0; this includes a
+    filled cell (weight 0) whose surrounding cells hold no weight. A larger
+    sigma merges small basins into larger ones; sigma = 0 disables the
+    smoothing. With sigma > 0 the smoothed field and the
     smoothed weight are kept beside the divergence and the weight
     (``DivergenceGrid.divergence_smoothed``, ``weight_smoothed``).
 
-    In a box, the cells around are those within floor(3.5 sigma / s) cells
+    Box: the cells around are those within floor(3.5 sigma / s) cells
     along each axis, s the cell side, cut at the faces of the grid: a cube,
     not a sphere. When 3.5 sigma / s lies within 1e-9 relative of an integer,
     that integer is taken instead, so that a cell side rounded by one ulp
     gives the same cube. Below sigma = s / 3.5 the cube holds the cell alone.
     In ``LengthUnit.MPS``, sigma is multiplied by the box mps.
+
+    Lightcone: the cells around are those whose centre lies closer than
+    4 sigma, with the same weights. Masked cells (``DivergenceGrid.masked``)
+    enter no mean and take 0. In ``LengthUnit.MPS``, sigma is multiplied by
+    mps(z) at the redshift of the centre of the shell of the cell being
+    smoothed.
 
     Each field is a keyword of the constructor and a read/write attribute,
     converted to its type when set; its rules are checked by the search
@@ -393,12 +424,15 @@ class BasinCatalog:
     extended basin of an overdense basin coincide.
 
     Each cell flows to the neighbour where the divergence drops the most
-    (the largest decrease, not divided by the distance), among the 26 cells
-    that share a face, an edge or a corner with it, when that value is
-    strictly below its own; among equal smallest values, the neighbour with
-    the lowest cell row. A cell with no strictly smaller neighbour is a
-    seed. A basin is the seed and every cell whose flow reaches it. The grid
-    is not periodic: a cell on a face has fewer neighbours.
+    (the largest decrease, not divided by the distance), among its
+    neighbours (box: the 26 cells that share a face, an edge or a corner
+    with it; lightcone: the unmasked cells whose centres are closer than
+    r (s_i + s_j) / 2, r = (sqrt(3) + 2) / 2, s_i and s_j the sides of the
+    two cells, about 1.87 times their mean), when that value is strictly
+    below its own; among equal smallest values, the neighbour with the
+    lowest cell row. A cell with no strictly smaller neighbour is a seed. A
+    basin is the seed and every cell whose flow reaches it. In a box the
+    grid is not periodic: a cell on a face has fewer neighbours.
 
     Read-only; every array has one row per basin.
     """
@@ -411,7 +445,8 @@ class BasinCatalog:
         """Cartesian centre, shape (n_basins, 3), in coordinate units: the
         seed cell's centre x0, shifted by
         ``s * sum_n div_n (x_n - x0) / sum_n |div_n|`` over the seed's
-        neighbouring cells n, with div the smoothed divergence and s = -1
+        neighbouring cells n, with div the field the watershed split (the smoothed divergence, or the
+        divergence when sigma is 0) and s = -1
         for a void, +1 for an overdense basin (towards lower divergence in a
         void, higher in an overdense basin), and kept inside the seed
         cell."""
@@ -434,27 +469,41 @@ class BasinCatalog:
     def delta_av(self) -> NDArray[np.float64]:
         """Mean density contrast of the tracers in the core, shape
         (n_basins,): the tracers starting in its cells (``n_tracers``) over
-        its volume, divided by the mean density mps^-3, minus 1. Shape (0,)
-        after a field search."""
+        its volume, divided by the mean density mps^-3 (mps(z)^-3 in a
+        lightcone), minus 1. Shape (0,) after a field search."""
     @property
     def delta_2mps(self) -> NDArray[np.float64]:
         """Density contrast within 2 mps of the centre, the sphere closed,
         shape (n_basins,): n_t over its volume, divided by the mean density
         mps^-3, minus 1, with n_t the tracers the search reads (inside the
-        box limits and the reused grid) in the sphere. Shape (0,) after a
-        field search."""
+        box limits and the reused grid) in the sphere. In a lightcone, within
+        2 mps(z) at the centre's redshift, n_t / (n_r N_t / N_r) - 1, with
+        n_t and n_r the tracers and randoms in the sphere and N_t / N_r the
+        ratio of the tracers to the randoms over the whole search
+        (``Counts.randoms``); NaN when no random lies in the sphere. At
+        least 10 to 20 randoms per tracer is a reasonable start. Shape (0,)
+        after a field search."""
     @property
     def edge_flag(self) -> NDArray[np.uint8]:
-        """Contact with the boundary, the faces of the grid, shape
-        (n_basins,): 0 none; 1 only the extended basin touches it; 2 the core
-        already touches it. A basin touches the boundary when one of its
-        cells lies on a face of the grid, with or without box limits."""
+        """Contact with the boundary, shape (n_basins,): 0 none; 1 only the
+        extended basin touches it; 2 the core already touches it. The
+        boundary is, in a box, the faces of the grid, with or without box
+        limits; in a lightcone, the masked cells and the border of the grid.
+        In a box, a basin touches it when one of its cells lies on a face of
+        the grid. In a lightcone, when one of its cells shares a face with a
+        masked cell, or lies on the border: the first shell unless it is the
+        central sphere, the last shell, the first and the last declination
+        ring of a shell unless its edge is on a pole, and the first and the
+        last sector of a ring that is not a full circle."""
     @property
     def contamination(self) -> NDArray[np.float64]:
         """Fraction of the basin's surface on the boundary, shape
-        (n_basins,): the faces of its cells on the faces of the grid, over
-        those faces plus the faces its cells share with cells of other
-        basins; 1 for a basin that fills the grid."""
+        (n_basins,): in a box, the faces of its cells on the faces of the
+        grid, over those faces plus the faces its cells share with cells of
+        other basins; 1 for a basin that fills the grid. In a lightcone, the
+        area its cells share with masked cells plus their area on the
+        border, over that area plus the area they share with cells of other
+        basins; 0 when that sum is not positive."""
     @property
     def n_tracers(self) -> NDArray[np.uint64]:
         """Tracers starting in the cells of the core, the count behind
@@ -631,11 +680,14 @@ class DivergenceGrid:
         contributed. A cell that no displacement contributed to is empty: it
         keeps a weight of 0, and takes the mean divergence of nearby cells
         that hold a value, weighted by 1 / r^2, r the distance between the
-        cell centres: the neighbours within one cell along each axis, or
-        within two when fewer than three of those hold a value, in passes
+        cell centres. Box: the neighbours within one cell along each axis,
+        or within two when fewer than three of those hold a value, in passes
         that each read the values left by the previous one, until no cell is
-        empty. With its weight of 0, a filled value enters no smoothed mean;
-        with sigma = 0 the watershed reads it as it is."""
+        empty. Lightcone: the neighbouring cells (as ``BasinCatalog``) that
+        hold a value, when at least three do; the passes repeat until one
+        fills no cell, and a masked cell is never filled. With its weight of
+        0, a filled value enters no smoothed mean; with sigma = 0 the
+        watershed reads it as it is."""
     @property
     def weight_smoothed(self) -> NDArray[np.float64]:
         """Smoothed tracer weight of each cell, shape (nx, ny, nz), with
@@ -948,7 +1000,8 @@ class BitVFResult:
     @property
     def voids(self) -> Result:
         """The voids of the run: of the real-space pass with a correction, of
-        the only pass without. One row per input tracer, in input order."""
+        the only pass without. Its per-tracer columns have one row per input
+        tracer, in input order."""
     @property
     def zspace_voids(self) -> Optional[Result]:
         """The voids of the redshift-space pass, with
@@ -996,9 +1049,8 @@ def find_voids_box(tracers: Union[ArrayLike, otswap.Result], displacement: Optio
     mean displacement file by ``otswap.io.read_displacement_mean`` (one
     realization, ``n_realizations_mean`` the number averaged; set
     ``Config.n_realizations_mean`` to it, so that bitvf's files record it).
-    Its box is the file's box keywords, with or without BOXLIM; a file
-    without them (written by otswap 0.2) holds no box limits and is
-    refused. The divergence is not linear in the displacement, so a search
+    Its box is the file's box keywords, with or without BOXLIM; a mean file
+    without box keywords holds no box limits and is refused. The divergence is not linear in the displacement, so a search
     on the mean of R realizations does not give the result of the search on
     the R realizations.
 
@@ -1251,7 +1303,9 @@ def find_voids_box_from_field(centres: ArrayLike, values: ArrayLike, *, config: 
     of the search that wrote it give back that search's basins. Their
     ``centre``, ``radius`` and ``radius_ext`` can differ from that search's
     by a few ulp: the grid's lower face and s are inferred from the centres
-    read and may differ from the original grid's by rounding. Prints the call line ``bitvf: findVoidsBoxFromField: ...``.
+    read and may differ from the original grid's by rounding.
+
+    Prints the call line ``bitvf: findVoidsBoxFromField: ...``.
     """
 
 
@@ -1359,10 +1413,9 @@ def run_box(tracers: ArrayLike, randoms: Optional[ArrayLike] = None, *, config: 
        uniformly in the box, N the tracers inside it.
     4. Reconstructs with ``otswap.reconstruct_box``: the randoms, the box as
        limits, ``config.mps`` when given.
-    5. Without ``config.rsd``, searches that reconstruction with
-       ``find_voids_box``, which reads its mps.
-
-    With ``config.rsd``, after step 4:
+    Without ``config.rsd``, it then searches that reconstruction with
+    ``find_voids_box``, which reads its mps. With ``config.rsd``, after
+    step 4:
 
     5. With ``BoxRsd.zspace_voids``, searches the first reconstruction
        (``BitVFResult.zspace_voids``).
@@ -1471,7 +1524,7 @@ def find_voids_lightcone(tracers_sky: ArrayLike, displacement: ArrayLike, random
                          config: Config = Config(), redshift_cut: Optional[RedshiftCutArg] = None,
                          ids: Optional[ArrayLike] = None, grid: Optional[DivergenceGrid] = None) -> Result: ...
 @overload
-def find_voids_lightcone(reconstruction: otswap.Result, randoms_sky: ArrayLike, *, mask: otswap.Mask,
+def find_voids_lightcone(tracers_sky: otswap.Result, randoms_sky: ArrayLike, *, mask: otswap.Mask,
                          angle_unit: AngleUnit, config: Config = Config(),
                          grid: Optional[DivergenceGrid] = None) -> Result: ...
 def find_voids_lightcone(*args, **kwargs):  # type: ignore[no-untyped-def]
@@ -1502,8 +1555,8 @@ def find_voids_lightcone(*args, **kwargs):  # type: ignore[no-untyped-def]
         Right ascension and declination in ``angle_unit``, and the observed
         redshift, which must lie inside the distance table. A declination
         must lie in [-90, 90] degrees.
-    displacement : array_like, shape (n_realizations, N, 3)
-        Cartesian displacements, in the unit of ``distances``, from the
+    displacement : array_like, shape (R, N, 3)
+        Cartesian displacements of R realizations, in the unit of ``distances``, from the
         tracers' Cartesian positions (``otswap.to_cartesian`` of
         ``tracers_sky``). Every valid displacement of a tracer kept must be
         finite.
@@ -1512,7 +1565,7 @@ def find_voids_lightcone(*args, **kwargs):  # type: ignore[no-untyped-def]
         set the extent of a new grid with the tracers, and give the expected
         counts of ``delta_2mps``. Pass those of the reconstruction. With an
         ``otswap.Result``, the second positional argument.
-    valid : array_like, shape (n_realizations, N), optional
+    valid : array_like, shape (R, N), optional
         0 or 1 for each displacement; if omitted, all valid.
     mask : otswap.Mask
         The observed pixels of the survey; that of the reconstruction, or a
@@ -1601,7 +1654,7 @@ def find_voids_lightcone_from_cartesian(tracers: ArrayLike, displacement: ArrayL
 
 
 @overload
-def lightcone_grid(reconstruction: otswap.Result, randoms_sky: ArrayLike, *, mask: otswap.Mask,
+def lightcone_grid(tracers_sky: otswap.Result, randoms_sky: ArrayLike, *, mask: otswap.Mask,
                    angle_unit: AngleUnit, cell_size: Optional[float] = None) -> DivergenceGrid: ...
 @overload
 def lightcone_grid(tracers_sky: ArrayLike, randoms_sky: ArrayLike, *, mask: otswap.Mask,
@@ -1621,14 +1674,16 @@ def lightcone_grid(*args, **kwargs):  # type: ignore[no-untyped-def]
 
     Parameters
     ----------
-    reconstruction, tracers_sky, randoms_sky, mask, distances, mps_profile, redshift_cut
-        As ``find_voids_lightcone``.
+    tracers_sky, randoms_sky, mask, distances, mps_profile, redshift_cut
+        As ``find_voids_lightcone``; ``tracers_sky`` may be an
+        ``otswap.Result``.
     cell_size : float, optional
         The cell size in units of mps(z), as ``Config.divergence_cell_size``;
         finite and positive. Required with arrays, where a reasonable
         starting value is ``min(1, (20 / R)**(1/3))``, R the number of
-        realizations the search will read. With a reconstruction, if
-        omitted, the default for its realizations.
+        realizations the search will read. With an ``otswap.Result``, empty
+        for the default, ``min(1, (20 / R)**(1/3))``, R the realizations of
+        the result.
     angle_unit : {"deg", "rad"}
         The unit of ``tracers_sky`` and ``randoms_sky``, and of the angle
         fields of the grid.

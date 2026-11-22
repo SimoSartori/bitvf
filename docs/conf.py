@@ -7,6 +7,8 @@ module, so the documentation builds without building bitvf.
 
     pip install -r docs/requirements.txt
     sphinx-build -W --keep-going docs docs/_build/html
+
+Building the documentation needs Python 3.11 or later and Doxygen.
 """
 
 import pathlib
@@ -22,8 +24,7 @@ copyright = "2026, Simone Sartori"
 release = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
 version = release
 
-# Doxygen runs as part of the Sphinx build, so there is one command to remember
-# and no way to publish a C++ reference built from a stale header.
+# Doxygen runs as part of the Sphinx build, from the current headers.
 subprocess.run(["doxygen", "Doxyfile"], cwd=HERE, check=True)
 
 extensions = [
