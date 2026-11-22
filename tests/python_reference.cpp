@@ -42,6 +42,17 @@
  *                         [run_mps=X] [keep_reconstructions=1] [axis=A redshift=X bias=X
  *                         rsd_sigma=X zspace=0|1 omega_m=X h=X z_max=X] CONFIG out=P
  *
+ *    python_reference lightcone form=arrays|cartesian|reconstruction complete=FITS randoms=F
+ *                         [tracers=F] mask=FITS omega_m=X h=X angles=deg|rad [cut_min=X] [cut_max=X]
+ *                         [ids=F] CONFIG out=P
+ *    python_reference lightcone_grid form=arrays|reconstruction complete=FITS randoms=F
+ *                         [tracers=F] mask=FITS omega_m=X h=X angles=deg|rad [cut_min=X] [cut_max=X]
+ *                         [cell=X] out=P
+ *    python_reference run_lightcone tracers=F randoms=F [randoms2=F] [ids=F] mask=FITS omega_m=X h=X
+ *                         angles=deg|rad n_realizations=R seed=N n_bins=N [cut_min=X] [cut_max=X]
+ *                         [bias=FILE rsd_sigma=X second=none|resample|external zspace=0|1]
+ *                         [keep_reconstructions=1] CONFIG out=P
+ *
  *  CONFIG is sigma=X unit=mps|coordinate [cell=X] keep=0|1 nrecmean=N
  *  verbosity=silent|normal|detailed; keep sets keepDivergence and
  *  keepAssignment (keepAssignment not for field and read_field). box
@@ -49,7 +60,14 @@
  *  which keeps its divergence and prints nothing;
  *  write=DIR writes the four products of the result, FITS and ASCII, into
  *  DIR. A run with axis corrects redshift-space distortions with the
- *  table DistanceTable(omega_m, h, -1, 0, 0, z_max, 20000).
+ *  table DistanceTable(omega_m, h, -1, 0, 0, z_max, 20000). A lightcone
+ *  mode reads sky positions in angles and converts degrees to radians as the
+ *  bindings do, and writes its angle fields in the same unit; form=cartesian takes Cartesian tracers and randoms. The array
+ *  forms read the displacement, validity and mps(z) profile of the
+ *  reconstruction in complete, and reconstruction searches it as it is.
+ *  The tables are DistanceTable(omega_m, h); bias is an ASCII table.
+ *  A lightcone search also writes the mask and cut counts, the profile and
+ *  the grid's per-cell sky fields.
  *
  *  Input files hold native float64 values, flat and row-major, ids native
  *  int64. A search writes P.report, the text of its report; P.scalars,
@@ -155,6 +173,42 @@ namespace {
     return otswap::Verbosity::Normal;
   }
 
+  bool degrees ()
+  {
+    return has("angles") && arg("angles") == "deg";
+  }
+
+  void dump_sky (const std::string& name, const std::vector<double>& v)
+  {
+    dump(name, degrees() ? otswap::skyToDegrees(v) : v);
+  }
+
+  void dump_angles (const std::string& name, std::vector<double> v)
+  {
+    if (degrees())
+      for (double& x : v) x *= 180. / 3.14159265358979323846;
+    dump(name, v);
+  }
+
+  void scalar_angle (const std::string& name, const double v)
+  {
+    scalar(name, degrees() ? v * (180. / 3.14159265358979323846) : v);
+  }
+
+  std::vector<double> sky (const std::string& key)
+  {
+    const std::vector<double> v = load<double>(key);
+    return degrees() ? otswap::skyToRadians(v) : v;
+  }
+
+  otswap::RedshiftCut cut ()
+  {
+    otswap::RedshiftCut c;
+    if (has("cut_min")) c.min = number("cut_min");
+    if (has("cut_max")) c.max = number("cut_max");
+    return c;
+  }
+
   bitvf::Config config (std::ostream* log, const bool assignment = true)
   {
     bitvf::Config c;
@@ -174,7 +228,7 @@ namespace {
   {
     scalar(prefix + ".n_basins", (std::uint64_t)c.nBasins);
     dump(prefix + ".centre", c.centre);
-    dump(prefix + ".centre_sky", c.centreSky);
+    dump_sky(prefix + ".centre_sky", c.centreSky);
     dump(prefix + ".radius", c.radius);
     dump(prefix + ".radius_ext", c.radiusExt);
     dump(prefix + ".delta_av", c.deltaAv);
@@ -209,6 +263,23 @@ namespace {
     dump(prefix + ".n_tracers", g.nTracers);
     dump(prefix + ".void_index", g.voidIndex);
     dump(prefix + ".overdense_index", g.overdenseIndex);
+    scalar(prefix + ".distance_min", g.distanceMin);
+    scalar(prefix + ".distance_max", g.distanceMax);
+    scalar_angle(prefix + ".ra_min", g.raMin);
+    scalar_angle(prefix + ".ra_max", g.raMax);
+    scalar_angle(prefix + ".dec_min", g.decMin);
+    scalar_angle(prefix + ".dec_max", g.decMax);
+    dump_angles(prefix + ".cell_ra_min", g.cellRaMin);
+    dump_angles(prefix + ".cell_ra_max", g.cellRaMax);
+    dump_angles(prefix + ".cell_dec_min", g.cellDecMin);
+    dump_angles(prefix + ".cell_dec_max", g.cellDecMax);
+    dump(prefix + ".cell_distance_min", g.cellDistanceMin);
+    dump(prefix + ".cell_distance_max", g.cellDistanceMax);
+    dump_sky(prefix + ".centre_sky", g.centreSky);
+    dump(prefix + ".masked", g.masked);
+    dump(prefix + ".mps_profile.redshift", g.mpsProfile.redshift);
+    dump(prefix + ".mps_profile.mps", g.mpsProfile.mps);
+    dump(prefix + ".mps_profile.count", g.mpsProfile.count);
   }
 
   void dump_result (const std::string& prefix, const bitvf::Result& r)
@@ -227,6 +298,21 @@ namespace {
     scalar(p + "counts.tracers_outside_box", (std::uint64_t)c.tracersOutsideBox);
     scalar(p + "counts.tracers_outside_grid", (std::uint64_t)c.tracersOutsideGrid);
     scalar(p + "counts.displacements", (std::uint64_t)c.displacements);
+    scalar(p + "counts.tracers_outside_cut", (std::uint64_t)c.tracersOutsideCut);
+    scalar(p + "counts.tracers_outside_mask", (std::uint64_t)c.tracersOutsideMask);
+    scalar(p + "counts.tracers_outside_redshift_cut", (std::uint64_t)c.tracersOutsideRedshiftCut);
+    scalar(p + "counts.randoms", (std::uint64_t)c.randoms);
+    scalar(p + "counts.randoms_outside_mask", (std::uint64_t)c.randomsOutsideMask);
+    scalar(p + "counts.randoms_outside_redshift_cut", (std::uint64_t)c.randomsOutsideRedshiftCut);
+    scalar(p + "counts.tracers_in_masked_cells", (std::uint64_t)c.tracersInMaskedCells);
+    scalar(p + "counts.randoms_outside_grid", (std::uint64_t)c.randomsOutsideGrid);
+    scalar(p + "counts.displacements_rejected", (std::uint64_t)c.displacementsRejected);
+    scalar(p + "mask_nside", (std::uint64_t)r.maskNside);
+    scalar(p + "redshift_cut_min", r.redshiftCut.min);
+    scalar(p + "redshift_cut_max", r.redshiftCut.max);
+    dump(p + "mps_profile.redshift", r.mpsProfile.redshift);
+    dump(p + "mps_profile.mps", r.mpsProfile.mps);
+    dump(p + "mps_profile.count", r.mpsProfile.count);
     dump_catalog(p + "voids", r.voids);
     dump_catalog(p + "overdense", r.overdense);
     if (r.divergence) dump_grid(p + "grid", *r.divergence);
@@ -236,6 +322,7 @@ namespace {
       dump(p + "assignment.overdense_index", r.assignment->overdenseIndex);
       dump(p + "assignment.distance", r.assignment->distance);
       dump(p + "assignment.in_mask", r.assignment->inMask);
+      dump(p + "assignment.in_cut", r.assignment->inCut);
       dump(p + "assignment.in_box", r.assignment->inBox);
       dump(p + "assignment.used", r.assignment->used);
     }
@@ -353,6 +440,68 @@ namespace {
       }
       else
         r = bitvf::runBox(load<double>("tracers"), randoms, c, ids);
+      dump_result("voids", r.voids);
+      if (r.zspaceVoids) dump_result("zspace", *r.zspaceVoids);
+      if (r.reconstruction) dump("reconstruction.displacement", r.reconstruction->displacement);
+    }
+    else if (mode == "lightcone") {
+      const otswap::Mask mask(arg("mask"));
+      const otswap::DistanceTable table(number("omega_m"), number("h"));
+      const otswap::Result rec = otswap::io::readDisplacementComplete(arg("complete"));
+      const std::string form = arg("form");
+      const bitvf::Config c = config(&log);
+      const std::vector<std::int64_t> ids = has("ids") ? load<std::int64_t>("ids") : std::vector<std::int64_t>();
+      bitvf::Result r;
+      if (form == "reconstruction")
+        r = bitvf::findVoidsLightcone(rec, sky("randoms"), mask, c);
+      else if (form == "arrays")
+        r = bitvf::findVoidsLightcone(sky("tracers"), rec.displacement, rec.valid, sky("randoms"), mask, table,
+                                      rec.mpsProfile, c, cut(), ids);
+      else
+        r = bitvf::findVoidsLightconeFromCartesian(load<double>("tracers"), rec.displacement, rec.valid,
+                                                   load<double>("randoms"), mask, table, rec.mpsProfile, c, cut(),
+                                                   ids);
+      dump_result("", r);
+    }
+    else if (mode == "lightcone_grid") {
+      const otswap::Mask mask(arg("mask"));
+      const otswap::Result rec = otswap::io::readDisplacementComplete(arg("complete"));
+      if (arg("form") == "reconstruction")
+        dump_grid("grid", bitvf::lightconeGrid(rec, sky("randoms"), mask,
+                                               has("cell") ? std::optional<double>(number("cell")) : std::nullopt));
+      else
+        dump_grid("grid", bitvf::lightconeGrid(sky("tracers"), sky("randoms"), mask,
+                                               otswap::DistanceTable(number("omega_m"), number("h")),
+                                               rec.mpsProfile, number("cell"), cut()));
+    }
+    else if (mode == "run_lightcone") {
+      bitvf::LightconeConfig c;
+      c.ot.nRealizations = (unsigned)number("n_realizations");
+      c.ot.seed = (unsigned)number("seed");
+      c.ot.verbosity = verbosity();
+      c.ot.log = &log;
+      c.nBins = (unsigned)number("n_bins");
+      c.cut = cut();
+      c.voids = config(&log);
+      c.keepReconstructions = has("keep_reconstructions");
+      if (has("bias")) {
+        bitvf::LightconeRsd rsd;
+        rsd.bias = otswap::io::readBiasTable(arg("bias"));
+        rsd.sigma = number("rsd_sigma");
+        const std::string m = arg("second");
+        rsd.secondPassRandoms = m == "none" ? bitvf::SecondPassRandoms::None
+                              : m == "external" ? bitvf::SecondPassRandoms::External
+                                                : bitvf::SecondPassRandoms::Resample;
+        rsd.zspaceVoids = arg("zspace") == "1";
+        rsd.correction.verbosity = verbosity();
+        rsd.correction.log = &log;
+        c.rsd = rsd;
+      }
+      const otswap::Mask mask(arg("mask"));
+      const std::vector<std::int64_t> ids = has("ids") ? load<std::int64_t>("ids") : std::vector<std::int64_t>();
+      const bitvf::BitVFResult r =
+        bitvf::runLightcone(sky("tracers"), sky("randoms"), mask, otswap::DistanceTable(number("omega_m"), number("h")),
+                            c, has("randoms2") ? sky("randoms2") : std::vector<double>(), ids);
       dump_result("voids", r.voids);
       if (r.zspaceVoids) dump_result("zspace", *r.zspaceVoids);
       if (r.reconstruction) dump("reconstruction.displacement", r.reconstruction->displacement);
