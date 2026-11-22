@@ -30,8 +30,8 @@
  *  Usage: bitvf <parameter-file>, bitvf --help, bitvf --version. Exit
  *  status 0 when every requested file is written, 1 on any error, with
  *  one line per error on stderr, "bitvf: error: <message>". Every check
- *  that needs no data comes before any data is read. Only box runs are
- *  implemented. The keys are listed at
+ *  that needs no data comes before any data is read. The geometry is a
+ *  box or a lightcone. The keys are listed at
  *  https://simosartori.github.io/bitvf/executable.html
  *
  *  Uses the public headers only, as an outside program would.
@@ -68,77 +68,86 @@ namespace {
   // The keys, and the runs each applies to
   // ==========================================================================
 
-  /// The kinds of a box run: a pipeline from the tracers (none of the
-  /// three input keys), or a search on the file of displacement_file,
-  /// displacement_mean_file or divergence_input_file.
+  /// The kinds of a run: a pipeline from the tracers (none of the three
+  /// input keys), or a search on the file of displacement_file,
+  /// displacement_mean_file or divergence_input_file (a box only).
   enum Kind : unsigned { Pipeline = 1, Complete = 2, Mean = 4, Divergence = 8, Any = 15 };
 
   /// The switch a key needs, within the kinds it applies to.
-  enum class Needs { Nothing, PerformRecons, RandomFile, NoDivergenceFile };
+  enum class Needs { Nothing, PerformRecons, RandomFile, NoDivergenceFile, RejectCrossings, ExternalRandoms };
+
+  /// Where a key applies in one geometry: the kinds of run, 0 for none,
+  /// and the switch it needs.
+  struct Rule {
+    unsigned kinds;
+    Needs needs;
+  };
 
   struct Key {
     const char* name;
-    unsigned kinds;     ///< the kinds of box run it applies to; 0: a key of a lightcone only
-    Needs needs;
-    bool boxOnly;       ///< does not apply to a lightcone
+    Rule box;
+    Rule lightcone;
   };
+
+  constexpr unsigned kFiles = Pipeline | Complete | Mean;
+  constexpr Rule kNever = {0, Needs::Nothing};
 
   /// Every key, in the order of the typed reads, after the switches.
   const Key kKeys[] = {
-    {"geometry",                      Any,                   Needs::Nothing,          false},
-    {"verbosity",                     Any,                   Needs::Nothing,          false},
-    {"tracer_file",                   Pipeline | Divergence, Needs::Nothing,          false},
-    {"column_tracer",                 Pipeline | Divergence, Needs::Nothing,          false},
-    {"id_column",                     Pipeline | Divergence, Needs::Nothing,          false},
-    {"random_file",                   Pipeline,              Needs::Nothing,          false},
-    {"column_random",                 Pipeline,              Needs::RandomFile,       false},
-    {"units",                         0,                     Needs::Nothing,          false},
-    {"random_recons_mode",            0,                     Needs::Nothing,          false},
-    {"random_file_recons",            0,                     Needs::Nothing,          false},
-    {"delimiter",                     Pipeline | Divergence, Needs::Nothing,          false},
-    {"comment",                       Pipeline | Divergence, Needs::Nothing,          false},
-    {"veto_mask_filename",            0,                     Needs::Nothing,          false},
-    {"z_min",                         0,                     Needs::Nothing,          false},
-    {"z_max",                         0,                     Needs::Nothing,          false},
-    {"displacement_file",             Any,                   Needs::Nothing,          false},
-    {"displacement_mean_file",        Any,                   Needs::Nothing,          true},
-    {"divergence_input_file",         Any,                   Needs::Nothing,          true},
-    {"divergence_file",               Complete | Mean,       Needs::Nothing,          false},
-    {"Omega_matter",                  Pipeline,              Needs::PerformRecons,    false},
-    {"little_h",                      Pipeline,              Needs::PerformRecons,    false},
-    {"w0",                            Pipeline,              Needs::PerformRecons,    false},
-    {"wa",                            Pipeline,              Needs::PerformRecons,    false},
-    {"Nrec",                          Pipeline,              Needs::Nothing,          false},
-    {"threshold",                     Pipeline,              Needs::Nothing,          false},
-    {"seed",                          Pipeline,              Needs::Nothing,          false},
-    {"mesh_cellsize",                 Pipeline,              Needs::Nothing,          false},
-    {"bins",                          0,                     Needs::Nothing,          false},
-    {"reject_mask_crossings",         0,                     Needs::Nothing,          false},
-    {"max_unobserved_pixels_crossed", 0,                     Needs::Nothing,          false},
-    {"box_min",                       Pipeline,              Needs::Nothing,          true},
-    {"box_max",                       Pipeline,              Needs::Nothing,          true},
-    {"mps",                           Pipeline,              Needs::Nothing,          true},
-    {"sigma",                         Any,                   Needs::Nothing,          false},
-    {"sigma_unit",                    Any,                   Needs::Nothing,          false},
-    {"cell_size",                     Pipeline | Complete | Mean, Needs::NoDivergenceFile, false},
-    {"perform_recons",                Pipeline,              Needs::Nothing,          false},
-    {"save_zspace_voids",             Pipeline,              Needs::PerformRecons,    false},
-    {"rsd_smoothing_scale",           Pipeline,              Needs::PerformRecons,    false},
-    {"rsd_weight_by_realizations",    Pipeline,              Needs::PerformRecons,    false},
-    {"redshift",                      Pipeline,              Needs::PerformRecons,    true},
-    {"bias",                          Pipeline,              Needs::PerformRecons,    true},
-    {"los_axis",                      Pipeline,              Needs::PerformRecons,    true},
-    {"bias_file",                     0,                     Needs::Nothing,          false},
-    {"output_dir",                    Any,                   Needs::Nothing,          false},
-    {"output_file",                   Any,                   Needs::Nothing,          false},
-    {"output_format",                 Any,                   Needs::Nothing,          false},
-    {"printDisplMean",                Pipeline,              Needs::Nothing,          false},
-    {"printDisplComplete",            Pipeline,              Needs::Nothing,          false},
-    {"printMps",                      0,                     Needs::Nothing,          false},
-    {"printDiv",                      Any,                   Needs::Nothing,          false},
-    {"printGal",                      Any,                   Needs::Nothing,          false},
-    {"printOverdense",                Any,                   Needs::Nothing,          false},
-    {"printRecCat",                   Pipeline,              Needs::PerformRecons,    false},
+    {"geometry",                      {Any, Needs::Nothing},                   {Any, Needs::Nothing}},
+    {"verbosity",                     {Any, Needs::Nothing},                   {Any, Needs::Nothing}},
+    {"tracer_file",                   {Pipeline | Divergence, Needs::Nothing}, {Pipeline, Needs::Nothing}},
+    {"column_tracer",                 {Pipeline | Divergence, Needs::Nothing}, {Pipeline, Needs::Nothing}},
+    {"id_column",                     {Pipeline | Divergence, Needs::Nothing}, {Pipeline, Needs::Nothing}},
+    {"random_file",                   {Pipeline, Needs::Nothing},              {kFiles, Needs::Nothing}},
+    {"column_random",                 {Pipeline, Needs::RandomFile},           {kFiles, Needs::Nothing}},
+    {"units",                         kNever,                                  {kFiles, Needs::Nothing}},
+    {"random_recons_mode",            kNever,                                  {Pipeline, Needs::PerformRecons}},
+    {"random_file_recons",            kNever,                                  {Pipeline, Needs::ExternalRandoms}},
+    {"delimiter",                     {Pipeline | Divergence, Needs::Nothing}, {kFiles, Needs::Nothing}},
+    {"comment",                       {Pipeline | Divergence, Needs::Nothing}, {kFiles, Needs::Nothing}},
+    {"veto_mask_filename",            kNever,                                  {kFiles, Needs::Nothing}},
+    {"z_min",                         kNever,                                  {Pipeline, Needs::Nothing}},
+    {"z_max",                         kNever,                                  {Pipeline, Needs::Nothing}},
+    {"displacement_file",             {Any, Needs::Nothing},                   {Any, Needs::Nothing}},
+    {"displacement_mean_file",        {Any, Needs::Nothing},                   {Any, Needs::Nothing}},
+    {"divergence_input_file",         {Any, Needs::Nothing},                   kNever},
+    {"divergence_file",               {Complete | Mean, Needs::Nothing},       {Complete | Mean, Needs::Nothing}},
+    {"Omega_matter",                  {Pipeline, Needs::PerformRecons},        {Pipeline, Needs::Nothing}},
+    {"little_h",                      {Pipeline, Needs::PerformRecons},        {Pipeline, Needs::Nothing}},
+    {"w0",                            {Pipeline, Needs::PerformRecons},        {Pipeline, Needs::Nothing}},
+    {"wa",                            {Pipeline, Needs::PerformRecons},        {Pipeline, Needs::Nothing}},
+    {"Nrec",                          {Pipeline, Needs::Nothing},              {Pipeline, Needs::Nothing}},
+    {"threshold",                     {Pipeline, Needs::Nothing},              {Pipeline, Needs::Nothing}},
+    {"seed",                          {Pipeline, Needs::Nothing},              {Pipeline, Needs::Nothing}},
+    {"mesh_cellsize",                 {Pipeline, Needs::Nothing},              {Pipeline, Needs::Nothing}},
+    {"bins",                          kNever,                                  {Pipeline, Needs::Nothing}},
+    {"reject_mask_crossings",         kNever,                                  {Pipeline, Needs::Nothing}},
+    {"max_unobserved_pixels_crossed", kNever,                                  {Pipeline, Needs::RejectCrossings}},
+    {"box_min",                       {Pipeline, Needs::Nothing},              kNever},
+    {"box_max",                       {Pipeline, Needs::Nothing},              kNever},
+    {"mps",                           {Pipeline, Needs::Nothing},              kNever},
+    {"sigma",                         {Any, Needs::Nothing},                   {Any, Needs::Nothing}},
+    {"sigma_unit",                    {Any, Needs::Nothing},                   {Any, Needs::Nothing}},
+    {"cell_size",                     {kFiles, Needs::NoDivergenceFile},       {kFiles, Needs::NoDivergenceFile}},
+    {"perform_recons",                {Pipeline, Needs::Nothing},              {Pipeline, Needs::Nothing}},
+    {"save_zspace_voids",             {Pipeline, Needs::PerformRecons},        {Pipeline, Needs::PerformRecons}},
+    {"rsd_smoothing_scale",           {Pipeline, Needs::PerformRecons},        {Pipeline, Needs::PerformRecons}},
+    {"rsd_weight_by_realizations",    {Pipeline, Needs::PerformRecons},        {Pipeline, Needs::PerformRecons}},
+    {"redshift",                      {Pipeline, Needs::PerformRecons},        kNever},
+    {"bias",                          {Pipeline, Needs::PerformRecons},        kNever},
+    {"los_axis",                      {Pipeline, Needs::PerformRecons},        kNever},
+    {"bias_file",                     kNever,                                  {Pipeline, Needs::PerformRecons}},
+    {"output_dir",                    {Any, Needs::Nothing},                   {Any, Needs::Nothing}},
+    {"output_file",                   {Any, Needs::Nothing},                   {Any, Needs::Nothing}},
+    {"output_format",                 {Any, Needs::Nothing},                   {Any, Needs::Nothing}},
+    {"printDisplMean",                {Pipeline, Needs::Nothing},              {Pipeline, Needs::Nothing}},
+    {"printDisplComplete",            {Pipeline, Needs::Nothing},              {Pipeline, Needs::Nothing}},
+    {"printMps",                      kNever,                                  {Pipeline, Needs::Nothing}},
+    {"printDiv",                      {Any, Needs::Nothing},                   {Any, Needs::Nothing}},
+    {"printGal",                      {Any, Needs::Nothing},                   {Any, Needs::Nothing}},
+    {"printOverdense",                {Any, Needs::Nothing},                   {Any, Needs::Nothing}},
+    {"printRecCat",                   {Pipeline, Needs::PerformRecons},        {Pipeline, Needs::PerformRecons}},
   };
 
   /// The keys that choose the kind of a run; at most one is given.
@@ -146,11 +155,14 @@ namespace {
 
   /// The switches that decide which keys apply, read before the others.
   struct Switches {
+    bool lightcone = false;
     Kind kind = Pipeline;
     std::string inputKey;
     bool performRecons = false;
     bool randomFile = false;
     bool divergenceFile = false;
+    bool rejectCrossings = false;
+    bitvf::SecondPassRandoms secondPass = bitvf::SecondPassRandoms::Resample;
   };
 
   const Key* find_key (const std::string& name)
@@ -160,18 +172,19 @@ namespace {
     return nullptr;
   }
 
-  /// Why a key does not apply to a box run, or empty when it does. The
-  /// first reason that holds: the geometry, the kind of run, a divergence
-  /// file, a switch off.
-  std::string box_rule (const std::string& name, const Switches& run)
+  /// Why a key does not apply to the run, or empty when it does. The first
+  /// reason that holds: the geometry, the kind of run, a divergence file,
+  /// a switch off.
+  std::string key_rule (const std::string& name, const Switches& run)
   {
     const Key* key = find_key(name);
     if (key == nullptr) return "unknown key";
-    if (key->kinds == 0) return "does not apply to a box";
-    if ((key->kinds & run.kind) == 0)
+    const Rule& rule = run.lightcone ? key->lightcone : key->box;
+    if (rule.kinds == 0) return run.lightcone ? "does not apply to a lightcone" : "does not apply to a box";
+    if ((rule.kinds & run.kind) == 0)
       return run.kind == Pipeline ? "does not apply to a run without displacement_file or displacement_mean_file"
                                   : "does not apply to a run with " + run.inputKey;
-    switch (key->needs) {
+    switch (rule.needs) {
       case Needs::Nothing:
         break;
       case Needs::PerformRecons:
@@ -183,16 +196,14 @@ namespace {
       case Needs::NoDivergenceFile:
         if (run.divergenceFile) return "does not apply to a run with divergence_file";
         break;
+      case Needs::RejectCrossings:
+        if (!run.rejectCrossings) return "does not apply to a run without reject_mask_crossings";
+        break;
+      case Needs::ExternalRandoms:
+        if (!run.performRecons) return "does not apply to a run without perform_recons";
+        if (run.secondPass != bitvf::SecondPassRandoms::External) return "does not apply to a run without random_recons_mode = external";
+        break;
     }
-    return "";
-  }
-
-  /// Why a key does not apply to a lightcone run, or empty when it does.
-  std::string lightcone_rule (const std::string& name)
-  {
-    const Key* key = find_key(name);
-    if (key == nullptr) return "unknown key";
-    if (key->boxOnly) return "does not apply to a lightcone";
     return "";
   }
 
@@ -215,12 +226,16 @@ namespace {
     char comment = '#';
     std::optional<std::string> divergenceFile;
 
+    bool degrees = true;
+    std::string maskFile, biasFile, secondRandomFile;
+
     double omegaM = 0., h = 0., w0 = -1., wa = 0.;
 
     bitvf::BoxConfig config;
+    bitvf::LightconeConfig lightConfig;
 
     std::string outputDir, outputName, extension;
-    bool printMean = false, printComplete = false, printDiv = false;
+    bool printMean = false, printComplete = false, printDiv = false, printMps = false;
     bool printGal = false, printOverdense = false, printCatalog = false;
   };
 
@@ -233,6 +248,7 @@ namespace {
     const Kind kind = switches.kind;
     const bool pipeline = kind == Pipeline;
     const bool recons = switches.performRecons;
+    const bool lightcone = switches.lightcone;
 
     Run run;
     run.switches = switches;
@@ -248,18 +264,36 @@ namespace {
             p.fail("id_column", *run.idColumn + " is also a column of column_tracer, at line " +
                    p.line("column_tracer"));
     }
-    if (pipeline) {
+    if (lightcone) {
+      run.randomFile = f.get<std::string>("random_file");
+      run.randomColumns = p.three<std::string>("column_random");
+      run.degrees = p.word("units", {"degrees", "radians"}) == "degrees";
+      if (switches.secondPass == bitvf::SecondPassRandoms::External)
+        run.secondRandomFile = f.get<std::string>("random_file_recons");
+    }
+    else if (pipeline) {
       run.randomFile = p.optional<std::string>("random_file");
       if (run.randomFile) run.randomColumns = p.three<std::string>("column_random");
     }
-    if (pipeline || kind == Divergence) {
+    if (pipeline || kind == Divergence || lightcone) {
       run.delimiter = f.get<char>("delimiter", run.delimiter);
       run.comment = f.get<char>("comment", run.comment);
+    }
+    if (lightcone) run.maskFile = f.get<std::string>("veto_mask_filename");
+    if (lightcone && pipeline) {
+      otswap::RedshiftCut& cut = run.lightConfig.cut;
+      const std::optional<double> lower = p.optional<double>("z_min");
+      const std::optional<double> upper = p.optional<double>("z_max");
+      if (lower) cut.min = *lower;
+      if (upper) cut.max = *upper;
+      if (lower && upper && *upper < *lower)
+        p.fail("z_max", p.written("z_max") + " is below z_min, " + p.written("z_min") + ", at line " +
+               p.line("z_min"));
     }
     if (!pipeline) run.inputFile = f.get<std::string>(switches.inputKey);
     if (kind == Complete || kind == Mean) run.divergenceFile = p.optional<std::string>("divergence_file");
 
-    if (recons) {
+    if (pipeline && (lightcone || recons)) {
       run.omegaM = f.get<double>("Omega_matter");
       p.require("Omega_matter", run.omegaM > 0. && run.omegaM <= 1., "in (0, 1]");
       run.h = f.get<double>("little_h");
@@ -269,15 +303,26 @@ namespace {
     }
 
     bitvf::BoxConfig& c = run.config;
+    bitvf::LightconeConfig& lc = run.lightConfig;
+    otswap::Config& ot = lightcone ? lc.ot : c.ot;
     if (pipeline) {
-      c.ot.nRealizations = f.get<unsigned>("Nrec", c.ot.nRealizations);
-      p.require("Nrec", c.ot.nRealizations >= 1, "at least 1");
-      c.ot.convergence = f.get<double>("threshold", c.ot.convergence);
-      p.require("threshold", c.ot.convergence > 0. && c.ot.convergence < 1., "strictly between 0 and 1");
-      c.ot.seed = f.get<unsigned>("seed", c.ot.seed);
-      c.ot.cellSize = f.get<double>("mesh_cellsize", c.ot.cellSize);
-      p.require("mesh_cellsize", c.ot.cellSize > 0., "positive");
-
+      ot.nRealizations = f.get<unsigned>("Nrec", ot.nRealizations);
+      p.require("Nrec", ot.nRealizations >= 1, "at least 1");
+      ot.convergence = f.get<double>("threshold", ot.convergence);
+      p.require("threshold", ot.convergence > 0. && ot.convergence < 1., "strictly between 0 and 1");
+      ot.seed = f.get<unsigned>("seed", ot.seed);
+      ot.cellSize = f.get<double>("mesh_cellsize", ot.cellSize);
+      p.require("mesh_cellsize", ot.cellSize > 0., "positive");
+    }
+    if (pipeline && lightcone) {
+      lc.nBins = f.get<unsigned>("bins");
+      p.require("bins", lc.nBins >= 1, "at least 1");
+      ot.rejectCrossings = switches.rejectCrossings;
+      if (ot.rejectCrossings)
+        ot.maxUnobservedPixelsCrossed = f.get<unsigned>("max_unobserved_pixels_crossed",
+                                                        ot.maxUnobservedPixelsCrossed);
+    }
+    if (pipeline && !lightcone) {
       const std::vector<double> lower = p.optional_three("box_min");
       const std::vector<double> upper = p.optional_three("box_max");
       if (lower.empty() != upper.empty()) {
@@ -306,7 +351,7 @@ namespace {
       if (c.mps) p.require("mps", *c.mps > 0., "positive");
     }
 
-    bitvf::Config& v = c.voids;
+    bitvf::Config& v = lightcone ? lc.voids : c.voids;
     v.smoothing.sigma = f.get<double>("sigma", v.smoothing.sigma);
     p.require("sigma", v.smoothing.sigma >= 0., "non-negative");
     if (f.has("sigma_unit"))
@@ -317,7 +362,19 @@ namespace {
       if (v.divergenceCellSize) p.require("cell_size", *v.divergenceCellSize > 0., "positive");
     }
 
-    if (recons) {
+    if (recons && lightcone) {
+      bitvf::LightconeRsd rsd;
+      rsd.zspaceVoids = f.get<bool>("save_zspace_voids", rsd.zspaceVoids);
+      rsd.sigma = f.get<double>("rsd_smoothing_scale");
+      p.require("rsd_smoothing_scale", rsd.sigma >= 0., "non-negative");
+      rsd.correction.weightByRealizations = f.get<bool>("rsd_weight_by_realizations",
+                                                        rsd.correction.weightByRealizations);
+      run.biasFile = f.get<std::string>("bias_file");
+      rsd.correction.verbosity = run.verbosity;
+      rsd.secondPassRandoms = switches.secondPass;
+      lc.rsd = rsd;
+    }
+    else if (recons) {
       bitvf::BoxRsd rsd;
       rsd.zspaceVoids = f.get<bool>("save_zspace_voids", rsd.zspaceVoids);
       rsd.sigma = f.get<double>("rsd_smoothing_scale");
@@ -342,17 +399,20 @@ namespace {
     if (pipeline) {
       run.printMean = f.get<bool>("printDisplMean", false);
       run.printComplete = f.get<bool>("printDisplComplete", false);
+      if (lightcone) run.printMps = f.get<bool>("printMps", false);
     }
     run.printDiv = f.get<bool>("printDiv", false);
     run.printGal = f.get<bool>("printGal", false);
     run.printOverdense = f.get<bool>("printOverdense", false);
     if (recons) run.printCatalog = f.get<bool>("printRecCat", false);
 
-    c.ot.verbosity = run.verbosity;
+    ot.verbosity = run.verbosity;
     v.verbosity = run.verbosity;
     v.keepDivergence = run.printDiv;
     v.keepAssignment = run.printGal;
-    c.keepReconstructions = run.printMean || run.printComplete || run.printCatalog;
+    const bool keep = run.printMean || run.printComplete || run.printCatalog || run.printMps;
+    c.keepReconstructions = keep;
+    lc.keepReconstructions = keep;
 
     return run;
   }
@@ -378,6 +438,16 @@ namespace {
       }).values;
   }
 
+  /// A sky catalogue of the run, in radians; the columns of the randoms.
+  std::vector<double> read_sky (const Run& run, const std::string& file)
+  {
+    std::vector<double> sky = app::call_otswap([&] {
+      return otswap::io::read(file, run.randomColumns, run.delimiter, run.comment);
+    }).values;
+    if (run.degrees) sky = app::call_otswap([&] { return otswap::skyToRadians(std::move(sky)); });
+    return sky;
+  }
+
   /// One run from a parameter file. Every key that applies is read before
   /// the data; one key left after the reads is a bug here, reported as an
   /// unknown key. The files are written after the run, the otswap files
@@ -387,22 +457,19 @@ namespace {
     const otswap::io::ParameterFile parameters(file);
     const app::Parameters p(parameters, file);
 
-    if (p.word("geometry", {"box", "lightcone"}) == "lightcone") {
-      if (app::report_errors(kProgram, app::irrelevant_keys(parameters, file, lightcone_rule))) return 1;
-      p.fail("geometry", "lightcone runs are not implemented yet");
-    }
-
     Switches switches;
+    switches.lightcone = p.word("geometry", {"box", "lightcone"}) == "lightcone";
     std::vector<std::string> given;
     for (const char* key : kInputKeys)
-      if (parameters.has(key)) given.push_back(key);
+      if (parameters.has(key) && !(switches.lightcone && std::string(key) == "divergence_input_file"))
+        given.push_back(key);
     std::sort(given.begin(), given.end(), [&parameters] (const std::string& a, const std::string& b) {
       return parameters.line(a) < parameters.line(b);
     });
     if (given.size() > 1)
       p.fail(given[1], "cannot be given with " + given[0] + ", at line " + p.line(given[0]) +
-             "; a run reads one of displacement_file, displacement_mean_file and divergence_input_file, "
-             "or none for a pipeline run");
+             "; a run reads one of displacement_file, displacement_mean_file" +
+             (switches.lightcone ? "" : " and divergence_input_file") + ", or none for a pipeline run");
     if (!given.empty()) {
       switches.inputKey = given[0];
       switches.kind = given[0] == "displacement_file" ? Complete : given[0] == "displacement_mean_file" ? Mean
@@ -410,14 +477,24 @@ namespace {
     }
     if (switches.kind == Pipeline) {
       switches.performRecons = parameters.get<bool>("perform_recons", false);
-      switches.randomFile = parameters.has("random_file") &&
-                            !parameters.get<std::vector<std::string>>("random_file").empty();
+      if (switches.lightcone) {
+        switches.rejectCrossings = parameters.get<bool>("reject_mask_crossings", otswap::Config{}.rejectCrossings);
+        if (switches.performRecons) {
+          const std::string mode = p.word("random_recons_mode", {"none", "resample", "external"}, "resample");
+          switches.secondPass = mode == "none" ? bitvf::SecondPassRandoms::None
+                              : mode == "resample" ? bitvf::SecondPassRandoms::Resample
+                                                   : bitvf::SecondPassRandoms::External;
+        }
+      }
+      else
+        switches.randomFile = parameters.has("random_file") &&
+                              !parameters.get<std::vector<std::string>>("random_file").empty();
     }
     if ((switches.kind == Complete || switches.kind == Mean) && parameters.has("divergence_file"))
       switches.divergenceFile = !parameters.get<std::vector<std::string>>("divergence_file").empty();
 
     if (app::report_errors(kProgram, app::irrelevant_keys(parameters, file, [&switches] (const std::string& key) {
-      return box_rule(key, switches);
+      return key_rule(key, switches);
     })))
       return 1;
 
@@ -426,12 +503,14 @@ namespace {
 
     app::create_directory(p, run.outputDir);
 
+    const bool lightcone = switches.lightcone;
     const bool report = run.verbosity != otswap::Verbosity::Silent;
     auto wrote = [report] (const std::string& written) {
       if (report) std::clog << kProgram << ": wrote " << written << std::endl;
     };
-    auto otswap_path = [&run] (const std::string& prefix) {
-      return (std::filesystem::path(run.outputDir) / (prefix + run.outputName + "." + run.extension)).string();
+    auto otswap_path = [&run] (const std::string& prefix, const std::string& inserted = "") {
+      return (std::filesystem::path(run.outputDir) / (prefix + run.outputName + inserted + "." + run.extension))
+        .string();
     };
     auto write_search = [&] (const bitvf::Result& result, const bool zspace) {
       const std::string name = run.outputName + "." + run.extension;
@@ -447,6 +526,7 @@ namespace {
         path = bitvf::io::fileName(bitvf::io::Product::Divergence, run.outputDir, name, zspace);
         bitvf::io::writeDivergence(path, result);
         wrote(path);
+        if (lightcone && run.extension == "dat") wrote(path.substr(0, path.size() - 4) + ".mps.dat");
       }
       if (run.printGal) {
         path = bitvf::io::fileName(bitvf::io::Product::Galaxies, run.outputDir, name, zspace);
@@ -454,42 +534,75 @@ namespace {
         wrote(path);
       }
     };
+    auto wrote_twins = [&] (const std::string& prefix) {
+      if (lightcone && run.extension == "dat") {
+        wrote(otswap_path(prefix, ".mps"));
+        wrote(otswap_path(prefix, ".distances"));
+      }
+    };
     auto write_reconstruction = [&] (const otswap::Result& result, const std::string& zspace) {
       if (run.printMean) {
         const std::string path = otswap_path("displacement_mean_" + zspace);
         app::call_otswap([&] { otswap::io::writeDisplacementMean(path, result); });
         wrote(path);
+        wrote_twins("displacement_mean_" + zspace);
       }
       if (run.printComplete) {
         const std::string path = otswap_path("displacement_complete_" + zspace);
         app::call_otswap([&] { otswap::io::writeDisplacementComplete(path, result, true); });
         wrote(path);
+        wrote_twins("displacement_complete_" + zspace);
+      }
+      if (run.printMps && !run.printMean && !run.printComplete) {
+        const std::string path = otswap_path("MPS_" + zspace);
+        app::call_otswap([&] { otswap::io::writeMpsProfile(path, result.mpsProfile); });
+        wrote(path);
       }
     };
 
     std::optional<bitvf::DivergenceGrid> grid;
-    const bitvf::Config& config = run.config.voids;
+    const bitvf::Config& config = lightcone ? run.lightConfig.voids : run.config.voids;
 
     switch (run.switches.kind) {
       case Pipeline: {
         std::vector<double> tracers, randoms;
         std::vector<std::int64_t> ids;
         read_tracers(run, tracers, ids);
+        if (lightcone && run.degrees)
+          tracers = app::call_otswap([&] { return otswap::skyToRadians(std::move(tracers)); });
         if (run.randomFile)
-          randoms = app::call_otswap([&] {
-            return otswap::io::read(*run.randomFile, run.randomColumns, run.delimiter, run.comment);
-          }).values;
+          randoms = lightcone ? read_sky(run, *run.randomFile)
+                              : app::call_otswap([&] {
+                                  return otswap::io::read(*run.randomFile, run.randomColumns, run.delimiter,
+                                                          run.comment);
+                                }).values;
 
         bitvf::BitVFResult result;
-        if (run.switches.performRecons) {
+        if (lightcone) {
+          const otswap::Mask mask = app::call_otswap([&] { return otswap::Mask(run.maskFile); });
+          const otswap::DistanceTable distances = app::call_otswap([&] {
+            return otswap::DistanceTable(run.omegaM, run.h, run.w0, run.wa);
+          });
+          bitvf::LightconeConfig lc = run.lightConfig;
+          std::vector<double> second;
+          if (lc.rsd) {
+            lc.rsd->bias = app::call_otswap([&] {
+              return otswap::io::readBiasTable(run.biasFile, run.delimiter, run.comment);
+            });
+            if (switches.secondPass == bitvf::SecondPassRandoms::External)
+              second = read_sky(run, run.secondRandomFile);
+          }
+          result = bitvf::runLightcone(tracers, randoms, mask, distances, lc, second, ids);
+        }
+        else if (run.switches.performRecons) {
           const otswap::DistanceTable distances = app::call_otswap([&] {
             return otswap::DistanceTable(run.omegaM, run.h, run.w0, run.wa);
           });
           result = bitvf::runBox(tracers, randoms, distances, run.config, ids);
-          if (result.zspaceReconstruction) write_reconstruction(*result.zspaceReconstruction, "zspace_");
         }
         else
           result = bitvf::runBox(tracers, randoms, run.config, ids);
+        if (result.zspaceReconstruction) write_reconstruction(*result.zspaceReconstruction, "zspace_");
         if (result.reconstruction) write_reconstruction(*result.reconstruction, "");
         if (run.printCatalog) {
           const std::string path = otswap_path("reconstructed_catalogue_");
@@ -500,24 +613,25 @@ namespace {
         write_search(result.voids, false);
         break;
       }
-      case Complete: {
-        const otswap::Result reconstruction = app::call_otswap([&] {
-          return otswap::io::readDisplacementComplete(run.inputFile);
-        });
-        if (run.divergenceFile) grid = bitvf::io::readDivergence(*run.divergenceFile);
-        write_search(bitvf::findVoidsBox(reconstruction, config, grid ? &*grid : nullptr), false);
-        break;
-      }
+      case Complete:
       case Mean: {
-        const otswap::Result mean = app::call_otswap([&] {
-          return otswap::io::readDisplacementMean(run.inputFile);
+        const bool mean = run.switches.kind == Mean;
+        const otswap::Result reconstruction = app::call_otswap([&] {
+          return mean ? otswap::io::readDisplacementMean(run.inputFile)
+                      : otswap::io::readDisplacementComplete(run.inputFile);
         });
-        if (mean.geometry == otswap::Geometry::Box && !mean.box)
+        if (mean && reconstruction.geometry == otswap::Geometry::Box && !reconstruction.box)
           throw bitvf::Error(run.inputFile + ": the file holds no box limits; write it with otswap 0.3 or later");
         if (run.divergenceFile) grid = bitvf::io::readDivergence(*run.divergenceFile);
         bitvf::Config c = config;
-        c.nRealizationsMean = mean.nRealizationsMean;
-        write_search(bitvf::findVoidsBox(mean, c, grid ? &*grid : nullptr), false);
+        if (mean) c.nRealizationsMean = reconstruction.nRealizationsMean;
+        if (lightcone) {
+          const otswap::Mask mask = app::call_otswap([&] { return otswap::Mask(run.maskFile); });
+          write_search(bitvf::findVoidsLightcone(reconstruction, read_sky(run, *run.randomFile), mask, c,
+                                                 grid ? &*grid : nullptr), false);
+        }
+        else
+          write_search(bitvf::findVoidsBox(reconstruction, c, grid ? &*grid : nullptr), false);
         break;
       }
       case Divergence: {

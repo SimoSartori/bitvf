@@ -126,10 +126,24 @@ redshift-space positions; the other keys apply only then.
 | `printGal` | the galaxies file | `false` | o | o | o | o |
 | `printOverdense` | the overdense basins file | `false` | o | o | o | o |
 
-The keys of a lightcone run (`units`, `random_recons_mode`,
-`random_file_recons`, `veto_mask_filename`, `z_min`, `z_max`, `bins`,
-`reject_mask_crossings`, `max_unobserved_pixels_crossed`, `bias_file`,
-`printMps`) are refused in a box run, as "does not apply to a box".
+A lightcone run takes `units` (`degrees` or `radians`, of the tracer and
+random files), `random_file` (required: the randoms describe the survey),
+`veto_mask_filename` (the HEALPix mask, required), `z_min` and `z_max` (the
+closed redshift cut, either optional), `bins` (the redshift bins of the
+mps(z) profile, required), `reject_mask_crossings`,
+`max_unobserved_pixels_crossed`, `Omega_matter` and `little_h` (required),
+and, with `perform_recons`, `bias_file` (the bias table), `random_recons_mode`
+(`none`, `resample`, the default, or `external`) and `random_file_recons`
+(the randoms of the second reconstruction, with `external`). `printMps`
+writes the mps(z) profile of each reconstruction, `MPS_zspace_<name>` for the
+first and `MPS_<name>` for the one the voids were found on, unless a
+displacement file of the run holds it. A lightcone run on `displacement_file`
+or `displacement_mean_file` still needs `random_file`, `column_random`,
+`units` and `veto_mask_filename`; the file holds the cut, the cosmology and
+the profile, so `z_min`, `z_max` and the keys of the reconstruction are
+refused. `divergence_input_file`, `box_min`, `box_max`, `mps`, `redshift`,
+`bias` and `los_axis` are refused in a lightcone, and the keys above in a
+box, as "does not apply to a lightcone" and "does not apply to a box".
 `max_unobserved_pixels_crossed` is the longest run of unobserved pixels
 that a displacement may cross in a row; a displacement crossing a longer run
 is rejected.

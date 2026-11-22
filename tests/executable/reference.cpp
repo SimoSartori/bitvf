@@ -51,7 +51,7 @@ namespace {
 
   std::string path (const std::string& kind, const std::string& prefix, const std::string& extension)
   {
-    return g_out + "/" + kind + "/" + prefix + "box." + extension;
+    return g_out + "/" + kind + "/" + prefix + (kind.compare(0, 2, "lc") == 0 ? "lightcone." : "box.") + extension;
   }
 
   void write_search (const std::string& kind, const bitvf::Result& r, const std::string& extension,
@@ -83,7 +83,8 @@ int main (int argc, char** argv)
   }
   const std::string data = argv[1];
   g_out = argv[2];
-  for (const char* kind : {"pipeline", "rsd", "complete", "mean", "meanmulti", "meanold", "divergence", "field"})
+  for (const char* kind : {"pipeline", "rsd", "complete", "mean", "meanmulti", "meanold", "divergence", "field",
+                           "lcpipeline", "lcrsd", "lccomplete", "lcmean", "lcexternal"})
     std::filesystem::create_directories(g_out + "/" + kind);
 
   try {
@@ -189,6 +190,96 @@ int main (int argc, char** argv)
       bitvf::Config c = search_config();
       c.smoothing.sigma = 2.;
       write_search("divergence", bitvf::findVoidsBoxFromDivergence(grid, table.values, c, table.integers), "dat");
+    }
+
+    // lcpipeline.ini: a lightcone with IDs, the redshift cut and every
+    // output, FITS.
+    const otswap::io::Table skyTracers = otswap::io::read(data + "/lightcone_tracers.dat", {"ra", "dec", "z"}, {"id"});
+    const std::vector<double> sky = otswap::skyToRadians(skyTracers.values);
+    const std::vector<double> skyRandoms =
+      otswap::skyToRadians(otswap::io::read(data + "/lightcone_randoms.dat", {"ra", "dec", "z"}).values);
+    const otswap::Mask mask(data + "/lightcone_mask.fits");
+    const otswap::DistanceTable lightDistances(0.3, 0.7, -1., 0.);
+    auto lightcone_config = [] (const unsigned seed) {
+      bitvf::LightconeConfig c;
+      c.ot.nRealizations = 2;
+      c.ot.seed = seed;
+      c.ot.verbosity = otswap::Verbosity::Silent;
+      c.nBins = 1;
+      c.cut = {0.26, 0.39};
+      c.voids = search_config();
+      c.voids.divergenceCellSize = 0.5;
+      c.keepReconstructions = true;
+      return c;
+    };
+    {
+      const bitvf::BitVFResult r =
+        bitvf::runLightcone(sky, skyRandoms, mask, lightDistances, lightcone_config(5), {}, skyTracers.integers);
+      otswap::io::writeDisplacementMean(path("lcpipeline", "displacement_mean_", "fits"), *r.reconstruction);
+      otswap::io::writeDisplacementComplete(path("lcpipeline", "displacement_complete_", "fits"),
+                                            *r.reconstruction, true);
+      write_search("lcpipeline", r.voids, "fits");
+    }
+
+    // lcrsd.ini: the correction with resampled randoms, the redshift-space
+    // voids, the corrected catalogue and the profiles, ASCII; verbosity
+    // normal, which otswap's files record.
+    {
+      bitvf::LightconeConfig c = lightcone_config(9);
+      c.ot.verbosity = otswap::Verbosity::Normal;
+      c.ot.log = nullptr;
+      c.voids.verbosity = otswap::Verbosity::Normal;
+      c.voids.log = nullptr;
+      bitvf::LightconeRsd rsd;
+      rsd.bias = otswap::io::readBiasTable(data + "/lightcone_bias.dat");
+      rsd.sigma = 20.;
+      rsd.zspaceVoids = true;
+      rsd.correction.log = nullptr;
+      c.rsd = rsd;
+      const bitvf::BitVFResult r = bitvf::runLightcone(sky, skyRandoms, mask, lightDistances, c);
+      otswap::io::writeMpsProfile(path("lcrsd", "MPS_zspace_", "dat"), r.zspaceReconstruction->mpsProfile);
+      otswap::io::writeMpsProfile(path("lcrsd", "MPS_", "dat"), r.reconstruction->mpsProfile);
+      otswap::io::writeRealSpaceCatalog(path("lcrsd", "reconstructed_catalogue_", "dat"), *r.realSpace);
+      write_search("lcrsd", *r.zspaceVoids, "dat", true);
+      write_search("lcrsd", r.voids, "dat");
+    }
+
+    // lcexternal.ini: the correction with the randoms of the second
+    // reconstruction given, ASCII.
+    {
+      bitvf::LightconeConfig c = lightcone_config(3);
+      c.keepReconstructions = false;
+      bitvf::LightconeRsd rsd;
+      rsd.correction.verbosity = otswap::Verbosity::Silent;
+      rsd.bias = otswap::io::readBiasTable(data + "/lightcone_bias.dat");
+      rsd.sigma = 20.;
+      rsd.secondPassRandoms = bitvf::SecondPassRandoms::External;
+      c.rsd = rsd;
+      const bitvf::BitVFResult r = bitvf::runLightcone(sky, skyRandoms, mask, lightDistances, c, skyRandoms);
+      write_search("lcexternal", r.voids, "dat");
+    }
+
+    // lccomplete.ini: lcpipeline's complete file on lcpipeline's grid,
+    // sigma 0.5, ASCII.
+    {
+      const otswap::Result reconstruction =
+        otswap::io::readDisplacementComplete(path("lcpipeline", "displacement_complete_", "fits"));
+      const bitvf::DivergenceGrid grid = bitvf::io::readDivergence(path("lcpipeline", "divergence_", "fits"));
+      bitvf::Config c = search_config();
+      c.smoothing.sigma = 0.5;
+      write_search("lccomplete", bitvf::findVoidsLightcone(reconstruction, skyRandoms, mask, c, &grid), "dat");
+    }
+
+    // lcmean.ini: lcpipeline's mean file, cell 0.8 mps, sigma 3 in
+    // coordinate units, FITS.
+    {
+      const otswap::Result m = otswap::io::readDisplacementMean(path("lcpipeline", "displacement_mean_", "fits"));
+      bitvf::Config c = search_config();
+      c.divergenceCellSize = 0.8;
+      c.smoothing.sigma = 3.;
+      c.smoothing.unit = bitvf::LengthUnit::Coordinate;
+      c.nRealizationsMean = m.nRealizationsMean;
+      write_search("lcmean", bitvf::findVoidsLightcone(m, skyRandoms, mask, c), "fits");
     }
 
     // field.ini: field.dat with its weights, sigma 1 in coordinate units,
