@@ -263,6 +263,21 @@ if (BITVF_BUILD_TESTS)
     target_compile_options(python_reference PRIVATE -Wall -Wextra)
   endif()
 
+  # The two lightcone examples, built from their sources against this tree
+  # (each folder is also a project of its own) and run on the examples' data,
+  # writing to the build directory.
+  foreach (example lightcone full_recons_lightcone)
+    add_executable(example_${example} examples/${example}/${example}.cpp)
+    target_link_libraries(example_${example} PRIVATE bitvf)
+    target_compile_definitions(example_${example} PRIVATE
+      BITVF_EXAMPLES_DATA="${CMAKE_CURRENT_SOURCE_DIR}/examples/data"
+      BITVF_EXAMPLE_OUTPUT="${CMAKE_CURRENT_BINARY_DIR}/examples/${example}")
+    if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+      target_compile_options(example_${example} PRIVATE -Wall -Wextra)
+    endif()
+    add_test(NAME example_${example} COMMAND example_${example})
+  endforeach()
+
   # The executables: one test per parameter file of tests/executable/cases,
   # run by run_case.cmake in a fresh directory of its own, which checks
   # what the file's "#!" lines expect. executable_reference first writes,
