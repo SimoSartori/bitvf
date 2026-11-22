@@ -428,6 +428,123 @@ namespace {
   }
 
   // ==========================================================================
+  // Angle units
+  // ==========================================================================
+
+  constexpr double kDegToRad = 3.14159265358979323846 / 180.;
+  constexpr double kRadToDeg = 180. / 3.14159265358979323846;
+
+  /// Right ascension and declination of a flat sky array, from degrees to
+  /// radians; redshifts are left alone. A finite declination outside
+  /// [-90, 90] is refused first, in degrees.
+  std::vector<double> sky_rows (nb::handle value, const std::string& name, const bool degrees)
+  {
+    std::vector<double> sky = rows3(value, name);
+    if (!degrees) return sky;
+    for (std::size_t i = 0; i + 2 < sky.size(); i += 3)
+      if (std::isfinite(sky[i+1]) && std::fabs(sky[i+1]) > 90.)
+        throw bitvf::Error(name + " holds a declination of " + std::to_string(sky[i+1]) + " degrees at object " +
+                           std::to_string(i / 3) + " (from 0), outside [-90, 90]");
+    for (std::size_t i = 0; i + 2 < sky.size(); i += 3) {
+      sky[i] *= kDegToRad;
+      sky[i+1] *= kDegToRad;
+    }
+    return sky;
+  }
+
+  /// The redshift cut from None (no cut), an otswap.RedshiftCut or a
+  /// (min, max) pair. The values are checked by the library.
+  otswap::RedshiftCut to_cut (nb::handle value, const std::string& name)
+  {
+    otswap::RedshiftCut cut;
+    if (value.is_none()) return cut;
+    if (nb::isinstance<otswap::RedshiftCut>(value)) return nb::cast<otswap::RedshiftCut>(value);
+    const std::vector<double> c = column(value, name);
+    if (c.size() != 2)
+      throw bitvf::Error(name + " must be an otswap.RedshiftCut or a (min, max) pair; it holds " +
+                         std::to_string(c.size()) + " values");
+    cut.min = c[0];
+    cut.max = c[1];
+    return cut;
+  }
+
+  /// A new read-only array of the given shape that owns its values.
+  View<double> owned_doubles (std::vector<double>&& values, const std::vector<std::size_t>& shape)
+  {
+    auto* held = new std::vector<double>(std::move(values));
+    nb::capsule owner(held, [] (void* p) noexcept { delete static_cast<std::vector<double>*>(p); });
+    return View<double>(held->data(), shape.size(), shape.data(), owner);
+  }
+
+  /// The weak-keyed table _unit_state, a weakref.WeakKeyDictionary created
+  /// with the module: it maps each lightcone Result, DivergenceGrid,
+  /// BasinCatalog and BitVFResult made by a call to its entry, a dict
+  /// holding "degrees", whether the call took angles in degrees, and the
+  /// read-only degree copies of its angle arrays, made on first access. An
+  /// entry goes with its object, and nothing is stored in the object. An
+  /// object with no entry is in radians. The classes define no __eq__, so
+  /// the table keys on identity.
+  PyObject* unit_state = nullptr;
+
+  nb::object entry_of (nb::handle owner)
+  {
+    return nb::handle(unit_state).attr("get")(owner);
+  }
+
+  void set_entry (nb::handle owner, const bool degrees)
+  {
+    nb::dict entry;
+    entry["degrees"] = degrees;
+    nb::handle(unit_state).attr("__setitem__")(owner, entry);
+  }
+
+  bool degrees_of (nb::handle owner)
+  {
+    const nb::object entry = entry_of(owner);
+    return !entry.is_none() && nb::cast<bool>(entry["degrees"]);
+  }
+
+  /// A part of a tagged object, tagged with the unit of its holder.
+  nb::object part_of (nb::object part, nb::handle holder)
+  {
+    const nb::object entry = entry_of(holder);
+    if (!entry.is_none() && entry_of(part).is_none()) set_entry(part, nb::cast<bool>(entry["degrees"]));
+    return part;
+  }
+
+  /// An angle array of owner in the unit recorded for it: a view in
+  /// radians, or a read-only copy in degrees made once and kept in the
+  /// entry under key. sky: the array is [n][ra, dec, z], converted as
+  /// otswap::skyToDegrees does; otherwise every value is an angle.
+  nb::object angles (nb::handle owner, const std::vector<double>& values, const char* key, const bool sky)
+  {
+    const std::vector<std::size_t> shape = sky ? std::vector<std::size_t>{values.size() / 3, 3}
+                                               : std::vector<std::size_t>{values.size()};
+    const nb::object entry = entry_of(owner);
+    if (values.empty() || entry.is_none() || !nb::cast<bool>(entry["degrees"]))
+      return nb::cast(view<double>(owner, values, shape));
+    nb::object cached = entry.attr("get")(key);
+    if (cached.is_none()) {
+      std::vector<double> converted;
+      if (sky) converted = otswap::skyToDegrees(values);
+      else {
+        converted = values;
+        for (double& v : converted) v *= kRadToDeg;
+      }
+      cached = nb::cast(owned_doubles(std::move(converted), shape));
+      cached.attr("flags").attr("writeable") = false;
+      entry[key] = cached;
+    }
+    return cached;
+  }
+
+  /// One angle of owner in its unit.
+  double angle (nb::handle owner, const double radians)
+  {
+    return degrees_of(owner) ? radians * kRadToDeg : radians;
+  }
+
+  // ==========================================================================
   // Live report
   // ==========================================================================
 
@@ -575,25 +692,41 @@ namespace {
 
   /// A Result as its Python object, config.log reset to &std::clog, so
   /// that the stream of the call never outlives the call.
-  nb::object result_object (bitvf::Result&& r)
+  nb::object result_object (bitvf::Result&& r, const bool degrees = false)
   {
     r.config.log = &std::clog;
-    return nb::cast(std::move(r), nb::rv_policy::move);
+    const bool lightcone = r.geometry == otswap::Geometry::Lightcone;
+    nb::object self = nb::cast(std::move(r), nb::rv_policy::move);
+    if (lightcone) set_entry(self, degrees);
+    return self;
   }
 
-  nb::object pipeline_object (bitvf::BitVFResult&& r)
+  /// A grid made by a call, with the unit of its call.
+  nb::object grid_object (bitvf::DivergenceGrid&& g, const bool degrees)
+  {
+    const bool lightcone = g.geometry == otswap::Geometry::Lightcone;
+    nb::object self = nb::cast(std::move(g), nb::rv_policy::move);
+    if (lightcone) set_entry(self, degrees);
+    return self;
+  }
+
+  nb::object pipeline_object (bitvf::BitVFResult&& r, const bool degrees = false)
   {
     r.voids.config.log = &std::clog;
     if (r.zspaceVoids) r.zspaceVoids->config.log = &std::clog;
     if (r.reconstruction) r.reconstruction->config.log = &std::clog;
     if (r.zspaceReconstruction) r.zspaceReconstruction->config.log = &std::clog;
-    return nb::cast(std::move(r), nb::rv_policy::move);
+    const bool lightcone = r.voids.geometry == otswap::Geometry::Lightcone;
+    nb::object self = nb::cast(std::move(r), nb::rv_policy::move);
+    if (lightcone) set_entry(self, degrees);
+    return self;
   }
 
   using GridHandle = nb::handle_t<bitvf::DivergenceGrid>;
   using CatalogHandle = nb::handle_t<bitvf::BasinCatalog>;
   using AssignmentHandle = nb::handle_t<bitvf::TracerAssignment>;
   using ResultHandle = nb::handle_t<bitvf::Result>;
+  using PipelineHandle = nb::handle_t<bitvf::BitVFResult>;
   using PartitionHandle = nb::handle_t<PartitionObject>;
   using FieldHandle = nb::handle_t<bitvf::io::Field>;
 
@@ -604,6 +737,14 @@ namespace {
     return nb::cast<const bitvf::TracerAssignment&>(self);
   }
   const bitvf::Result& result_of (ResultHandle self) { return nb::cast<const bitvf::Result&>(self); }
+
+  /// The cell counts per-cell arrays are shaped with: those of a box grid;
+  /// none for a lightcone grid, whose per-cell arrays are flat.
+  std::array<std::size_t, 3> axes (const bitvf::DivergenceGrid& g)
+  {
+    if (g.geometry == otswap::Geometry::Box) return g.nCellsAxis;
+    return {0, 0, 0};
+  }
   const PartitionObject& partition_of (PartitionHandle self) { return nb::cast<const PartitionObject&>(self); }
 
   nb::str geometry_name (const otswap::Geometry g)
@@ -668,6 +809,37 @@ namespace {
       same_otswap(a.correction, b.correction) && a.zspaceVoids == b.zspaceVoids;
   }
 
+  std::string cut_repr (const otswap::RedshiftCut& c)
+  {
+    return "RedshiftCut(min=" + repr_of(nb::float_(c.min)) + ", max=" + repr_of(nb::float_(c.max)) + ")";
+  }
+
+  std::string second_pass_name (const bitvf::SecondPassRandoms m)
+  {
+    if (m == bitvf::SecondPassRandoms::None) return "SecondPassRandoms.NONE";
+    if (m == bitvf::SecondPassRandoms::External) return "SecondPassRandoms.EXTERNAL";
+    return "SecondPassRandoms.RESAMPLE";
+  }
+
+  std::string lightcone_rsd_repr (const bitvf::LightconeRsd& r)
+  {
+    return "LightconeRsd(bias=" + repr_of(nb::cast(r.bias)) + ", sigma=" + repr_of(nb::float_(r.sigma)) +
+      ", correction=" + repr_of(nb::cast(r.correction)) + ", second_pass_randoms=" +
+      second_pass_name(r.secondPassRandoms) + ", zspace_voids=" + (r.zspaceVoids ? "True" : "False") + ")";
+  }
+
+  bool same_cut (const otswap::RedshiftCut& a, const otswap::RedshiftCut& b)
+  {
+    return a.min == b.min && a.max == b.max;
+  }
+
+  bool same_lightcone_rsd (const bitvf::LightconeRsd& a, const bitvf::LightconeRsd& b)
+  {
+    return a.bias.redshift == b.bias.redshift && a.bias.bias == b.bias.bias && a.sigma == b.sigma &&
+      same_otswap(a.correction, b.correction) && a.secondPassRandoms == b.secondPassRandoms &&
+      a.zspaceVoids == b.zspaceVoids;
+  }
+
   // ==========================================================================
   // Calls
   // ==========================================================================
@@ -679,6 +851,34 @@ namespace {
     for (std::size_t i = 0; i < names.size(); ++i)
       s += (i == 0 ? "" : i + 1 == names.size() ? " and " : ", ") + names[i];
     return s;
+  }
+
+  /// The displacements of a search of n tracers and their validity flags.
+  struct Displacements {
+    std::vector<double> values;
+    std::vector<std::uint8_t> valid;
+  };
+
+  /// displacement of shape (n_realizations, n, 3); valid, when given, of
+  /// shape (n_realizations, n).
+  Displacements displacements_of (nb::handle displacement, nb::handle valid, const std::size_t n)
+  {
+    const CArray d = as_float64(displacement, "displacement");
+    if (d.ndim() != 3 || d.shape(2) != 3 || d.shape(0) == 0 || d.shape(1) == 0)
+      throw bitvf::Error("displacement must have shape (n_realizations, n_tracers, 3), neither 0; it has "
+                         "shape " + shape_of(d));
+    if (d.shape(1) != n)
+      throw bitvf::Error("displacement must have shape (n_realizations, " + std::to_string(n) + ", 3), " +
+                         std::to_string(n) + " the rows of the tracers; it has shape " + shape_of(d));
+    Displacements out;
+    out.values.assign(d.data(), d.data() + d.size());
+    if (!valid.is_none()) {
+      const CArray v = as_float64(valid, "valid");
+      if (v.size() == 0)
+        throw bitvf::Error("valid is empty; omit it to take every displacement as valid");
+      out.valid = flags(v, "valid", {d.shape(0), n}, "as displacement");
+    }
+    return out;
   }
 
   const bitvf::DivergenceGrid* grid_or_null (nb::handle grid)
@@ -694,6 +894,8 @@ NB_MODULE(_bitvf, m)
   m.doc() = "Compiled part of the bitvf package; import bitvf instead.";
 
   nb::module_::import_("otswap");
+
+  unit_state = nb::module_::import_("weakref").attr("WeakKeyDictionary")().release().ptr();
 
   m.attr("__version__") = bitvf::internal::version;
 
@@ -943,18 +1145,166 @@ NB_MODULE(_bitvf, m)
       }, "other"_a.none())
     .attr("__hash__") = nb::none();
 
+  nb::enum_<bitvf::SecondPassRandoms>(m, "SecondPassRandoms",
+      "The randoms of the second, real-space, reconstruction of run_lightcone.")
+    .value("NONE", bitvf::SecondPassRandoms::None, "The first reconstruction's randoms, unchanged.")
+    .value("RESAMPLE", bitvf::SecondPassRandoms::Resample,
+           "The first reconstruction's randoms, with redshifts drawn from the corrected tracers.")
+    .value("EXTERNAL", bitvf::SecondPassRandoms::External,
+           "Randoms given to run_lightcone for the second reconstruction.");
+
+  auto to_second_pass = [] (nb::handle value) {
+    if (!nb::isinstance<bitvf::SecondPassRandoms>(value))
+      throw bitvf::Error("second_pass_randoms must be a bitvf.SecondPassRandoms; got " + repr_of(value));
+    return nb::cast<bitvf::SecondPassRandoms>(value);
+  };
+
+  const bitvf::LightconeRsd lightconeRsdDefaults;
+
+  nb::class_<bitvf::LightconeRsd>(m, "LightconeRsd",
+      "Correction of redshift-space distortions in a lightcone, as bitvf::LightconeRsd. bias and sigma "
+      "have no default.")
+    .def("__init__",
+        [to_second_pass] (bitvf::LightconeRsd* self, nb::handle bias, nb::handle sigma, nb::handle correction,
+                          nb::handle secondPass, nb::handle zspaceVoids) {
+          bitvf::LightconeRsd r;
+          r.bias = instance<otswap::BiasTable>(bias, "bias", "an otswap.BiasTable");
+          r.sigma = to_double(sigma, "sigma");
+          r.correction = instance<otswap::CorrectionConfig>(correction, "correction",
+                                                            "an otswap.CorrectionConfig");
+          r.secondPassRandoms = to_second_pass(secondPass);
+          r.zspaceVoids = to_bool(zspaceVoids, "zspace_voids");
+          new (self) bitvf::LightconeRsd(r);
+        },
+        nb::kw_only(), "bias"_a.none(), "sigma"_a.none(), "correction"_a.none() = otswap::CorrectionConfig(),
+        "second_pass_randoms"_a.none() = lightconeRsdDefaults.secondPassRandoms,
+        "zspace_voids"_a.none() = false,
+        "bias and sigma required.")
+    .def_prop_rw("bias",
+        [] (bitvf::LightconeRsd& r) -> otswap::BiasTable& { return r.bias; },
+        [] (bitvf::LightconeRsd& r, nb::handle v) {
+          r.bias = instance<otswap::BiasTable>(v, "bias", "an otswap.BiasTable");
+        },
+        nb::for_getter(nb::rv_policy::reference_internal), nb::for_setter(nb::arg("value").none()),
+        "The linear bias of the tracers as a function of redshift, an otswap.BiasTable; positive at the "
+        "redshift of every tracer kept.")
+    .def_prop_rw("sigma",
+        [] (const bitvf::LightconeRsd& r) { return r.sigma; },
+        [] (bitvf::LightconeRsd& r, nb::handle v) { r.sigma = to_double(v, "sigma"); },
+        nb::for_setter(nb::arg("value").none()),
+        "Width of the neighbour average, in coordinate units; 0 for none. For coordinates in Mpc/h, "
+        "10 is a reasonable starting value, to check in each analysis.")
+    .def_prop_rw("correction",
+        [] (bitvf::LightconeRsd& r) -> otswap::CorrectionConfig& { return r.correction; },
+        [] (bitvf::LightconeRsd& r, nb::handle v) {
+          r.correction = instance<otswap::CorrectionConfig>(v, "correction", "an otswap.CorrectionConfig");
+        },
+        nb::for_getter(nb::rv_policy::reference_internal), nb::for_setter(nb::arg("value").none()),
+        "The options of otswap's correction: a reference into this LightconeRsd; assigning one copies it in.")
+    .def_prop_rw("second_pass_randoms",
+        [] (const bitvf::LightconeRsd& r) { return r.secondPassRandoms; },
+        [to_second_pass] (bitvf::LightconeRsd& r, nb::handle v) { r.secondPassRandoms = to_second_pass(v); },
+        nb::for_setter(nb::arg("value").none()), "The randoms of the second reconstruction.")
+    .def_prop_rw("zspace_voids",
+        [] (const bitvf::LightconeRsd& r) { return r.zspaceVoids; },
+        [] (bitvf::LightconeRsd& r, nb::handle v) { r.zspaceVoids = to_bool(v, "zspace_voids"); },
+        nb::for_setter(nb::arg("value").none()), "Also search voids on the redshift-space reconstruction.")
+    .def("__repr__", [] (const bitvf::LightconeRsd& r) { return nb::str(lightcone_rsd_repr(r).c_str()); })
+    .def("__eq__", [] (const bitvf::LightconeRsd& a, nb::handle other) -> nb::object {
+        if (!nb::isinstance<bitvf::LightconeRsd>(other)) return not_implemented();
+        return nb::bool_(same_lightcone_rsd(a, nb::cast<const bitvf::LightconeRsd&>(other)));
+      }, "other"_a.none())
+    .attr("__hash__") = nb::none();
+
+  auto to_lightcone_rsd = [] (nb::handle value) -> std::optional<bitvf::LightconeRsd> {
+    if (value.is_none()) return std::nullopt;
+    return instance<bitvf::LightconeRsd>(value, "rsd", "a bitvf.LightconeRsd or None");
+  };
+
+  nb::class_<bitvf::LightconeConfig>(m, "LightconeConfig",
+      "The parameters of run_lightcone, as bitvf::LightconeConfig. n_bins has no default.")
+    .def("__init__",
+        [to_lightcone_rsd] (bitvf::LightconeConfig* self, nb::handle ot, nb::handle nBins, nb::handle cut,
+                            nb::handle rsd, nb::handle voids, nb::handle keepReconstructions) {
+          bitvf::LightconeConfig c;
+          c.ot = instance<otswap::Config>(ot, "ot", "an otswap.Config");
+          c.nBins = to_unsigned(nBins, "n_bins");
+          c.cut = to_cut(cut, "cut");
+          c.rsd = to_lightcone_rsd(rsd);
+          c.voids = instance<bitvf::Config>(voids, "voids", "a bitvf.Config");
+          c.keepReconstructions = to_bool(keepReconstructions, "keep_reconstructions");
+          new (self) bitvf::LightconeConfig(c);
+        },
+        nb::kw_only(), "ot"_a.none() = otswap::Config(), "n_bins"_a.none(), "cut"_a.none() = nb::none(),
+        "rsd"_a.none() = nb::none(), "voids"_a.none() = bitvf::Config(), "keep_reconstructions"_a.none() = false,
+        "n_bins required; the other fields default as in bitvf::LightconeConfig.")
+    .def_prop_rw("ot",
+        [] (bitvf::LightconeConfig& c) -> otswap::Config& { return c.ot; },
+        [] (bitvf::LightconeConfig& c, nb::handle v) {
+          c.ot = instance<otswap::Config>(v, "ot", "an otswap.Config");
+        },
+        nb::for_getter(nb::rv_policy::reference_internal), nb::for_setter(nb::arg("value").none()),
+        "The reconstruction, for both reconstructions of a run with correction: a reference into this "
+        "LightconeConfig; assigning one copies it in.")
+    .def_prop_rw("n_bins",
+        [] (const bitvf::LightconeConfig& c) { return c.nBins; },
+        [] (bitvf::LightconeConfig& c, nb::handle v) { c.nBins = to_unsigned(v, "n_bins"); },
+        nb::for_setter(nb::arg("value").none()),
+        "The redshift bins of the mps(z) profile of each reconstruction; at least 1. 50 is a reasonable "
+        "starting value.")
+    .def_prop_rw("cut",
+        [] (bitvf::LightconeConfig& c) -> otswap::RedshiftCut& { return c.cut; },
+        [] (bitvf::LightconeConfig& c, nb::handle v) { c.cut = to_cut(v, "cut"); },
+        nb::for_getter(nb::rv_policy::reference_internal), nb::for_setter(nb::arg("value").none()),
+        "The closed range of observed redshift of the run, an otswap.RedshiftCut (a (min, max) pair is "
+        "accepted); None for no cut.")
+    .def_prop_rw("rsd",
+        [] (bitvf::LightconeConfig& c) -> bitvf::LightconeRsd* { return c.rsd ? &*c.rsd : nullptr; },
+        [to_lightcone_rsd] (bitvf::LightconeConfig& c, nb::handle v) { c.rsd = to_lightcone_rsd(v); },
+        nb::for_getter(nb::rv_policy::reference_internal), nb::for_setter(nb::arg("value").none()),
+        "The correction of redshift-space distortions, or None: a reference into this LightconeConfig; "
+        "assigning one copies it in.")
+    .def_prop_rw("voids",
+        [] (bitvf::LightconeConfig& c) -> bitvf::Config& { return c.voids; },
+        [] (bitvf::LightconeConfig& c, nb::handle v) {
+          c.voids = instance<bitvf::Config>(v, "voids", "a bitvf.Config");
+        },
+        nb::for_getter(nb::rv_policy::reference_internal), nb::for_setter(nb::arg("value").none()),
+        "The void search, on every pass: a reference into this LightconeConfig; assigning one copies it in.")
+    .def_prop_rw("keep_reconstructions",
+        [] (const bitvf::LightconeConfig& c) { return c.keepReconstructions; },
+        [] (bitvf::LightconeConfig& c, nb::handle v) { c.keepReconstructions = to_bool(v, "keep_reconstructions"); },
+        nb::for_setter(nb::arg("value").none()),
+        "Keep the otswap results and the corrected catalogue in BitVFResult.")
+    .def("__repr__", [] (const bitvf::LightconeConfig& c) {
+        const std::string text = "LightconeConfig(ot=" + repr_of(nb::cast(c.ot)) + ", n_bins=" +
+          std::to_string(c.nBins) + ", cut=" + cut_repr(c.cut) + ", rsd=" +
+          (c.rsd ? lightcone_rsd_repr(*c.rsd) : std::string("None")) + ", voids=" + config_repr(c.voids) +
+          ", keep_reconstructions=" + (c.keepReconstructions ? "True" : "False") + ")";
+        return nb::str(text.c_str());
+      })
+    .def("__eq__", [] (const bitvf::LightconeConfig& a, nb::handle other) -> nb::object {
+        if (!nb::isinstance<bitvf::LightconeConfig>(other)) return not_implemented();
+        const bitvf::LightconeConfig& b = nb::cast<const bitvf::LightconeConfig&>(other);
+        const bool rsd = (!a.rsd && !b.rsd) || (a.rsd && b.rsd && same_lightcone_rsd(*a.rsd, *b.rsd));
+        return nb::bool_(same_otswap(a.ot, b.ot) && a.nBins == b.nBins && same_cut(a.cut, b.cut) && rsd &&
+                         same_config(a.voids, b.voids) && a.keepReconstructions == b.keepReconstructions);
+      }, "other"_a.none())
+    .attr("__hash__") = nb::none();
+
   // ==========================================================================
   // Results
   // ==========================================================================
 
-  nb::class_<bitvf::BasinCatalog>(m, "BasinCatalog",
+  nb::class_<bitvf::BasinCatalog>(m, "BasinCatalog", nb::is_weak_referenceable(),
       "One catalogue of watershed basins, the voids or the overdense basins; row b is basin b, in the "
       "order of its seed cell. Read-only.")
     .def_prop_ro("n_basins", [] (const bitvf::BasinCatalog& c) { return c.nBasins; })
     .def_prop_ro("centre", [] (CatalogHandle self) { return triplets(self, catalog_of(self).centre); },
                  "Cartesian centre, in coordinate units, shape (n_basins, 3).")
-    .def_prop_ro("centre_sky", [] (CatalogHandle self) { return triplets(self, catalog_of(self).centreSky); },
-                 "Sky coordinates of the centre; shape (0, 3) in a box.")
+    .def_prop_ro("centre_sky", [] (CatalogHandle self) {
+        return angles(self, catalog_of(self).centreSky, "centre_sky", true);
+      }, "Sky coordinates of the centre, in angle_unit, shape (n_basins, 3); (0, 3) in a box.")
     .def_prop_ro("radius", [] (CatalogHandle self) { return rows<double>(self, catalog_of(self).radius); },
                  "Radius of the sphere with the volume of the core, in coordinate units.")
     .def_prop_ro("radius_ext", [] (CatalogHandle self) { return rows<double>(self, catalog_of(self).radiusExt); },
@@ -974,16 +1324,16 @@ NB_MODULE(_bitvf, m)
                  [] (CatalogHandle self) { return rows<double>(self, catalog_of(self).fieldCentre); },
                  "The field at the centre, after a field search; (0,) otherwise.");
 
-  nb::class_<bitvf::DivergenceGrid>(m, "DivergenceGrid",
+  nb::class_<bitvf::DivergenceGrid>(m, "DivergenceGrid", nb::is_weak_referenceable(),
       "The grid of the void finder and the divergence field on it. Read-only: it comes from a Result "
       "or from io.read_divergence, and can be passed back as grid. Every per-cell array of a box grid "
       "has shape (nx, ny, nz), n_cells_axis, C order: a[i, j, k] is the cell (i, j, k); (0,) when empty.")
     .def_prop_ro("geometry", [] (const bitvf::DivergenceGrid& g) { return geometry_name(g.geometry); },
                  "\"box\" or \"lightcone\".")
-    .def_prop_ro("angle_unit", [] (const bitvf::DivergenceGrid& g) -> nb::object {
-        if (g.geometry == otswap::Geometry::Box) return nb::none();
-        return nb::str("rad");
-      }, "The unit of the angle fields; None for a box.")
+    .def_prop_ro("angle_unit", [] (GridHandle self) -> nb::object {
+        if (grid_of(self).geometry == otswap::Geometry::Box) return nb::none();
+        return nb::str(degrees_of(self) ? "deg" : "rad");
+      }, "The unit of the angle fields, that of the call that made the grid; None for a box.")
     .def_prop_ro("n_cells", [] (const bitvf::DivergenceGrid& g) { return g.nCells; })
     .def_prop_ro("cell_size", [] (const bitvf::DivergenceGrid& g) { return g.cellSize; },
                  "Cell side, in coordinate units; NaN in a lightcone.")
@@ -999,10 +1349,10 @@ NB_MODULE(_bitvf, m)
     .def_prop_ro("n_realizations_mean", [] (const bitvf::DivergenceGrid& g) { return g.nRealizationsMean; })
     .def_prop_ro("distance_min", [] (const bitvf::DivergenceGrid& g) { return g.distanceMin; })
     .def_prop_ro("distance_max", [] (const bitvf::DivergenceGrid& g) { return g.distanceMax; })
-    .def_prop_ro("ra_min", [] (const bitvf::DivergenceGrid& g) { return g.raMin; })
-    .def_prop_ro("ra_max", [] (const bitvf::DivergenceGrid& g) { return g.raMax; })
-    .def_prop_ro("dec_min", [] (const bitvf::DivergenceGrid& g) { return g.decMin; })
-    .def_prop_ro("dec_max", [] (const bitvf::DivergenceGrid& g) { return g.decMax; })
+    .def_prop_ro("ra_min", [] (GridHandle self) { return angle(self, grid_of(self).raMin); })
+    .def_prop_ro("ra_max", [] (GridHandle self) { return angle(self, grid_of(self).raMax); })
+    .def_prop_ro("dec_min", [] (GridHandle self) { return angle(self, grid_of(self).decMin); })
+    .def_prop_ro("dec_max", [] (GridHandle self) { return angle(self, grid_of(self).decMax); })
     .def_prop_ro("cell_size_mps", [] (const bitvf::DivergenceGrid& g) { return g.cellSizeMps; },
                  "The divergence cell size used, in units of the mps.")
     .def_prop_ro("mps", [] (const bitvf::DivergenceGrid& g) { return g.mps; },
@@ -1011,52 +1361,52 @@ NB_MODULE(_bitvf, m)
         return g.mpsProfile.redshift.empty() ? nullptr : &g.mpsProfile;
       }, nb::rv_policy::reference_internal, "Lightcone: the mps(z) profile; None for a box.")
     .def_prop_ro("cell_ra_min", [] (GridHandle self) {
-        const auto& g = grid_of(self); return cells<double>(self, g.cellRaMin, g.nCellsAxis); })
+        return angles(self, grid_of(self).cellRaMin, "cell_ra_min", false); })
     .def_prop_ro("cell_ra_max", [] (GridHandle self) {
-        const auto& g = grid_of(self); return cells<double>(self, g.cellRaMax, g.nCellsAxis); })
+        return angles(self, grid_of(self).cellRaMax, "cell_ra_max", false); })
     .def_prop_ro("cell_dec_min", [] (GridHandle self) {
-        const auto& g = grid_of(self); return cells<double>(self, g.cellDecMin, g.nCellsAxis); })
+        return angles(self, grid_of(self).cellDecMin, "cell_dec_min", false); })
     .def_prop_ro("cell_dec_max", [] (GridHandle self) {
-        const auto& g = grid_of(self); return cells<double>(self, g.cellDecMax, g.nCellsAxis); })
+        return angles(self, grid_of(self).cellDecMax, "cell_dec_max", false); })
     .def_prop_ro("cell_distance_min", [] (GridHandle self) {
-        const auto& g = grid_of(self); return cells<double>(self, g.cellDistanceMin, g.nCellsAxis); })
+        const auto& g = grid_of(self); return cells<double>(self, g.cellDistanceMin, axes(g)); })
     .def_prop_ro("cell_distance_max", [] (GridHandle self) {
-        const auto& g = grid_of(self); return cells<double>(self, g.cellDistanceMax, g.nCellsAxis); })
+        const auto& g = grid_of(self); return cells<double>(self, g.cellDistanceMax, axes(g)); })
     .def_prop_ro("centre", [] (GridHandle self) {
-        const auto& g = grid_of(self); return cells<double>(self, g.centre, g.nCellsAxis, 3);
+        const auto& g = grid_of(self); return cells<double>(self, g.centre, axes(g), 3);
       }, "Cartesian centre of each cell, in coordinate units, shape (nx, ny, nz, 3).")
     .def_prop_ro("centre_sky", [] (GridHandle self) {
-        const auto& g = grid_of(self); return cells<double>(self, g.centreSky, g.nCellsAxis, 3);
-      }, "Sky coordinates of each cell centre; shape (0, 3) in a box.")
+        return angles(self, grid_of(self).centreSky, "centre_sky", true);
+      }, "Sky coordinates of each cell centre, in angle_unit; shape (n_cells, 3) in a lightcone, (0, 3) in a box.")
     .def_prop_ro("divergence", [] (GridHandle self) {
-        const auto& g = grid_of(self); return cells<double>(self, g.divergence, g.nCellsAxis);
+        const auto& g = grid_of(self); return cells<double>(self, g.divergence, axes(g));
       }, "The divergence of each cell, before smoothing.")
     .def_prop_ro("divergence_smoothed", [] (GridHandle self) {
-        const auto& g = grid_of(self); return cells<double>(self, g.divergenceSmoothed, g.nCellsAxis);
+        const auto& g = grid_of(self); return cells<double>(self, g.divergenceSmoothed, axes(g));
       }, "The divergence after smoothing, the field the watershed splits, with sigma > 0; (0,) otherwise.")
     .def_prop_ro("volume", [] (GridHandle self) {
-        const auto& g = grid_of(self); return cells<double>(self, g.volume, g.nCellsAxis);
+        const auto& g = grid_of(self); return cells<double>(self, g.volume, axes(g));
       }, "Volume of each cell, in coordinate units cubed.")
     .def_prop_ro("weight", [] (GridHandle self) {
-        const auto& g = grid_of(self); return cells<double>(self, g.weight, g.nCellsAxis);
+        const auto& g = grid_of(self); return cells<double>(self, g.weight, axes(g));
       }, "Tracer weight of each cell, the weight of the smoothing.")
     .def_prop_ro("weight_smoothed", [] (GridHandle self) {
-        const auto& g = grid_of(self); return cells<double>(self, g.weightSmoothed, g.nCellsAxis);
+        const auto& g = grid_of(self); return cells<double>(self, g.weightSmoothed, axes(g));
       }, "Smoothed tracer weight of each cell, with sigma > 0; (0,) otherwise.")
     .def_prop_ro("n_displacements", [] (GridHandle self) {
-        const auto& g = grid_of(self); return cells<std::uint64_t>(self, g.nDisplacements, g.nCellsAxis);
+        const auto& g = grid_of(self); return cells<std::uint64_t>(self, g.nDisplacements, axes(g));
       }, "Displacement ends counted in each cell, before the fill.")
     .def_prop_ro("n_tracers", [] (GridHandle self) {
-        const auto& g = grid_of(self); return cells<std::uint64_t>(self, g.nTracers, g.nCellsAxis);
+        const auto& g = grid_of(self); return cells<std::uint64_t>(self, g.nTracers, axes(g));
       }, "Tracers starting in each cell.")
     .def_prop_ro("void_index", [] (GridHandle self) {
-        const auto& g = grid_of(self); return cells<std::int64_t>(self, g.voidIndex, g.nCellsAxis);
+        const auto& g = grid_of(self); return cells<std::int64_t>(self, g.voidIndex, axes(g));
       }, "Row of the cell's void in Result.voids; -1 none.")
     .def_prop_ro("overdense_index", [] (GridHandle self) {
-        const auto& g = grid_of(self); return cells<std::int64_t>(self, g.overdenseIndex, g.nCellsAxis);
+        const auto& g = grid_of(self); return cells<std::int64_t>(self, g.overdenseIndex, axes(g));
       }, "Row of the cell's overdense basin in Result.overdense; -1 none.")
     .def_prop_ro("masked", [] (GridHandle self) {
-        const auto& g = grid_of(self); return cells<bool>(self, g.masked, g.nCellsAxis);
+        const auto& g = grid_of(self); return cells<bool>(self, g.masked, axes(g));
       }, "Lightcone: whether the cell centre is unobserved; (0,) in a box.");
 
   nb::class_<bitvf::TracerAssignment>(m, "TracerAssignment",
@@ -1095,7 +1445,15 @@ NB_MODULE(_bitvf, m)
     .def_ro("tracers_outside_box", &bitvf::Counts::tracersOutsideBox)
     .def_ro("tracers_outside_grid", &bitvf::Counts::tracersOutsideGrid)
     .def_ro("tracers_outside_cut", &bitvf::Counts::tracersOutsideCut)
+    .def_ro("tracers_outside_mask", &bitvf::Counts::tracersOutsideMask,
+            "Lightcone: tracers on unobserved pixels of the mask, skipped. 0 in a box.")
+    .def_ro("tracers_outside_redshift_cut", &bitvf::Counts::tracersOutsideRedshiftCut,
+            "Lightcone: of the tracers on observed pixels, those outside the redshift cut, skipped. 0 in a box.")
     .def_ro("randoms", &bitvf::Counts::randoms)
+    .def_ro("randoms_outside_mask", &bitvf::Counts::randomsOutsideMask,
+            "Lightcone: randoms on unobserved pixels of the mask, removed. 0 in a box.")
+    .def_ro("randoms_outside_redshift_cut", &bitvf::Counts::randomsOutsideRedshiftCut,
+            "Lightcone: of the randoms on observed pixels, those outside the redshift cut, removed. 0 in a box.")
     .def_ro("tracers_in_masked_cells", &bitvf::Counts::tracersInMaskedCells,
             "Lightcone: tracers on an observed pixel whose cell is masked; they keep their cell but are in no "
             "basin. 0 in a box.")
@@ -1103,13 +1461,13 @@ NB_MODULE(_bitvf, m)
     .def_ro("displacements", &bitvf::Counts::displacements)
     .def_ro("displacements_rejected", &bitvf::Counts::displacementsRejected);
 
-  nb::class_<bitvf::Result>(m, "Result", "Output of one void search. Read-only.")
+  nb::class_<bitvf::Result>(m, "Result", nb::is_weak_referenceable(), "Output of one void search. Read-only.")
     .def_prop_ro("geometry", [] (const bitvf::Result& r) { return geometry_name(r.geometry); },
                  "\"box\" or \"lightcone\".")
-    .def_prop_ro("angle_unit", [] (const bitvf::Result& r) -> nb::object {
-        if (r.geometry == otswap::Geometry::Box) return nb::none();
-        return nb::str("rad");
-      }, "The unit of the sky arrays; None for a box.")
+    .def_prop_ro("angle_unit", [] (ResultHandle self) -> nb::object {
+        if (result_of(self).geometry == otswap::Geometry::Box) return nb::none();
+        return nb::str(degrees_of(self) ? "deg" : "rad");
+      }, "The unit of the sky arrays, that of the call that made the result; None for a box.")
     .def_prop_ro("config", [] (const bitvf::Result& r) {
         bitvf::Config c = r.config;
         c.log = &std::clog;
@@ -1127,14 +1485,18 @@ NB_MODULE(_bitvf, m)
         if (!r.randomSeed) return nb::none();
         return nb::int_(*r.randomSeed);
       }, "The seed of the randoms bitvf drew in a box pipeline; None when it drew none.")
-    .def_prop_ro("voids", [] (bitvf::Result& r) -> bitvf::BasinCatalog& { return r.voids; },
-                 nb::rv_policy::reference_internal, "The voids.")
-    .def_prop_ro("overdense", [] (bitvf::Result& r) -> bitvf::BasinCatalog& { return r.overdense; },
-                 nb::rv_policy::reference_internal, "The overdense basins.")
-    .def_prop_ro("divergence", [] (bitvf::Result& r) -> bitvf::DivergenceGrid* {
-        return r.divergence ? &*r.divergence : nullptr;
-      }, nb::rv_policy::reference_internal,
-      "The grid and the divergence field, with Config.keep_divergence; None otherwise.")
+    .def_prop_ro("voids", [] (ResultHandle self) {
+        return part_of(nb::cast(nb::cast<bitvf::Result&>(self).voids, nb::rv_policy::reference_internal, self), self);
+      }, "The voids.")
+    .def_prop_ro("overdense", [] (ResultHandle self) {
+        return part_of(nb::cast(nb::cast<bitvf::Result&>(self).overdense, nb::rv_policy::reference_internal, self),
+                       self);
+      }, "The overdense basins.")
+    .def_prop_ro("divergence", [] (ResultHandle self) -> nb::object {
+        bitvf::Result& r = nb::cast<bitvf::Result&>(self);
+        if (!r.divergence) return nb::none();
+        return part_of(nb::cast(*r.divergence, nb::rv_policy::reference_internal, self), self);
+      }, "The grid and the divergence field, with Config.keep_divergence; None otherwise.")
     .def_prop_ro("assignment", [] (bitvf::Result& r) -> bitvf::TracerAssignment* {
         return r.assignment ? &*r.assignment : nullptr;
       }, nb::rv_policy::reference_internal,
@@ -1200,15 +1562,17 @@ NB_MODULE(_bitvf, m)
         return rows<std::uint64_t>(self, partition_of(self).partition.overdenseCoreCells);
       }, "Cells of each overdense basin's core, where the field is at or above 0.");
 
-  nb::class_<bitvf::BitVFResult>(m, "BitVFResult",
+  nb::class_<bitvf::BitVFResult>(m, "BitVFResult", nb::is_weak_referenceable(),
       "Output of run_box. Read-only. Its otswap results are otswap's own types.")
-    .def_prop_ro("voids", [] (bitvf::BitVFResult& r) -> bitvf::Result& { return r.voids; },
-                 nb::rv_policy::reference_internal,
-                 "The voids of the run, one row per input tracer, in input order.")
-    .def_prop_ro("zspace_voids", [] (bitvf::BitVFResult& r) -> bitvf::Result* {
-        return r.zspaceVoids ? &*r.zspaceVoids : nullptr;
-      }, nb::rv_policy::reference_internal,
-      "The voids of the redshift-space pass, with BoxRsd.zspace_voids; None otherwise.")
+    .def_prop_ro("voids", [] (PipelineHandle self) {
+        return part_of(nb::cast(nb::cast<bitvf::BitVFResult&>(self).voids, nb::rv_policy::reference_internal, self),
+                       self);
+      }, "The voids of the run, one row per input tracer, in input order.")
+    .def_prop_ro("zspace_voids", [] (PipelineHandle self) -> nb::object {
+        bitvf::BitVFResult& r = nb::cast<bitvf::BitVFResult&>(self);
+        if (!r.zspaceVoids) return nb::none();
+        return part_of(nb::cast(*r.zspaceVoids, nb::rv_policy::reference_internal, self), self);
+      }, "The voids of the redshift-space pass, with zspace_voids set in the correction; None otherwise.")
     .def_prop_ro("reconstruction", [] (bitvf::BitVFResult& r) -> otswap::Result* {
         return r.reconstruction ? &*r.reconstruction : nullptr;
       }, nb::rv_policy::reference_internal,
@@ -1384,6 +1748,176 @@ NB_MODULE(_bitvf, m)
       "config.rsd is set.");
 
   // ==========================================================================
+  // Lightcone
+  // ==========================================================================
+
+  m.def("find_voids_lightcone",
+      [] (nb::handle first, nb::handle displacement, nb::handle randomsSky, nb::handle valid, nb::handle mask,
+          nb::handle distances, nb::handle mpsProfile, nb::handle angleUnit, nb::handle configArg,
+          nb::handle redshiftCut, nb::handle ids, nb::handle grid) {
+        const bool degrees = in_degrees(angleUnit);
+        const otswap::Mask& footprint = instance<otswap::Mask>(mask, "mask", "an otswap.Mask");
+        bitvf::Config config = instance<bitvf::Config>(configArg, "config", "a bitvf.Config");
+        const bitvf::DivergenceGrid* reused = grid_or_null(grid);
+        LiveReport report;
+        config.log = report.log();
+        if (nb::isinstance<otswap::Result>(first)) {
+          std::vector<std::string> given;
+          if (!valid.is_none()) given.push_back("valid");
+          if (!distances.is_none()) given.push_back("distances");
+          if (!mpsProfile.is_none()) given.push_back("mps_profile");
+          if (!redshiftCut.is_none()) given.push_back("redshift_cut");
+          if (!ids.is_none()) given.push_back("ids");
+          if (!displacement.is_none() && !randomsSky.is_none()) given.push_back("displacement");
+          if (!given.empty())
+            throw bitvf::Error("find_voids_lightcone: " + listed(given) + (given.size() == 1 ? " does" : " do") +
+                               " not apply to a reconstruction (otswap.Result)");
+          const nb::handle slot = randomsSky.is_none() ? displacement : randomsSky;
+          if (slot.is_none()) throw bitvf::Error("find_voids_lightcone: randoms_sky is required");
+          const otswap::Result& reconstruction = nb::cast<const otswap::Result&>(first);
+          const std::vector<double> randoms = sky_rows(slot, "randoms_sky", degrees);
+          return result_object(report.run([&] {
+            return bitvf::findVoidsLightcone(reconstruction, randoms, footprint, config, reused);
+          }), degrees);
+        }
+        if (displacement.is_none())
+          throw bitvf::Error("find_voids_lightcone: displacement is required with arrays");
+        if (randomsSky.is_none())
+          throw bitvf::Error("find_voids_lightcone: randoms_sky is required");
+        if (distances.is_none())
+          throw bitvf::Error("find_voids_lightcone: distances is required with arrays");
+        if (mpsProfile.is_none())
+          throw bitvf::Error("find_voids_lightcone: mps_profile is required with arrays");
+        const std::vector<double> tracers = sky_rows(first, "tracers_sky", degrees);
+        const std::vector<double> randoms = sky_rows(randomsSky, "randoms_sky", degrees);
+        const Displacements d = displacements_of(displacement, valid, tracers.size() / 3);
+        const otswap::DistanceTable& table = instance<otswap::DistanceTable>(distances, "distances",
+                                                                           "an otswap.DistanceTable");
+        const otswap::MpsProfile& profile = instance<otswap::MpsProfile>(mpsProfile, "mps_profile",
+                                                                       "an otswap.MpsProfile");
+        const otswap::RedshiftCut cut = to_cut(redshiftCut, "redshift_cut");
+        const std::vector<std::int64_t> identity = ids_value(ids, tracers.size() / 3);
+        return result_object(report.run([&] {
+          return bitvf::findVoidsLightcone(tracers, d.values, d.valid, randoms, footprint, table, profile, config,
+                                           cut, identity, reused);
+        }), degrees);
+      },
+      "tracers_sky"_a.none(), "displacement"_a.none() = nb::none(), "randoms_sky"_a.none() = nb::none(),
+      "valid"_a.none() = nb::none(), nb::kw_only(), "mask"_a.none(), "distances"_a.none() = nb::none(),
+      "mps_profile"_a.none() = nb::none(), "angle_unit"_a.none(), "config"_a.none() = bitvf::Config(),
+      "redshift_cut"_a.none() = nb::none(), "ids"_a.none() = nb::none(), "grid"_a.none() = nb::none(),
+      "Find voids and overdense basins in a lightcone, from sky positions or from an otswap.Result.");
+
+  m.def("find_voids_lightcone_from_cartesian",
+      [] (nb::handle tracers, nb::handle displacement, nb::handle randoms, nb::handle valid, nb::handle mask,
+          nb::handle distances, nb::handle mpsProfile, nb::handle angleUnit, nb::handle configArg,
+          nb::handle redshiftCut, nb::handle ids, nb::handle grid) {
+        const bool degrees = in_degrees(angleUnit);
+        const otswap::Mask& footprint = instance<otswap::Mask>(mask, "mask", "an otswap.Mask");
+        bitvf::Config config = instance<bitvf::Config>(configArg, "config", "a bitvf.Config");
+        const bitvf::DivergenceGrid* reused = grid_or_null(grid);
+        const std::vector<double> t = rows3(tracers, "tracers");
+        const std::vector<double> r = rows3(randoms, "randoms");
+        const Displacements d = displacements_of(displacement, valid, t.size() / 3);
+        const otswap::DistanceTable& table = instance<otswap::DistanceTable>(distances, "distances",
+                                                                           "an otswap.DistanceTable");
+        const otswap::MpsProfile& profile = instance<otswap::MpsProfile>(mpsProfile, "mps_profile",
+                                                                       "an otswap.MpsProfile");
+        const otswap::RedshiftCut cut = to_cut(redshiftCut, "redshift_cut");
+        const std::vector<std::int64_t> identity = ids_value(ids, t.size() / 3);
+        LiveReport report;
+        config.log = report.log();
+        return result_object(report.run([&] {
+          return bitvf::findVoidsLightconeFromCartesian(t, d.values, d.valid, r, footprint, table, profile, config,
+                                                        cut, identity, reused);
+        }), degrees);
+      },
+      "tracers"_a.none(), "displacement"_a.none(), "randoms"_a.none(), "valid"_a.none() = nb::none(),
+      nb::kw_only(), "mask"_a.none(), "distances"_a.none(), "mps_profile"_a.none(), "angle_unit"_a.none(),
+      "config"_a.none() = bitvf::Config(), "redshift_cut"_a.none() = nb::none(), "ids"_a.none() = nb::none(),
+      "grid"_a.none() = nb::none(),
+      "Find voids and overdense basins in a lightcone, from Cartesian positions with the observer at the origin.");
+
+  m.def("lightcone_grid",
+      [] (nb::handle first, nb::handle randomsSky, nb::handle mask, nb::handle distances, nb::handle mpsProfile,
+          nb::handle cellSize, nb::handle angleUnit, nb::handle redshiftCut) {
+        const bool degrees = in_degrees(angleUnit);
+        const otswap::Mask& footprint = instance<otswap::Mask>(mask, "mask", "an otswap.Mask");
+        if (randomsSky.is_none()) throw bitvf::Error("lightcone_grid: randoms_sky is required");
+        const std::vector<double> randoms = sky_rows(randomsSky, "randoms_sky", degrees);
+        if (nb::isinstance<otswap::Result>(first)) {
+          std::vector<std::string> given;
+          if (!distances.is_none()) given.push_back("distances");
+          if (!mpsProfile.is_none()) given.push_back("mps_profile");
+          if (!redshiftCut.is_none()) given.push_back("redshift_cut");
+          if (!given.empty())
+            throw bitvf::Error("lightcone_grid: " + listed(given) + (given.size() == 1 ? " does" : " do") +
+                               " not apply to a reconstruction (otswap.Result)");
+          const otswap::Result& reconstruction = nb::cast<const otswap::Result&>(first);
+          const std::optional<double> size = to_optional_double(cellSize, "cell_size");
+          bitvf::DivergenceGrid g;
+          {
+            nb::gil_scoped_release released;
+            g = bitvf::lightconeGrid(reconstruction, randoms, footprint, size);
+          }
+          return grid_object(std::move(g), degrees);
+        }
+        if (distances.is_none()) throw bitvf::Error("lightcone_grid: distances is required with arrays");
+        if (mpsProfile.is_none()) throw bitvf::Error("lightcone_grid: mps_profile is required with arrays");
+        if (cellSize.is_none()) throw bitvf::Error("lightcone_grid: cell_size is required with arrays");
+        const std::vector<double> tracers = sky_rows(first, "tracers_sky", degrees);
+        const otswap::DistanceTable& table = instance<otswap::DistanceTable>(distances, "distances",
+                                                                           "an otswap.DistanceTable");
+        const otswap::MpsProfile& profile = instance<otswap::MpsProfile>(mpsProfile, "mps_profile",
+                                                                       "an otswap.MpsProfile");
+        const double size = to_double(cellSize, "cell_size");
+        const otswap::RedshiftCut cut = to_cut(redshiftCut, "redshift_cut");
+        bitvf::DivergenceGrid g;
+        {
+          nb::gil_scoped_release released;
+          g = bitvf::lightconeGrid(tracers, randoms, footprint, table, profile, size, cut);
+        }
+        return grid_object(std::move(g), degrees);
+      },
+      "tracers_sky"_a.none(), "randoms_sky"_a.none(), nb::kw_only(), "mask"_a.none(),
+      "distances"_a.none() = nb::none(), "mps_profile"_a.none() = nb::none(), "cell_size"_a.none() = nb::none(),
+      "angle_unit"_a.none(), "redshift_cut"_a.none() = nb::none(),
+      "The grid find_voids_lightcone builds, from an otswap.Result or from arrays, bit for bit.");
+
+  m.def("run_lightcone",
+      [] (nb::handle tracersSky, nb::handle randomsSky, nb::handle secondPass, nb::handle mask,
+          nb::handle distances, nb::handle angleUnit, nb::handle configArg, nb::handle ids) {
+        const bool degrees = in_degrees(angleUnit);
+        const otswap::Mask& footprint = instance<otswap::Mask>(mask, "mask", "an otswap.Mask");
+        const otswap::DistanceTable& table = instance<otswap::DistanceTable>(distances, "distances",
+                                                                           "an otswap.DistanceTable");
+        bitvf::LightconeConfig config = instance<bitvf::LightconeConfig>(configArg, "config",
+                                                                         "a bitvf.LightconeConfig");
+        const std::vector<double> t = sky_rows(tracersSky, "tracers_sky", degrees);
+        const std::vector<double> r = sky_rows(randomsSky, "randoms_sky", degrees);
+        std::vector<double> second;
+        if (!secondPass.is_none()) {
+          second = sky_rows(secondPass, "randoms_sky_second_pass", degrees);
+          if (second.empty())
+            throw bitvf::Error("randoms_sky_second_pass is empty; omit it unless the second pass takes external "
+                               "randoms");
+        }
+        const std::vector<std::int64_t> identity = ids_value(ids, t.size() / 3);
+        LiveReport report;
+        config.ot.log = report.log();
+        config.voids.log = report.log();
+        if (config.rsd) config.rsd->correction.log = report.log();
+        return pipeline_object(report.run([&] {
+          return bitvf::runLightcone(t, r, footprint, table, config, second, identity);
+        }), degrees);
+      },
+      "tracers_sky"_a.none(), "randoms_sky"_a.none(), "randoms_sky_second_pass"_a.none() = nb::none(),
+      nb::kw_only(), "mask"_a.none(), "distances"_a.none(), "angle_unit"_a.none(), "config"_a.none(),
+      "ids"_a.none() = nb::none(),
+      "Reconstruct a lightcone and find its voids, with the correction of redshift-space distortions when "
+      "config.rsd is set.");
+
+  // ==========================================================================
   // bitvf.io
   // ==========================================================================
 
@@ -1453,7 +1987,7 @@ NB_MODULE(_bitvf, m)
           throw bitvf::Error("angle_unit must not be given for a box file; a box file holds no angles");
         if (grid.geometry != otswap::Geometry::Box && !given)
           throw bitvf::Error("angle_unit is required for a lightcone file");
-        return grid;
+        return grid_object(std::move(grid), given && in_degrees(angleUnit));
       },
       "file"_a.none(), nb::kw_only(), "angle_unit"_a.none() = nb::none(),
       "Read a divergence file written by write_divergence; angle_unit (\"deg\" or \"rad\") is that of a "

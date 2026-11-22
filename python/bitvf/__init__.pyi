@@ -26,11 +26,20 @@ from a thread other than the main one is not interrupted. An exception
 raised by ``sys.stdout`` stops the printing, and the search raises it when
 it ends.
 
+Lightcone searches take sky positions as (right ascension, declination,
+redshift) rows in the ``angle_unit`` of the call, ``"deg"`` or ``"rad"``, and
+report the sky arrays of what they return in that unit: a ``Result``,
+``BitVFResult`` or ``DivergenceGrid`` made by a call keeps its unit, and its
+parts (``Result.voids``, ``Result.divergence``, ``BitVFResult.voids``) the
+unit of the object that holds them. A grid passed back to a call in another
+unit is accepted. The per-cell arrays of a lightcone grid are flat,
+``(n_cells,)`` and ``(n_cells, 3)``, in the order of the cells.
+
 Files are written and read by the submodule ``bitvf.io``.
 """
 
 import enum
-from typing import Literal, Optional, Union
+from typing import Literal, Optional, Union, overload
 
 import numpy as np
 import otswap
@@ -272,6 +281,101 @@ class BoxConfig:
     def __eq__(self, other: object) -> bool: ...
 
 
+class SecondPassRandoms(enum.Enum):
+    """The randoms of the second, real-space, reconstruction of
+    ``run_lightcone``."""
+
+    NONE = ...
+    """The first reconstruction's randoms, unchanged."""
+    RESAMPLE = ...
+    """The first reconstruction's randoms, with redshifts drawn from the
+    corrected tracers."""
+    EXTERNAL = ...
+    """Randoms given to ``run_lightcone`` for the second reconstruction."""
+
+
+class LightconeRsd:
+    """Correction of redshift-space distortions in a lightcone, as
+    ``otswap.real_space_lightcone`` applies it: the ``rsd`` of
+    ``LightconeConfig``.
+
+    ``bias`` and ``sigma`` have no default: each is a required keyword of
+    the constructor. Fields are read/write attributes, converted when set
+    and checked by ``run_lightcone``. ``repr`` gives the constructor call;
+    two compare equal when every field is equal.
+    """
+
+    bias: otswap.BiasTable
+    """The linear bias of the tracers as a function of redshift; positive at
+    the redshift of every tracer kept."""
+    sigma: float
+    """Width of the neighbour average of the displacements, in coordinate
+    units; 0 for none, finite and non-negative. For coordinates in Mpc/h,
+    10 is a reasonable starting value; the best value depends on the sample,
+    and should be checked in each analysis."""
+    correction: otswap.CorrectionConfig
+    """The weighting of the neighbour average, and what the correction
+    prints, passed to ``otswap.real_space_lightcone`` unchanged; default
+    ``otswap.CorrectionConfig()``. A reference into this LightconeRsd;
+    assigning one copies it in."""
+    second_pass_randoms: SecondPassRandoms
+    """The randoms of the second reconstruction. ``RESAMPLE``, the default,
+    gives them the redshift distribution of the corrected tracers; ``NONE``
+    keeps the observed one; ``EXTERNAL`` takes randoms built for the
+    real-space sample and given to ``run_lightcone``."""
+    zspace_voids: bool
+    """Also search voids on the first, redshift-space, reconstruction
+    (``BitVFResult.zspace_voids``); default False."""
+
+    def __init__(self, *, bias: otswap.BiasTable, sigma: float,
+                 correction: otswap.CorrectionConfig = otswap.CorrectionConfig(),
+                 second_pass_randoms: SecondPassRandoms = SecondPassRandoms.RESAMPLE,
+                 zspace_voids: bool = False) -> None: ...
+    def __eq__(self, other: object) -> bool: ...
+
+
+class LightconeConfig:
+    """The parameters of ``run_lightcone``.
+
+    ``n_bins`` has no default: it is a required keyword of the constructor.
+    Every field is a read/write attribute. The nested configurations ``ot``,
+    ``cut``, ``rsd`` and ``voids`` read as references into this
+    LightconeConfig, so ``cfg.voids.keep_divergence = True`` changes
+    ``cfg``; assigning one copies it in. ``repr`` gives the constructor
+    call; two compare equal when every field is equal.
+    """
+
+    ot: otswap.Config
+    """The reconstruction, used for both reconstructions of a run with
+    correction, with the same seed; default ``otswap.Config()``. A seed of 0
+    is replaced by one drawn at random before the first reconstruction, and
+    both use it; the ``config`` of the reconstruction records it."""
+    n_bins: int
+    """The redshift bins of the mps(z) profile of each reconstruction; at
+    least 1. 50 is a reasonable starting value."""
+    cut: otswap.RedshiftCut
+    """The closed range of observed redshift of the run, given to both
+    reconstructions and to every search: the tracers outside keep their row
+    and are skipped, the randoms outside are removed. A ``(min, max)`` pair
+    is accepted, and None for no cut, the default."""
+    rsd: Optional[LightconeRsd]
+    """The correction of redshift-space distortions; None, the default, for
+    one reconstruction and one search, no correction. A reference into this
+    LightconeConfig; assigning one copies it in."""
+    voids: Config
+    """The void search, on every pass; default ``Config()``. Its verbosity
+    also governs the lines of the pipeline itself."""
+    keep_reconstructions: bool
+    """Keep the otswap results and the corrected catalogue in
+    ``BitVFResult``; default False."""
+
+    def __init__(self, *, ot: otswap.Config = otswap.Config(), n_bins: int,
+                 cut: Optional[Union[otswap.RedshiftCut, tuple[float, float]]] = None,
+                 rsd: Optional[LightconeRsd] = None, voids: Config = Config(),
+                 keep_reconstructions: bool = False) -> None: ...
+    def __eq__(self, other: object) -> bool: ...
+
+
 # --------------------------------------------------------------------------
 # results
 
@@ -313,8 +417,11 @@ class BasinCatalog:
         cell."""
     @property
     def centre_sky(self) -> NDArray[np.float64]:
-        """Sky coordinates of the centre, lightcone only; shape (0, 3) in a
-        box."""
+        """Sky coordinates of the centre, lightcone only, shape (n_basins, 3):
+        right ascension and declination in the ``angle_unit`` of the call
+        that made the result, right ascension in [0, 2 pi) or [0, 360), and
+        the redshift; shape (0, 3) in a box. In degrees, a read-only copy
+        made once, with otswap's conversion."""
     @property
     def radius(self) -> NDArray[np.float64]:
         """Radius of the sphere with the volume of the core, in coordinate
@@ -397,7 +504,11 @@ class DivergenceGrid:
         """The geometry of the grid."""
     @property
     def angle_unit(self) -> Optional[Literal["deg", "rad"]]:
-        """The unit of the angle fields; None for a box."""
+        """The unit of the angle fields (``ra_min`` to ``dec_max``, the
+        ``cell_ra_*`` and ``cell_dec_*`` arrays, ``centre_sky``): that of the
+        call that made the grid, or of ``io.read_divergence``; None for a
+        box. In degrees the fields are copies made with otswap's factor, so
+        they match ``numpy.rad2deg``; the library holds radians."""
     @property
     def n_cells(self) -> int:
         """Number of cells."""
@@ -444,16 +555,16 @@ class DivergenceGrid:
         """Lightcone only; NaN in a box."""
     @property
     def ra_min(self) -> float:
-        """Lightcone only; NaN in a box."""
+        """Lightcone only, in ``angle_unit``; NaN in a box."""
     @property
     def ra_max(self) -> float:
-        """Lightcone only; NaN in a box."""
+        """Lightcone only, in ``angle_unit``; NaN in a box."""
     @property
     def dec_min(self) -> float:
-        """Lightcone only; NaN in a box."""
+        """Lightcone only, in ``angle_unit``; NaN in a box."""
     @property
     def dec_max(self) -> float:
-        """Lightcone only; NaN in a box."""
+        """Lightcone only, in ``angle_unit``; NaN in a box."""
     @property
     def cell_size_mps(self) -> float:
         """``Config.divergence_cell_size`` used, in units of the mps: a
@@ -471,16 +582,20 @@ class DivergenceGrid:
         """Lightcone only; None in a box."""
     @property
     def cell_ra_min(self) -> NDArray[np.float64]:
-        """Lightcone only; shape (0,) in a box."""
+        """Lightcone only, in ``angle_unit``, shape (n_cells,); (0,) in a
+        box and in a grid read from a file."""
     @property
     def cell_ra_max(self) -> NDArray[np.float64]:
-        """Lightcone only; shape (0,) in a box."""
+        """Lightcone only, in ``angle_unit``, shape (n_cells,); (0,) in a
+        box and in a grid read from a file."""
     @property
     def cell_dec_min(self) -> NDArray[np.float64]:
-        """Lightcone only; shape (0,) in a box."""
+        """Lightcone only, in ``angle_unit``, shape (n_cells,); (0,) in a
+        box and in a grid read from a file."""
     @property
     def cell_dec_max(self) -> NDArray[np.float64]:
-        """Lightcone only; shape (0,) in a box."""
+        """Lightcone only, in ``angle_unit``, shape (n_cells,); (0,) in a
+        box and in a grid read from a file."""
     @property
     def cell_distance_min(self) -> NDArray[np.float64]:
         """Lightcone only; shape (0,) in a box."""
@@ -493,7 +608,9 @@ class DivergenceGrid:
         nz, 3)."""
     @property
     def centre_sky(self) -> NDArray[np.float64]:
-        """Lightcone only; shape (0, 3) in a box."""
+        """Lightcone only: right ascension and declination of each cell
+        centre in ``angle_unit``, and the redshift, shape (n_cells, 3); shape
+        (0, 3) in a box."""
     @property
     def divergence(self) -> NDArray[np.float64]:
         """The divergence of each cell, before smoothing, shape (nx, ny, nz);
@@ -622,23 +739,49 @@ class Counts:
         first pass's grid."""
     @property
     def tracers_outside_cut(self) -> int:
-        """Lightcone only; 0 in a box."""
+        """Real-space pass of ``run_lightcone`` with a correction: corrected,
+        but moved outside the redshift cut, and excluded
+        (``Result.outside_cut``). 0 in a box."""
+    @property
+    def tracers_outside_mask(self) -> int:
+        """Lightcone: tracers on unobserved pixels of the mask, and so
+        skipped (``TracerAssignment.in_mask``), whether or not they lie
+        inside the redshift cut. 0 in a box."""
+    @property
+    def tracers_outside_redshift_cut(self) -> int:
+        """Lightcone: of the tracers on observed pixels, those outside the
+        redshift cut, and so skipped (``TracerAssignment.in_cut``). A tracer
+        both masked and outside the cut counts only in
+        ``tracers_outside_mask``. 0 in a box."""
     @property
     def randoms(self) -> int:
-        """Lightcone only; 0 in a box."""
+        """Lightcone: the randoms the search reads (N_r of ``delta_2mps``),
+        kept by the mask and the redshift cut and inside the grid. 0 in a
+        box."""
+    @property
+    def randoms_outside_mask(self) -> int:
+        """Lightcone: randoms on unobserved pixels of the mask, removed.
+        0 in a box."""
+    @property
+    def randoms_outside_redshift_cut(self) -> int:
+        """Lightcone: of the randoms on observed pixels, those outside the
+        redshift cut, removed. 0 in a box."""
     @property
     def tracers_in_masked_cells(self) -> int:
         """Lightcone: tracers on an observed pixel whose cell is masked;
         they keep their cell but are in no basin. 0 in a box."""
     @property
     def randoms_outside_grid(self) -> int:
-        """Lightcone only; 0 in a box."""
+        """Lightcone, reused grid: randoms outside it, removed. 0 in a
+        box."""
     @property
     def displacements(self) -> int:
         """Valid displacements given."""
     @property
     def displacements_rejected(self) -> int:
-        """Lightcone only; 0 in a box."""
+        """Lightcone: valid displacements of the tracers read that were
+        rejected (a start or end in a masked cell, an end outside every cell,
+        a path too close to the observer). 0 in a box."""
 
 
 class Result:
@@ -660,7 +803,8 @@ class Result:
         """The geometry of the search."""
     @property
     def angle_unit(self) -> Optional[Literal["deg", "rad"]]:
-        """The unit of the sky arrays; None for a box."""
+        """The unit of the sky arrays, that of the call that made the
+        result; None for a box."""
     @property
     def config(self) -> Config:
         """The configuration the search ran with, ``divergence_cell_size``
@@ -789,7 +933,12 @@ class Partition:
 
 
 class BitVFResult:
-    """Output of ``run_box``. Read-only.
+    """Output of ``run_box`` and ``run_lightcone``. Read-only.
+
+    The otswap objects it holds are made in C++: a lightcone's sky arrays
+    (``tracers_sky``, ``lagrangian_sky``, ``sky``) are in radians whatever
+    the ``angle_unit`` of the call, and their ``angle_unit`` reads
+    ``"rad"``. ``voids`` and ``zspace_voids`` report the call's unit.
 
     Given the same inputs and a seed other than 0, every field but the
     searches' ``elapsed_seconds`` is the same bit for bit whatever the number
@@ -803,7 +952,8 @@ class BitVFResult:
     @property
     def zspace_voids(self) -> Optional[Result]:
         """The voids of the redshift-space pass, with
-        ``BoxRsd.zspace_voids``; None otherwise."""
+        ``BoxRsd.zspace_voids`` or ``LightconeRsd.zspace_voids``; None
+        otherwise."""
     @property
     def reconstruction(self) -> Optional[otswap.Result]:
         """With ``keep_reconstructions``: the reconstruction the voids were
@@ -1303,6 +1453,291 @@ def run_box(tracers: ArrayLike, randoms: Optional[ArrayLike] = None, *, config: 
     and at ``"normal"``, last, with the time of the whole call::
 
         bitvf: runBox: <V> voids and <O> overdense basins from <N> tracers in <T> s
+    """
+
+
+AngleUnit: TypeAlias = Literal["deg", "rad"]
+"""The unit of right ascension and declination: degrees or radians."""
+
+RedshiftCutArg: TypeAlias = Union[otswap.RedshiftCut, tuple[float, float]]
+"""A closed range of observed redshift: an ``otswap.RedshiftCut`` or a
+``(min, max)`` pair."""
+
+
+@overload
+def find_voids_lightcone(tracers_sky: ArrayLike, displacement: ArrayLike, randoms_sky: ArrayLike,
+                         valid: Optional[ArrayLike] = None, *, mask: otswap.Mask,
+                         distances: otswap.DistanceTable, mps_profile: otswap.MpsProfile, angle_unit: AngleUnit,
+                         config: Config = Config(), redshift_cut: Optional[RedshiftCutArg] = None,
+                         ids: Optional[ArrayLike] = None, grid: Optional[DivergenceGrid] = None) -> Result: ...
+@overload
+def find_voids_lightcone(reconstruction: otswap.Result, randoms_sky: ArrayLike, *, mask: otswap.Mask,
+                         angle_unit: AngleUnit, config: Config = Config(),
+                         grid: Optional[DivergenceGrid] = None) -> Result: ...
+def find_voids_lightcone(*args, **kwargs):  # type: ignore[no-untyped-def]
+    """Find voids and overdense basins in a lightcone, from sky positions or
+    from an ``otswap.Result``.
+
+    The divergence of the displacement field is computed on a grid of shells
+    in comoving distance, declination rings and right-ascension sectors,
+    smoothed (``config.smoothing``) and divided by a watershed into basins
+    around its local minima: the voids, below 0, and the overdense basins, at
+    or above 0. The observer is at the origin.
+
+    A tracer on an unobserved pixel of the mask, or with a redshift outside
+    the cut, keeps its row but is skipped (``TracerAssignment.in_mask`` and
+    ``in_cut``, ``Counts.tracers_outside_mask`` and
+    ``tracers_outside_redshift_cut``); a random there is removed. A cell
+    whose centre falls on an unobserved pixel is masked
+    (``DivergenceGrid.masked``): it holds no divergence and belongs to no
+    basin. Without ``grid``, the grid covers the tracers and randoms kept,
+    with cells ``config.divergence_cell_size`` times mps(z) wide at the
+    centre of each shell, by default ``min(1, (20 / R)**(1/3))`` for R
+    realizations. Any finite right ascension is accepted and folded into
+    [0, 2 pi).
+
+    Parameters
+    ----------
+    tracers_sky : array_like, shape (N, 3)
+        Right ascension and declination in ``angle_unit``, and the observed
+        redshift, which must lie inside the distance table. A declination
+        must lie in [-90, 90] degrees.
+    displacement : array_like, shape (n_realizations, N, 3)
+        Cartesian displacements, in the unit of ``distances``, from the
+        tracers' Cartesian positions (``otswap.to_cartesian`` of
+        ``tracers_sky``). Every valid displacement of a tracer kept must be
+        finite.
+    randoms_sky : array_like, shape (M, 3)
+        The randoms, as ``tracers_sky``: required. They describe the survey,
+        set the extent of a new grid with the tracers, and give the expected
+        counts of ``delta_2mps``. Pass those of the reconstruction. With an
+        ``otswap.Result``, the second positional argument.
+    valid : array_like, shape (n_realizations, N), optional
+        0 or 1 for each displacement; if omitted, all valid.
+    mask : otswap.Mask
+        The observed pixels of the survey; that of the reconstruction, or a
+        stricter one.
+    distances : otswap.DistanceTable
+        The redshift-distance table; coordinates are in its distance unit.
+        Required with arrays; an ``otswap.Result`` carries its own.
+    mps_profile : otswap.MpsProfile
+        The mean particle separation as a function of redshift
+        (``otswap.Result.mps_profile`` of the reconstruction): the cell size
+        of each shell, a smoothing in mps, the densities. Required with
+        arrays. With ``grid`` it must equal the grid's profile.
+    angle_unit : {"deg", "rad"}
+        The unit of ``tracers_sky`` and ``randoms_sky``, and of the sky
+        arrays of the result.
+    config : Config, optional
+        The parameters of the search.
+    redshift_cut : otswap.RedshiftCut or (min, max), optional
+        The closed range of observed redshift searched; pass the cut of the
+        reconstruction. Arrays only; the default cuts nothing.
+    ids : array_like of int, shape (N,), optional
+        The identity of each tracer; arrays only. As ``find_voids_box``.
+    grid : DivergenceGrid, optional
+        A lightcone grid to reuse, built with the same distance table, whose
+        mps profile sets the smoothing and the densities. Tracers kept but
+        outside every cell are excluded (``Result.outside_grid``).
+        ``config.divergence_cell_size`` must be None with it. It may have
+        been made in the other ``angle_unit``.
+
+    Returns
+    -------
+    Result
+        With ``Result.geometry`` ``"lightcone"`` and ``Result.angle_unit``
+        that of the call.
+
+    Raises
+    ------
+    Error
+        If an argument has the wrong type or shape, a declination lies
+        outside [-90, 90] degrees, ``angle_unit`` is neither ``"deg"`` nor
+        ``"rad"``, an argument that arrays need is missing, or one that the
+        form with an ``otswap.Result`` does not take is given.
+    Error
+        On the data and the configuration, as the library requires: no
+        tracer, valid displacement or random left after the mask, the cut
+        and a reused grid; a redshift outside the distance table; a grid that
+        fails the checks of a grid to reuse; a divergence that is nowhere
+        negative.
+    """
+
+
+def find_voids_lightcone_from_cartesian(tracers: ArrayLike, displacement: ArrayLike, randoms: ArrayLike,
+                                        valid: Optional[ArrayLike] = None, *, mask: otswap.Mask,
+                                        distances: otswap.DistanceTable, mps_profile: otswap.MpsProfile,
+                                        angle_unit: AngleUnit, config: Config = Config(),
+                                        redshift_cut: Optional[RedshiftCutArg] = None,
+                                        ids: Optional[ArrayLike] = None,
+                                        grid: Optional[DivergenceGrid] = None) -> Result:
+    """Find voids and overdense basins in a lightcone, from Cartesian
+    positions with the observer at the origin.
+
+    As ``find_voids_lightcone`` from sky positions. The sky coordinates of
+    every row are computed first with ``otswap.to_sky`` and ``distances``;
+    they alone decide the mask, the redshift cut and the cell of every
+    tracer and random. Every row must be finite, must not lie at the origin
+    and must lie within the distance table, rows on unobserved pixels or
+    outside the cut included.
+
+    Parameters
+    ----------
+    tracers : array_like, shape (N, 3)
+        x, y, z, in the unit of ``distances``.
+    displacement, valid, mask, distances, mps_profile, config, redshift_cut, ids, grid
+        As ``find_voids_lightcone``.
+    randoms : array_like, shape (M, 3)
+        As ``tracers``, for the randoms: required.
+    angle_unit : {"deg", "rad"}
+        The unit of the sky arrays of the result; no argument is a sky
+        array.
+
+    Returns
+    -------
+    Result
+        As ``find_voids_lightcone``.
+    """
+
+
+@overload
+def lightcone_grid(reconstruction: otswap.Result, randoms_sky: ArrayLike, *, mask: otswap.Mask,
+                   angle_unit: AngleUnit, cell_size: Optional[float] = None) -> DivergenceGrid: ...
+@overload
+def lightcone_grid(tracers_sky: ArrayLike, randoms_sky: ArrayLike, *, mask: otswap.Mask,
+                   distances: otswap.DistanceTable, mps_profile: otswap.MpsProfile, cell_size: float,
+                   angle_unit: AngleUnit, redshift_cut: Optional[RedshiftCutArg] = None) -> DivergenceGrid: ...
+def lightcone_grid(*args, **kwargs):  # type: ignore[no-untyped-def]
+    """The grid ``find_voids_lightcone`` builds, bit for bit, from an
+    ``otswap.Result`` or from arrays, with the same selection of the tracers
+    and randoms and the same checks, those of the displacements included
+    with a reconstruction.
+
+    One grid can be shared by several searches (``grid``), by the two passes
+    of a pipeline or by a set of mocks. Only the fields that define the cells
+    are set (``n_cells``, ``distance_min`` to ``dec_max``, ``cell_size_mps``,
+    ``mps_profile``); every per-cell array is empty and the realization
+    counts are 0.
+
+    Parameters
+    ----------
+    reconstruction, tracers_sky, randoms_sky, mask, distances, mps_profile, redshift_cut
+        As ``find_voids_lightcone``.
+    cell_size : float, optional
+        The cell size in units of mps(z), as ``Config.divergence_cell_size``;
+        finite and positive. Required with arrays, where a reasonable
+        starting value is ``min(1, (20 / R)**(1/3))``, R the number of
+        realizations the search will read. With a reconstruction, if
+        omitted, the default for its realizations.
+    angle_unit : {"deg", "rad"}
+        The unit of ``tracers_sky`` and ``randoms_sky``, and of the angle
+        fields of the grid.
+
+    Returns
+    -------
+    DivergenceGrid
+        With ``geometry`` ``"lightcone"``.
+    """
+
+
+def run_lightcone(tracers_sky: ArrayLike, randoms_sky: ArrayLike, randoms_sky_second_pass: Optional[ArrayLike] = None,
+                  *, mask: otswap.Mask, distances: otswap.DistanceTable, angle_unit: AngleUnit,
+                  config: LightconeConfig, ids: Optional[ArrayLike] = None) -> BitVFResult:
+    """Reconstruct a lightcone and find its voids, with the correction of
+    redshift-space distortions and a second reconstruction in real space when
+    ``config.rsd`` is set.
+
+    The run:
+
+    1. Checks every argument and every field of ``config`` that can be
+       checked before any work. With a correction, the factor of the
+       correction is computed at the observed redshifts of the tracers kept,
+       so that a table without growth rate or an unusable bias fails here.
+    2. Reconstructs with ``otswap.reconstruct_lightcone``: the randoms, the
+       mask, ``config.n_bins``, the distance table, ``config.ot`` and
+       ``config.cut``.
+    3. Without ``config.rsd``, searches that reconstruction with
+       ``find_voids_lightcone`` and returns.
+
+    With ``config.rsd``, after step 2:
+
+    4. Builds the grid of the first reconstruction with
+       ``config.voids.divergence_cell_size``: the grid of every search of
+       the run.
+    5. With ``LightconeRsd.zspace_voids``, searches the first reconstruction
+       on it (``BitVFResult.zspace_voids``).
+    6. Corrects the tracers with ``otswap.real_space_lightcone``; the
+       correction moves a tracer in redshift only.
+    7. Selects, in input order, the tracers corrected whose corrected
+       redshift lies inside ``config.cut`` and whose corrected position lies
+       in a cell of the grid. The others keep their row and are flagged:
+       unmoved by the correction in ``Result.uncorrected``, moved outside
+       the cut in ``Result.outside_cut``, moved outside every cell in
+       ``Result.outside_grid``.
+    8. Reconstructs the selected tracers at their corrected redshifts, with
+       the randoms of ``LightconeRsd.second_pass_randoms``, the same mask,
+       cut, bins and seed.
+    9. Searches that reconstruction on the grid of step 4, with the first
+       reconstruction's mps(z) profile for the smoothing and the densities.
+    10. Returns the search with one row per input tracer.
+
+    Parameters
+    ----------
+    tracers_sky : array_like, shape (N, 3)
+        Right ascension and declination in ``angle_unit``, and the observed
+        redshift, in redshift space.
+    randoms_sky : array_like, shape (M, 3)
+        The randoms, as ``tracers_sky``: required. Every systematic belongs
+        in them. At least ``config.ot.n_realizations`` times the tracers kept
+        are needed.
+    randoms_sky_second_pass : array_like, shape (K, 3), optional
+        The randoms of the second reconstruction, with
+        ``SecondPassRandoms.EXTERNAL`` and only then.
+    mask : otswap.Mask
+        The observed pixels of the survey, for both reconstructions and
+        every search.
+    distances : otswap.DistanceTable
+        The redshift-distance table, carrying the growth rate when
+        ``config.rsd`` is set.
+    angle_unit : {"deg", "rad"}
+        The unit of the sky arrays given and of those of ``BitVFResult.voids``
+        and ``zspace_voids``. The otswap objects the result holds are in
+        radians whatever it is.
+    config : LightconeConfig
+        The parameters of the run; required, since ``n_bins`` has no default.
+    ids : array_like of int, shape (N,), optional
+        The tracers' identity, no value twice; if omitted, the rows.
+
+    Returns
+    -------
+    BitVFResult
+        The voids, and as ``config`` asks the redshift-space voids, the
+        reconstructions and the corrected catalogue. In ``voids``, an excluded
+        row carries -1 in every index, NaN in ``TracerAssignment.distance``
+        and False in ``used``, and one flag, ``uncorrected`` before
+        ``outside_cut`` before ``outside_grid``; ``in_mask`` and ``in_cut``
+        are the first reconstruction's. ``Result.counts`` counts the input
+        rows.
+
+    Raises
+    ------
+    Error
+        If an argument or a field of ``config`` is invalid, as
+        ``find_voids_lightcone`` and ``otswap.reconstruct_lightcone``
+        require; if ``randoms_sky_second_pass`` is given empty, without a
+        correction, or without ``EXTERNAL``; if no tracer is selected at
+        step 7; with ``EXTERNAL``, if fewer randoms remain than needed.
+    Error
+        From otswap, the message starting with ``"otswap: "``.
+
+    Notes
+    -----
+    Prints otswap's report lines at ``config.ot.verbosity``, the
+    correction's at ``LightconeRsd.correction.verbosity``, and the searches'
+    and the pipeline's at ``config.voids.verbosity``, the last line, at
+    ``"normal"``, being::
+
+        bitvf: runLightcone: <V> voids and <O> overdense basins from <N> tracers in <T> s
     """
 
 

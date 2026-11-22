@@ -32,6 +32,15 @@ Configuration
 .. autoapiclass:: bitvf.BoxRsd
    :members:
 
+.. autoapiclass:: bitvf.LightconeConfig
+   :members:
+
+.. autoapiclass:: bitvf.LightconeRsd
+   :members:
+
+.. autoapiclass:: bitvf.SecondPassRandoms
+   :members:
+
 Void finder, box
 ~~~~~~~~~~~~~~~~
 
@@ -45,10 +54,24 @@ Void finder, box
 
 .. autoapifunction:: bitvf.watershed_box
 
+Void finder, lightcone
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoapifunction:: bitvf.find_voids_lightcone
+
+.. autoapifunction:: bitvf.find_voids_lightcone_from_cartesian
+
+.. autoapifunction:: bitvf.lightcone_grid
+
 Pipeline, box
 ~~~~~~~~~~~~~
 
 .. autoapifunction:: bitvf.run_box
+
+Pipeline, lightcone
+~~~~~~~~~~~~~~~~~~~
+
+.. autoapifunction:: bitvf.run_lightcone
 
 Results
 ~~~~~~~
@@ -78,6 +101,10 @@ Aliases
 ~~~~~~~
 
 .. autoapidata:: bitvf.Verbosity
+
+.. autoapidata:: bitvf.AngleUnit
+
+.. autoapidata:: bitvf.RedshiftCutArg
 
 .. autoapidata:: bitvf.Box
 

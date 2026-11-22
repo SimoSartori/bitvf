@@ -28,6 +28,10 @@ or are listed for completeness.
 | `BoxConfig`, `ot`, `limits`, `mps`, `rsd`, `voids`, `keepReconstructions` | `BoxConfig`, `ot`, `limits`, `mps`, `rsd`, `voids`, `keep_reconstructions` | the nested configurations read as references into the `BoxConfig` |
 | `BoxRsd`, `axis`, `redshift`, `bias`, `sigma`, `correction`, `zspaceVoids` | `BoxRsd`, `axis`, `redshift`, `bias`, `sigma`, `correction`, `zspace_voids` | `axis`, `redshift`, `bias`, `sigma` have no default |
 | `otswap::BoxLimits` | `otswap.BoxLimits`; keyword `box`, field `limits` | also a pair `((x0, y0, z0), (x1, y1, z1))` |
+| `LightconeConfig`, `ot`, `nBins`, `cut`, `rsd`, `voids`, `keepReconstructions` | `LightconeConfig`, `ot`, `n_bins`, `cut`, `rsd`, `voids`, `keep_reconstructions` | `n_bins` has no default; the nested configurations read as references |
+| `LightconeRsd`, `bias`, `sigma`, `correction`, `secondPassRandoms`, `zspaceVoids` | `LightconeRsd`, `bias`, `sigma`, `correction`, `second_pass_randoms`, `zspace_voids` | `bias`, `sigma` have no default |
+| `SecondPassRandoms::None`, `Resample`, `External` | `SecondPassRandoms.NONE`, `RESAMPLE`, `EXTERNAL` | |
+| `otswap::RedshiftCut` | `otswap.RedshiftCut`; keyword `redshift_cut`, field `cut` | also a pair `(min, max)` |
 
 ## Functions
 
@@ -42,6 +46,12 @@ or are listed for completeness.
 | `watershedBox(field, nCellsAxis, verbosity, log)` | `watershed_box(field, *, verbosity)` | `field` of shape (nx, ny, nz) carries `nCellsAxis` |
 | `runBox(tracers, randoms, config, ids)` | `run_box(tracers, randoms, *, config, ids)` | `randoms` `None` to have them drawn |
 | `runBox(tracers, randoms, distances, config, ids)` | `run_box(tracers, randoms, *, config, distances, ids)` | |
+| `findVoidsLightcone(tracersSky, displacement, valid, randomsSky, mask, distances, mps, config, redshiftCut, ids, grid)` | `find_voids_lightcone(tracers_sky, displacement, randoms_sky, valid, *, mask, distances, mps_profile, angle_unit, config, redshift_cut, ids, grid)` | sky arrays in `angle_unit`; `randoms_sky` before `valid` |
+| `findVoidsLightcone(reconstruction, randomsSky, mask, config, grid)` | `find_voids_lightcone(reconstruction, randoms_sky, *, mask, angle_unit, config, grid)` | an `otswap.Result` as the first argument |
+| `findVoidsLightconeFromCartesian(tracers, displacement, valid, randoms, mask, distances, mps, config, redshiftCut, ids, grid)` | `find_voids_lightcone_from_cartesian(tracers, displacement, randoms, valid, *, mask, distances, mps_profile, angle_unit, config, redshift_cut, ids, grid)` | `angle_unit` is that of the sky arrays of the result |
+| `lightconeGrid(reconstruction, randomsSky, mask, divergenceCellSize)` | `lightcone_grid(reconstruction, randoms_sky, *, mask, angle_unit, cell_size)` | |
+| `lightconeGrid(tracersSky, randomsSky, mask, distances, mps, divergenceCellSize, redshiftCut)` | `lightcone_grid(tracers_sky, randoms_sky, *, mask, distances, mps_profile, cell_size, angle_unit, redshift_cut)` | |
+| `runLightcone(tracersSky, randomsSky, mask, distances, config, randomsSkySecondPass, ids)` | `run_lightcone(tracers_sky, randoms_sky, randoms_sky_second_pass, *, mask, distances, angle_unit, config, ids)` | `config` required |
 
 ## Results
 
@@ -57,6 +67,9 @@ or are listed for completeness.
 | `Result::ids` | `ids` | a new copy on each access |
 | `Result::randomSeed` | `random_seed` | `None` when no randoms were drawn |
 | `Result::geometry` (`otswap::Geometry`) | `"box"`, `"lightcone"` | |
+| angles in a lightcone result or grid (radians) | the `angle_unit` of the call that made it, `"deg"` or `"rad"` | `angle_unit` is `None` for a box |
+| per-cell arrays of a lightcone grid | flat, `(n_cells,)` and `(n_cells, 3)` | |
+| `Counts::tracersOutsideMask`, `tracersOutsideRedshiftCut`, `randomsOutsideMask`, `randomsOutsideRedshiftCut` | `tracers_outside_mask`, `tracers_outside_redshift_cut`, `randoms_outside_mask`, `randoms_outside_redshift_cut` | |
 | `Result::elapsedSeconds` | `elapsed_seconds` | |
 
 ## Files

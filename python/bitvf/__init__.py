@@ -5,7 +5,8 @@ displacement field of a tracer catalogue.
 
 Built on otswap, whose Python types bitvf takes and returns as they are.
 Coordinates are NumPy arrays of shape (N, 3), in coordinate units, the unit
-of the tracers given. Inputs are converted to float64; the library works on
+of the tracers given; sky positions are (right ascension, declination,
+redshift) in the ``angle_unit`` of the call. Inputs are converted to float64; the library works on
 its own copy of them. The number of threads follows ``OMP_NUM_THREADS``.
 Every search releases the GIL while it runs, and prints its report to
 ``sys.stdout`` line by line as it runs; Ctrl+C stops it at its next line.
@@ -27,8 +28,11 @@ from ._bitvf import (
     DivergenceGrid,
     Error,
     LengthUnit,
+    LightconeConfig,
+    LightconeRsd,
     Partition,
     Result,
+    SecondPassRandoms,
     Smoothing,
     TracerAssignment,
     __version__,
@@ -36,7 +40,11 @@ from ._bitvf import (
     find_voids_box,
     find_voids_box_from_divergence,
     find_voids_box_from_field,
+    find_voids_lightcone,
+    find_voids_lightcone_from_cartesian,
+    lightcone_grid,
     run_box,
+    run_lightcone,
     watershed_box,
 )
 from . import io
@@ -51,8 +59,11 @@ __all__ = [
     "DivergenceGrid",
     "Error",
     "LengthUnit",
+    "LightconeConfig",
+    "LightconeRsd",
     "Partition",
     "Result",
+    "SecondPassRandoms",
     "Smoothing",
     "TracerAssignment",
     "__version__",
@@ -60,7 +71,11 @@ __all__ = [
     "find_voids_box",
     "find_voids_box_from_divergence",
     "find_voids_box_from_field",
+    "find_voids_lightcone",
+    "find_voids_lightcone_from_cartesian",
     "io",
+    "lightcone_grid",
     "run_box",
+    "run_lightcone",
     "watershed_box",
 ]

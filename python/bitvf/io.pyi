@@ -235,6 +235,16 @@ def read_divergence(file: Path, *, angle_unit: Optional[str] = None) -> Divergen
     ``find_voids_box`` as ``grid``, or searched again with
     ``find_voids_box_from_divergence``.
 
+    A lightcone file gives a lightcone grid: the record that defines the
+    cells (distance, right-ascension and declination limits, cell size), the
+    mps(z) profile of its second part, and the per-cell columns, with
+    ``masked``. The file holds angles in degrees; the grid reports them in
+    ``angle_unit``, equal to the grid that was written up to the rounding of
+    the right-ascension and declination limits, so that a tracer within
+    rounding of such an edge can change cell. It can be passed to
+    ``find_voids_lightcone`` as ``grid``; the library has no search of a
+    lightcone from a divergence file.
+
     Parameters
     ----------
     file : str or os.PathLike
@@ -259,7 +269,8 @@ def read_divergence(file: Path, *, angle_unit: Optional[str] = None) -> Divergen
         with ``"otswap: "``.
     Error
         If it has no PRODUCT keyword, its PRODUCT is not divergence, or
-        GEOMETRY is not box (only box files are read); if a keyword of the
+        GEOMETRY is not box or lightcone; if a keyword of the other geometry
+        is present; if a keyword of the
         grid record is missing, not a number, or not a whole number in
         range; if NREC or NRECMEAN is 0 or missing (a field result's file:
         read it with ``read_field``); if BOXLIM holds anything but 1, or

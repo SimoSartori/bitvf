@@ -19,6 +19,14 @@ The first release.
   assignment, in ASCII or FITS, and readers of a divergence file, of otswap's
   mean displacement file and of a field at cell centres (`bitvf::io`, Python
   `bitvf.io`).
+- The void finder and the pipeline in lightcone geometry: `findVoidsLightcone`
+  (Python `find_voids_lightcone`) on sky positions or on an otswap
+  reconstruction, `findVoidsLightconeFromCartesian`, `lightconeGrid`, and
+  `runLightcone`, with the correction of redshift-space distortions and a
+  second reconstruction in real space; the divergence grid of a lightcone is
+  written and read back by `bitvf::io`, and the executable `bitvf` runs it.
+  In Python, sky arrays and the sky fields of the results follow the
+  `angle_unit` of the call.
 - The executables `bitvf` and `bitvf-field`, driven by a parameter file.
 - Progress reports at otswap's verbosity levels, each line printed as its
   step finishes.
