@@ -99,7 +99,8 @@ Pipeline, box
 bitvf/io.h
 ----------
 
-The columns and keywords of each file are on the :doc:`box/formats` page.
+The columns and keywords of each file are on the :doc:`lightcone/formats` and
+:doc:`box/formats` pages.
 
 Writers
 ~~~~~~~

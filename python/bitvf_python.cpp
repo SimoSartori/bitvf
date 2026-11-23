@@ -1250,7 +1250,7 @@ NB_MODULE(_bitvf, m)
         [] (const bitvf::LightconeConfig& c) { return c.nBins; },
         [] (bitvf::LightconeConfig& c, nb::handle v) { c.nBins = to_unsigned(v, "n_bins"); },
         nb::for_setter(nb::arg("value").none()),
-        "The redshift bins of the mps(z) profile of each reconstruction; at least 1. 50 is a reasonable "
+        "The redshift bins of the mps(z) profile of each reconstruction; at least 1. 30 is a reasonable "
         "starting value.")
     .def_prop_rw("cut",
         [] (bitvf::LightconeConfig& c) -> otswap::RedshiftCut& { return c.cut; },

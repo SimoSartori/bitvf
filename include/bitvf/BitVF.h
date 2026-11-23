@@ -172,7 +172,7 @@ namespace bitvf {
     otswap::Config ot;
 
     /// The redshift bins of the mps(z) profile of each reconstruction
-    /// (otswap::reconstructLightcone); at least 1. 50 is a reasonable
+    /// (otswap::reconstructLightcone); at least 1. 30 is a reasonable
     /// starting value.
     unsigned nBins = 0;
 

@@ -22,8 +22,11 @@ the [quickstart](quickstart.md) shows.
 ## Where to go next
 
 - [Quickstart](quickstart.md): install, and voids in a few lines.
+- [The method](method.md), for both geometries.
+- Lightcone: the [file formats](lightcone/formats.md) and the
+  [executable](lightcone/executable.md).
 - Box: the [guide](box/guide.md), the [file formats](box/formats.md), the
-  [examples](box/examples.md) and the [executables](executable.md).
+  [examples](box/examples.md) and the [executables](box/executable.md).
 - Reference: [C++](cpp.rst), [Python](python.rst).
 
 ```{toctree}
@@ -31,6 +34,16 @@ the [quickstart](quickstart.md) shows.
 :hidden:
 
 quickstart
+method
+```
+
+```{toctree}
+:caption: Lightcone
+:maxdepth: 2
+:hidden:
+
+lightcone/formats
+lightcone/executable
 ```
 
 ```{toctree}
@@ -41,7 +54,7 @@ quickstart
 box/guide
 box/formats
 box/examples
-executable
+box/executable
 ```
 
 ```{toctree}

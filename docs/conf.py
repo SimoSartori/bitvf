@@ -73,7 +73,7 @@ myst_enable_extensions = ["amsmath", "attrs_block", "colon_fence", "dollarmath"]
 myst_heading_anchors = 3
 
 templates_path = []
-exclude_patterns = ["_build", "doxygen", "requirements.txt"]
+exclude_patterns = ["_build", "doxygen", "requirements.txt", "shared"]
 
 html_theme = "furo"
 html_title = f"bitvf {release}"

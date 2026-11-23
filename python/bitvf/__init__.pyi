@@ -383,7 +383,7 @@ class LightconeConfig:
     both use it; the ``config`` of the reconstruction records it."""
     n_bins: int
     """The redshift bins of the mps(z) profile of each reconstruction; at
-    least 1. 50 is a reasonable starting value."""
+    least 1. 30 is a reasonable starting value."""
     cut: otswap.RedshiftCut
     """The closed range of observed redshift of the run, given to both
     reconstructions and to every search: the tracers outside keep their row
@@ -1413,6 +1413,7 @@ def run_box(tracers: ArrayLike, randoms: Optional[ArrayLike] = None, *, config: 
        uniformly in the box, N the tracers inside it.
     4. Reconstructs with ``otswap.reconstruct_box``: the randoms, the box as
        limits, ``config.mps`` when given.
+
     Without ``config.rsd``, it then searches that reconstruction with
     ``find_voids_box``, which reads its mps. With ``config.rsd``, after
     step 4:
