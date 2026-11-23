@@ -33,6 +33,18 @@ or are listed for completeness.
 | `SecondPassRandoms::None`, `Resample`, `External` | `SecondPassRandoms.NONE`, `RESAMPLE`, `EXTERNAL` | |
 | `otswap::RedshiftCut` | `otswap.RedshiftCut`; keyword `redshift_cut`, field `cut` | also a pair `(min, max)` |
 
+## Lightcone inputs
+
+| C++ | Python | Notes |
+|---|---|---|
+| sky arrays in radians, flat `[object][ra, dec, z]` | arrays of shape (N, 3) in `angle_unit`, `"deg"` or `"rad"` | `angle_unit` is required in every lightcone call |
+| `otswap::skyToRadians(skyDegrees)` | — | Python converts at the call, from `angle_unit` |
+| `tracersSky`, `randomsSky`, `randomsSkySecondPass` | `tracers_sky`, `randoms_sky`, `randoms_sky_second_pass` | |
+| `otswap::Mask` | `otswap.Mask`; keyword `mask` | |
+| `otswap::DistanceTable` | `otswap.DistanceTable`; keyword `distances` | |
+| `otswap::MpsProfile`, argument `mps` | `otswap.MpsProfile`; keyword `mps_profile` | |
+| `otswap::BiasTable`, `otswap::io::readBiasTable` | `otswap.BiasTable`, `otswap.io.read_bias_table` | the bias of `LightconeRsd` |
+
 ## Functions
 
 | C++ | Python | Notes |
@@ -64,12 +76,22 @@ or are listed for completeness.
 | a cell row stored as a value (`cellIndex`, `voidSeed`, `overdenseSeed`) | a flat row | `numpy.unravel_index(row, n_cells_axis)` gives the cell |
 | flags, `uint8` 0 or 1 | `bool` | inputs accept `bool` or 0/1 numbers |
 | `BasinCatalog::edgeFlag` | `edge_flag`, `uint8` | 0, 1 or 2 |
+| `BasinCatalog::delta2Mps` | `delta_2mps` | |
+| `BasinCatalog::centreSky`, `DivergenceGrid::centreSky`, flat `[row][ra, dec, z]` | `centre_sky`, shape (n, 3) | angles in `angle_unit`; shape (0, 3) in a box |
 | `Result::ids` | `ids` | a new copy on each access |
 | `Result::randomSeed` | `random_seed` | `None` when no randoms were drawn |
 | `Result::geometry` (`otswap::Geometry`) | `"box"`, `"lightcone"` | |
 | angles in a lightcone result or grid (radians) | the `angle_unit` of the call that made it, `"deg"` or `"rad"` | `angle_unit` is `None` for a box |
 | per-cell arrays of a lightcone grid | flat, `(n_cells,)` and `(n_cells, 3)` | |
-| `Counts::tracersOutsideMask`, `tracersOutsideRedshiftCut`, `randomsOutsideMask`, `randomsOutsideRedshiftCut` | `tracers_outside_mask`, `tracers_outside_redshift_cut`, `randoms_outside_mask`, `randoms_outside_redshift_cut` | |
+| `DivergenceGrid::distanceMin`, `distanceMax`, `raMin`, `raMax`, `decMin`, `decMax` | `distance_min`, `distance_max`, `ra_min`, `ra_max`, `dec_min`, `dec_max` | NaN in a box |
+| `DivergenceGrid::cellRaMin`, `cellRaMax`, `cellDecMin`, `cellDecMax`, `cellDistanceMin`, `cellDistanceMax` | `cell_ra_min`, `cell_ra_max`, `cell_dec_min`, `cell_dec_max`, `cell_distance_min`, `cell_distance_max` | shape (0,) in a box and in a grid read from a file |
+| `DivergenceGrid::masked` | `masked`, `bool` | |
+| `TracerAssignment::inMask`, `inCut` | `in_mask`, `in_cut`, `bool` | shape (0,) in a box |
+| `Result::mpsProfile`, `DivergenceGrid::mpsProfile` | `mps_profile` | empty in C++, `None` in Python, for a box |
+| `Result::distances` (`std::shared_ptr`) | `distances` | null in C++, `None` in Python, for a box |
+| `Result::redshiftCut` | `redshift_cut` | no cut in C++, `None` in Python, for a box |
+| `Result::maskNside` | `mask_nside` | 0 in a box |
+| `Counts::tracersOutsideMask`, `tracersOutsideRedshiftCut`, `tracersInMaskedCells`, `randomsOutsideMask`, `randomsOutsideRedshiftCut`, `randomsOutsideGrid` | `tracers_outside_mask`, `tracers_outside_redshift_cut`, `tracers_in_masked_cells`, `randoms_outside_mask`, `randoms_outside_redshift_cut`, `randoms_outside_grid` | |
 | `Result::elapsedSeconds` | `elapsed_seconds` | |
 
 ## Files

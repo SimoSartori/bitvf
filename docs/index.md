@@ -5,10 +5,8 @@
 :end-before: <!-- docs:about-end -->
 ```
 
-The method is described in the paper, Sartori et al. 2026,
-[arXiv:2601.15378](https://arxiv.org/abs/2601.15378). The C++ library and the
-Python package run the same code and give the same results, bit for bit;
-[names side by side](naming.md) maps one API to the other.
+The two give the same results, bit for bit, and [names side by
+side](naming.md) maps the C++ API to the Python one.
 
 ## Install
 
@@ -16,19 +14,27 @@ Python package run the same code and give the same results, bit for bit;
 pip install bitvf
 ```
 
-The C++ library, with its executables, is built and installed with CMake, as
-the [quickstart](quickstart.md) shows.
+installs the Python package, with otswap. The C++ library, with its
+executables, is built and installed with CMake, as the
+[quickstart](quickstart.md) shows.
 
 ## Where to go next
 
-- [Quickstart](quickstart.md): install, and voids in a few lines.
-- [The method](method.md), for both geometries.
-- Lightcone: the [guide](lightcone/guide.md), the [file
-  formats](lightcone/formats.md), the [examples](lightcone/examples.md) and
-  the [executable](lightcone/executable.md).
-- Box: the [guide](box/guide.md), the [file formats](box/formats.md), the
-  [examples](box/examples.md) and the [executables](box/executable.md).
-- Reference: [C++](cpp.rst), [Python](python.rst).
+- The [quickstart](quickstart.md): install, and a first search of the voids
+  of a survey-like catalogue shipped with the repository.
+- [The method](method.md): what each step computes, in both geometries.
+- **Lightcone geometry**, for surveys and their mocks: the
+  [guide](lightcone/guide.md) explains the inputs, the parameters and the
+  results; the [examples](lightcone/examples.md) run a search and the whole
+  pipeline; the [executable](lightcone/executable.md) runs them from a
+  parameter file; the [file formats](lightcone/formats.md) describe what is
+  written.
+- **Box geometry**, for simulation snapshots: the [guide](box/guide.md), the
+  [examples](box/examples.md), the [executables](box/executable.md) and the
+  [file formats](box/formats.md).
+- Reference: every function and structure of the [C++](cpp.rst) and
+  [Python](python.rst) libraries.
+- [Citing](citing.md): the paper to cite when using bitvf.
 
 ```{toctree}
 :maxdepth: 2

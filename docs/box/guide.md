@@ -32,6 +32,60 @@ executables](executable.md) run them from a parameter file.
 :end-before: <!-- results-end -->
 ```
 
+## A typical run
+
+The runs below are the pipeline on the halos of a simulation box observed
+in redshift space: otswap reconstructs them with 8 realizations and a fixed
+seed, drawing the randoms uniformly in the box, the redshift-space
+distortions along the y axis are corrected, and the voids are searched on
+the second, real-space, reconstruction and on the first as well. They are
+the core of the [full reconstruction example](examples.md#full-reconstruction),
+which also locates the data folder `data` and summarizes and writes the
+result; the example page shows it whole.
+
+::::{tab-set}
+:sync-group: lang
+
+:::{tab-item} Python
+:sync: python
+
+```{literalinclude} ../../examples/full_recons_box/full_recons_box.py
+:language: python
+:start-at: "# Comoving Cartesian coordinates in Mpc/h, shape (N, 3)"
+:end-at: run = bitvf.run_box(
+:dedent: 4
+```
+:::
+
+:::{tab-item} C++
+:sync: cpp
+
+```{literalinclude} ../../examples/full_recons_box/full_recons_box.cpp
+:language: cpp
+:start-at: "// Comoving Cartesian coordinates in Mpc/h, x, y, z for each halo"
+:end-at: const bitvf::BitVFResult run = bitvf::runBox(
+:dedent: 4
+```
+:::
+
+::::
+
+The real-space voids are in `run.voids`, the redshift-space ones in
+`run.zspaceVoids` (Python `run.zspace_voids`). Without `rsd`, the pipeline
+reconstructs once and searches that reconstruction. To search a
+reconstruction kept from otswap instead, pass it to `findVoidsBox`
+(`find_voids_box`), as the [box example](examples.md#box) does.
+
+The executable runs the same pipeline from a parameter file, with no code
+to write:
+
+```
+bitvf examples/executable/box.ini
+```
+
+The [box executables](executable.md) page lists its keys, and the commented
+file {repo-file}`examples/executable/box.ini` sets each of them.
+
 ## Coordinates and units
 
 - Cartesian coordinates and every length (the mps, the box limits, the
