@@ -109,7 +109,7 @@ decimals.
 """
 
 Box: TypeAlias = Union[otswap.BoxLimits, tuple[ArrayLike, ArrayLike]]
-"""Box limits: an ``otswap.BoxLimits``, or a pair of corners
+"""Box limits, an ``otswap.BoxLimits`` or a pair of corners
 ((x0, y0, z0), (x1, y1, z1)), in coordinate units. Each bound must be
 finite, with each lower bound below the upper one. Closed: a point on a
 face is inside."""
@@ -134,8 +134,8 @@ class LengthUnit(enum.Enum):
     """Unit of a length the user chooses."""
 
     MPS = 0
-    """Multiples of the mean particle separation: the box mps, or in a
-    lightcone mps(z) at each cell's redshift."""
+    """Multiples of the mean particle separation. In the box it is the box
+    mps; in a lightcone it is mps(z) at each cell's redshift."""
     COORDINATE = 1
     """The same length unit as the tracer coordinates."""
 
@@ -244,7 +244,7 @@ class BoxRsd:
     """
 
     axis: Optional[int]
-    """The line of sight: 0, 1 or 2, for x, y or z. None is accepted here
+    """The line of sight, 0, 1 or 2 for x, y or z. None is accepted here
     and refused by ``run_box``."""
     redshift: float
     """The redshift of the box, at which the growth rate f is read from the
@@ -442,8 +442,8 @@ class BasinCatalog:
         """Number of basins."""
     @property
     def centre(self) -> NDArray[np.float64]:
-        """Cartesian centre, shape (n_basins, 3), in coordinate units: the
-        seed cell's centre x0, shifted by
+        """Cartesian centre, shape (n_basins, 3), in coordinate units. It is
+        the seed cell's centre x0, shifted by
         ``s * sum_n div_n (x_n - x0) / sum_n |div_n|`` over the seed's
         neighbouring cells n, with div the field the watershed split (the smoothed divergence, or the
         divergence when sigma is 0) and s = -1
@@ -486,7 +486,7 @@ class BasinCatalog:
         (0,) after a field search."""
     @property
     def edge_flag(self) -> NDArray[np.uint8]:
-        """Contact with the boundary, shape (n_basins,): 0 none; 1 only the
+        """Contact with the boundary, shape (n_basins,). 0 is none; 1 only the
         extended basin touches it; 2 the core already touches it. The
         boundary is, in a box, the faces of the grid, with or without box
         limits; in a lightcone, the masked cells and the border of the grid.
@@ -564,22 +564,22 @@ class DivergenceGrid:
         """Number of cells."""
     @property
     def cell_size(self) -> float:
-        """Defines the cells: the cell side, in coordinate units,
-        ``cell_size_mps * mps``. After ``find_voids_box_from_field``, the
+        """The cell side, in coordinate units, ``cell_size_mps * mps``; it
+        defines the cells. After ``find_voids_box_from_field``, the
         spacing of the centres inferred along the axis with the most nodes.
         NaN in a lightcone."""
     @property
     def lower(self) -> tuple[float, float, float]:
-        """Defines the cells: x, y, z of the lower grid face, in coordinate
-        units."""
+        """The x, y, z of the lower grid face, in coordinate units. Defines the
+        cells."""
     @property
     def upper(self) -> tuple[float, float, float]:
-        """Defines the cells: x, y, z of the upper face of the padded box as
-        placed, in coordinate units. It lies below the last cell face,
+        """The x, y, z of the upper face of the padded box as placed, in
+        coordinate units. Defines the cells. It lies below the last cell face,
         lower + n_cells_axis * cell_size; it is stored as built."""
     @property
     def n_cells_axis(self) -> tuple[int, int, int]:
-        """Defines the cells: (nx, ny, nz), the cells along x, y, z; equal on
+        """The cells along x, y, z, (nx, ny, nz), which defines the cells; equal on
         the three axes but after ``find_voids_box_from_field``, where they
         may differ."""
     @property
@@ -658,9 +658,9 @@ class DivergenceGrid:
         nz, 3)."""
     @property
     def centre_sky(self) -> NDArray[np.float64]:
-        """Lightcone only: right ascension and declination of each cell
-        centre in ``angle_unit``, and the redshift, shape (n_cells, 3); shape
-        (0, 3) in a box."""
+        """Right ascension and declination of each cell centre in
+        ``angle_unit``, and the redshift, shape (n_cells, 3). Lightcone
+        only; shape (0, 3) in a box."""
     @property
     def divergence(self) -> NDArray[np.float64]:
         """The divergence of each cell, before smoothing, shape (nx, ny, nz);
@@ -783,11 +783,12 @@ class Counts:
         the correction, and excluded (``Result.uncorrected``)."""
     @property
     def tracers_outside_box(self) -> int:
-        """With box limits: outside them, and skipped
+        """With box limits, the tracers outside them, skipped
         (``TracerAssignment.in_box``)."""
     @property
     def tracers_outside_grid(self) -> int:
-        """Reused grid: outside it, and excluded (``Result.outside_grid``).
+        """With a reused grid, the tracers outside it, excluded
+        (``Result.outside_grid``).
         In the real-space pass of ``run_box``: corrected, but outside the
         first pass's grid."""
     @property
@@ -797,42 +798,42 @@ class Counts:
         (``Result.outside_cut``). 0 in a box."""
     @property
     def tracers_outside_mask(self) -> int:
-        """Lightcone: tracers on unobserved pixels of the mask, and so
+        """In a lightcone, the tracers on unobserved pixels of the mask, and so
         skipped (``TracerAssignment.in_mask``), whether or not they lie
         inside the redshift cut. 0 in a box."""
     @property
     def tracers_outside_redshift_cut(self) -> int:
-        """Lightcone: of the tracers on observed pixels, those outside the
+        """In a lightcone, of the tracers on observed pixels, those outside the
         redshift cut, and so skipped (``TracerAssignment.in_cut``). A tracer
         both masked and outside the cut counts only in
         ``tracers_outside_mask``. 0 in a box."""
     @property
     def randoms(self) -> int:
-        """Lightcone: the randoms the search reads (N_r of ``delta_2mps``),
+        """In a lightcone, the randoms the search reads (N_r of ``delta_2mps``),
         kept by the mask and the redshift cut and inside the grid. 0 in a
         box."""
     @property
     def randoms_outside_mask(self) -> int:
-        """Lightcone: randoms on unobserved pixels of the mask, removed.
+        """In a lightcone, the randoms on unobserved pixels of the mask, removed.
         0 in a box."""
     @property
     def randoms_outside_redshift_cut(self) -> int:
-        """Lightcone: of the randoms on observed pixels, those outside the
+        """In a lightcone, of the randoms on observed pixels, those outside the
         redshift cut, removed. 0 in a box."""
     @property
     def tracers_in_masked_cells(self) -> int:
-        """Lightcone: tracers on an observed pixel whose cell is masked;
-        they keep their cell but are in no basin. 0 in a box."""
+        """In a lightcone, the tracers on an observed pixel whose cell is masked.
+        They keep their cell but are in no basin. 0 in a box."""
     @property
     def randoms_outside_grid(self) -> int:
-        """Lightcone, reused grid: randoms outside it, removed. 0 in a
-        box."""
+        """In a lightcone with a reused grid, the randoms outside it, removed. 0
+        in a box."""
     @property
     def displacements(self) -> int:
         """Valid displacements given."""
     @property
     def displacements_rejected(self) -> int:
-        """Lightcone: valid displacements of the tracers read that were
+        """In a lightcone, the valid displacements of the tracers read that were
         rejected (a start or end in a masked cell, an end outside every cell,
         a path too close to the observer). 0 in a box."""
 
@@ -872,8 +873,8 @@ class Result:
         result."""
     @property
     def ids(self) -> NDArray[np.int64]:
-        """The identity of each tracer, shape (n_tracers,), as given: a new
-        read-only copy on each access; 0..n_tracers-1 when none were set. No
+        """The identity of each tracer, shape (n_tracers,), as given. Each access
+        returns a new read-only copy on each access; 0..n_tracers-1 when none were set. No
         computation reads it."""
     @property
     def random_seed(self) -> Optional[int]:
@@ -912,7 +913,7 @@ class Result:
         """Lightcone only; shape (0,) in a box."""
     @property
     def limits(self) -> Optional[otswap.BoxLimits]:
-        """The box limits of the search: those given, the reconstruction's,
+        """The box limits of the search, those given, the reconstruction's,
         or the grid's for ``find_voids_box_from_divergence``; the tracers
         outside them were skipped. None without limits."""
     @property
@@ -925,11 +926,11 @@ class Result:
         """Lightcone only; None in a box."""
     @property
     def mask_nside(self) -> int:
-        """Lightcone: the NSIDE of the mask the search was given; 0 in a
+        """In a lightcone, the NSIDE of the mask the search was given; 0 in a
         box."""
     @property
     def redshift_cut(self) -> Optional[otswap.RedshiftCut]:
-        """Lightcone: the closed range of observed redshift the search
+        """In a lightcone, the closed range of observed redshift the search
         kept; None in a box."""
     @property
     def distances(self) -> Optional[otswap.DistanceTable]:
@@ -1000,8 +1001,8 @@ class BitVFResult:
 
     @property
     def voids(self) -> Result:
-        """The voids of the run: of the real-space pass with a correction, of
-        the only pass without. Its per-tracer columns have one row per input
+        """The voids of the run, those of the real-space pass with a correction
+        and of the only pass without. Its per-tracer columns have one row per input
         tracer, in input order."""
     @property
     def zspace_voids(self) -> Optional[Result]:
@@ -1512,10 +1513,10 @@ def run_box(tracers: ArrayLike, randoms: Optional[ArrayLike] = None, *, config: 
 
 
 AngleUnit: TypeAlias = Literal["deg", "rad"]
-"""The unit of right ascension and declination: degrees or radians."""
+"""The unit of right ascension and declination, degrees or radians."""
 
 RedshiftCutArg: TypeAlias = Union[otswap.RedshiftCut, tuple[float, float]]
-"""A closed range of observed redshift: an ``otswap.RedshiftCut`` or a
+"""A closed range of observed redshift, an ``otswap.RedshiftCut`` or a
 ``(min, max)`` pair."""
 
 

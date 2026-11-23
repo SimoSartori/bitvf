@@ -50,10 +50,12 @@ from typing import Optional, Sequence, Union
 import numpy as np
 import otswap
 from numpy.typing import NDArray
+from typing_extensions import TypeAlias
 
 from . import DivergenceGrid, Result
 
-Path = Union[str, os.PathLike[str]]
+Path: TypeAlias = Union[str, os.PathLike[str]]
+"""A file name or location, a ``str`` or an ``os.PathLike``."""
 
 
 class Product(enum.Enum):

@@ -6,7 +6,7 @@ docstrings and are what an IDE shows, and reading them needs no compiled
 module, so the documentation builds without building bitvf.
 
     pip install -r docs/requirements.txt
-    sphinx-build -W --keep-going docs docs/_build/html
+    sphinx-build -W -n --keep-going docs docs/_build/html
 
 Building the documentation needs Python 3.11 or later and Doxygen.
 """
@@ -53,6 +53,26 @@ autoapi_member_order = "bysource"
 
 napoleon_numpy_docstring = True
 napoleon_google_docstring = False
+napoleon_use_param = False
+napoleon_use_rtype = False
+
+
+def _resolve_typing_data(app, env, node, contnode):
+    """Resolve NumPy types that its inventory lists as data or attributes, not classes."""
+    if node.get("refdomain") != "py" or node.get("reftype") != "class":
+        return None
+    if not node["reftarget"].startswith("numpy."):
+        return None
+    from sphinx.ext.intersphinx import resolve_reference_any_inventory
+
+    other = node.copy()
+    other["reftype"] = "obj"
+    return resolve_reference_any_inventory(env, True, other, contnode)
+
+
+def setup(app):
+    app.connect("missing-reference", _resolve_typing_data)
+
 
 # Files and folders of the repository, linked on GitHub: the example data are
 # not copied into the site.
@@ -68,6 +88,17 @@ intersphinx_mapping = {
     "numpy": ("https://numpy.org/doc/stable", None),
     "otswap": ("https://simosartori.github.io/otswap", None),
 }
+
+# Names with no target: the namespaces, which Breathe links in every
+# signature without documenting them, and the compiler builtins that are the
+# default arguments of Error's constructor.
+nitpick_ignore = [
+    ("cpp:identifier", "bitvf"),
+    ("cpp:identifier", "bitvf::io"),
+    ("cpp:identifier", "__builtin_FILE"),
+    ("cpp:identifier", "__builtin_FUNCTION"),
+    ("cpp:identifier", "__builtin_LINE"),
+]
 
 myst_enable_extensions = ["amsmath", "attrs_block", "colon_fence", "dollarmath"]
 myst_heading_anchors = 3

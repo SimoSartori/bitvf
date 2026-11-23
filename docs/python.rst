@@ -120,6 +120,8 @@ Writers
 .. autoapiclass:: bitvf.io.Product
    :members:
 
+.. autoapidata:: bitvf.io.Path
+
 .. autoapifunction:: bitvf.io.file_name
 
 .. autoapifunction:: bitvf.io.write_voids
