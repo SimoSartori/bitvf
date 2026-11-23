@@ -7,10 +7,12 @@ equal the ones recorded in tests/determinism_hashes.json: the same inputs
 give the same bits on every platform the wheels are built for, with one
 thread and with four.
 
-The inputs are identical in bytes everywhere: they come from a fixed 64-bit
+The inputs are identical in bytes everywhere. Most come from a fixed 64-bit
 linear congruential generator in pure Python, mapped to doubles by exact
 division by 2^53 and then by single IEEE operations, with no libm call and
-no NumPy random generator.
+no NumPy random generator. The file-based cases read the small catalogues of
+tests/executable/data with otswap.io.read, whose correctly rounded decimal
+conversion gives the same doubles on every platform.
 
 Each thread count runs in its own interpreter, since OpenMP reads
 OMP_NUM_THREADS once. Run as a script, this file prints the hashes as JSON,
@@ -27,6 +29,7 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
+DATA = HERE / "executable" / "data"
 REFERENCE = HERE / "determinism_hashes.json"
 THREADS = (1, 4)
 
@@ -103,6 +106,8 @@ def search_digests(out, key, r):
         out[f"{key}.void_index"] = digest(r.divergence.void_index)
     if r.assignment is not None:
         out[f"{key}.assignment.distance"] = digest(r.assignment.distance)
+    counts = r.counts
+    out[f"{key}.counts"] = digest([getattr(counts, n) for n in dir(counts) if not n.startswith("_")])
 
 
 def compute():
@@ -146,6 +151,33 @@ def compute():
     search_digests(out, "run_box", run.voids)
     search_digests(out, "run_box.zspace", run.zspace_voids)
     out["run_box.uncorrected"] = digest(run.voids.uncorrected)
+
+    # a box run on a catalogue file, with a fixed seed and the redshift-space voids
+    file_tracers = otswap.io.read(str(DATA / "box_tracers.dat"), [0, 1, 2]).values
+    config = bitvf.BoxConfig(ot=otswap.Config(n_realizations=2, seed=5, verbosity="silent"),
+                             rsd=bitvf.BoxRsd(axis=2, redshift=0.5, bias=1.5, sigma=8.0,
+                                              correction=otswap.CorrectionConfig(verbosity="silent"),
+                                              zspace_voids=True),
+                             voids=bitvf.Config(**keep))
+    run = bitvf.run_box(file_tracers, config=config, distances=table)
+    search_digests(out, "run_box_file", run.voids)
+    search_digests(out, "run_box_file.zspace", run.zspace_voids)
+    out["run_box_file.uncorrected"] = digest(run.voids.uncorrected)
+
+    # a lightcone run with the correction and the redshift-space voids
+    sky_tracers = otswap.io.read(str(DATA / "lightcone_tracers.dat"), [0, 1, 2]).values
+    sky_randoms = otswap.io.read(str(DATA / "lightcone_randoms.dat"), [0, 1, 2]).values
+    mask = otswap.Mask(str(DATA / "lightcone_mask.fits"))
+    bias = otswap.io.read_bias_table(str(DATA / "lightcone_bias.dat"))
+    config = bitvf.LightconeConfig(
+        ot=otswap.Config(n_realizations=2, seed=9, verbosity="silent"), n_bins=1, cut=(0.26, 0.39),
+        rsd=bitvf.LightconeRsd(bias=bias, sigma=20.0, zspace_voids=True,
+                               correction=otswap.CorrectionConfig(verbosity="silent")),
+        voids=bitvf.Config(divergence_cell_size=0.15, smoothing=bitvf.Smoothing(sigma=0.15), **keep))
+    run = bitvf.run_lightcone(sky_tracers, sky_randoms, mask=mask, distances=otswap.DistanceTable.flat(0.3, 0.7),
+                              angle_unit="deg", config=config)
+    search_digests(out, "run_lightcone", run.voids)
+    search_digests(out, "run_lightcone.zspace", run.zspace_voids)
     return out
 
 
