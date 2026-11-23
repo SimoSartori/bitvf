@@ -4,7 +4,10 @@ name: CI
 # pull request: with GCC and clang on Linux and with Apple clang on macOS,
 # warnings as errors. The C++ tests run with 1 and with 4 threads.
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
 
 permissions:
   contents: read
