@@ -39,12 +39,17 @@ build-verbosity = 1
 # zlib and cfitsio from pinned, checksummed releases, the same as otswap's
 before-all = "bash {project}/tools/wheels/build_deps.sh {project}/build/wheel-deps"
 environment = { CFITSIO_ROOT = "$PWD/build/wheel-deps", ZLIB_ROOT = "$PWD/build/wheel-deps" }
+# the comparison tests against the C++ library, the determinism hashes, the
+# README and otswap and bitvf in one process
+test-requires = "pytest"
+test-command = "bash {project}/tools/wheels/test_wheel.sh {project} {wheel}"
 
 [tool.cibuildwheel.linux]
 repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel} && python {project}/tools/wheels/check_dependencies.py {dest_dir}"
 
 [tool.cibuildwheel.macos]
-# one arm64 runner builds both: the x86_64 wheels are cross-built
+# one arm64 runner builds both, and tests both: the x86_64 wheels are
+# cross-built and then run under Rosetta
 archs = ["arm64", "x86_64"]
 # otswap's deployment target, so that libomp's minimum is never above bitvf's;
 # arm64 wheels start at 11.0 in any case
