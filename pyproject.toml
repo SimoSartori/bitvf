@@ -9,8 +9,31 @@ description = "The Back-in-time Void Finder: voids from the optimal transport di
 requires-python = ">= 3.10"
 license = "GPL-2.0-or-later"
 license-files = ["LICENSE"]
+readme = "README.md"
 authors = [{ name = "Simone Sartori" }]
+keywords = ["cosmology", "cosmic voids", "optimal transport", "large-scale structure"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: C++",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
 dependencies = ["otswap >= 0.3, < 0.4"]
+
+[project.urls]
+Documentation = "https://simosartori.github.io/bitvf/"
+Source = "https://github.com/SimoSartori/bitvf"
+Issues = "https://github.com/SimoSartori/bitvf/issues"
+Changelog = "https://github.com/SimoSartori/bitvf/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 test = ["pytest"]

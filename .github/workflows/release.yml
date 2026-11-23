@@ -1,0 +1,129 @@
+name: Release
+
+# Publishes to PyPI when a v* tag is pushed: the sdist and the wheels for
+# CPython 3.10 to 3.14 on manylinux x86_64 and aarch64 and on macOS arm64 and
+# x86_64, each wheel tested (the comparison tests against the C++ library, the
+# determinism hashes, the README's code, and otswap and bitvf in one process).
+# Run it from the Actions tab (workflow_dispatch) to build and test everything
+# without publishing. The wheels' configuration is in pyproject.toml and
+# tools/wheels/.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sdist:
+    name: sdist
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # The version lives in pyproject.toml, CMakeLists.txt and CITATION.cff;
+      # on a tag push the tag must name it too, and the changelog and the
+      # citation file must carry the release date.
+      - name: The versions agree
+        run: |
+          version=$(python -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
+          cmake_version=$(sed -nE 's/^project\(bitvf VERSION ([0-9.]+).*/\1/p' CMakeLists.txt)
+          cff_version=$(sed -nE 's/^version: *([0-9.]+).*/\1/p' CITATION.cff)
+          if [ "$version" != "$cmake_version" ] || [ "$version" != "$cff_version" ]; then
+            echo "pyproject.toml says $version, CMakeLists.txt $cmake_version and CITATION.cff $cff_version"
+            exit 1
+          fi
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+              echo "tag $GITHUB_REF_NAME does not match version $version"
+              exit 1
+            fi
+            if ! grep -qE "^## $version — [0-9]{4}-[0-9]{2}-[0-9]{2}$" CHANGELOG.md; then
+              echo "CHANGELOG.md has no heading '## $version — YYYY-MM-DD' with a date"
+              exit 1
+            fi
+            if ! grep -qE '^date-released: [0-9]{4}-[0-9]{2}-[0-9]{2}$' CITATION.cff; then
+              echo "CITATION.cff has no date-released"
+              exit 1
+            fi
+          fi
+
+      - name: Build
+        run: pipx run build --sdist
+
+      - name: The sdist holds no example
+        run: |
+          if tar -tzf dist/*.tar.gz | grep '/examples/'; then
+            exit 1
+          fi
+
+      - name: Check the metadata PyPI will render
+        run: pipx run twine check dist/*
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-sdist
+          path: dist/*.tar.gz
+
+  wheels:
+    name: wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pypa/cibuildwheel@v4.2.1
+        with:
+          output-dir: wheelhouse
+
+      # bitvf installs no C++ library, header, CMake file or example.
+      - name: The wheels hold no C++ library, header, CMake file or example
+        run: |
+          python3 - <<'PY'
+          import glob, sys, zipfile
+          wheels = glob.glob("wheelhouse/*.whl")
+          bad = [f"{w}: {name}" for w in wheels for name in zipfile.ZipFile(w).namelist()
+                 if name.endswith((".a", ".h", ".cmake")) or "examples/" in name]
+          print(len(wheels), "wheels;", len(bad), "C++ library, header, CMake or example files")
+          print("\n".join(bad))
+          sys.exit(1 if bad or not wheels else 0)
+          PY
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-${{ matrix.os }}
+          path: wheelhouse/*.whl
+
+  publish:
+    name: publish to PyPI
+    needs: [sdist, wheels]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+
+    # The trusted publisher on PyPI is configured against this environment name
+    # and this workflow's filename. Changing either means changing it there.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/bitvf
+
+    permissions:
+      id-token: write          # mints the OIDC token PyPI checks; no API token
+
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+
+      - uses: pypa/gh-action-pypi-publish@release/v1

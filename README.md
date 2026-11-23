@@ -23,8 +23,8 @@ coordinates filling a rectangular volume.
 This package, bitvf, implements BitVF. The reconstruction is done by
 [otswap](https://github.com/SimoSartori/otswap); bitvf runs it, can correct
 the redshift-space distortions and reconstruct the corrected tracers again,
-and searches the voids. Results are identical bit for bit whatever the
-number of threads. bitvf is a C++17 library, with a Python package that runs
+and searches the voids. Results are identical bit for bit on Linux (x86_64,
+aarch64) and macOS (arm64, x86_64), whatever the number of threads. bitvf is a C++17 library, with a Python package that runs
 the same code.
 <!-- docs:about-end -->
 
