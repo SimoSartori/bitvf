@@ -26,3 +26,32 @@ sdist.exclude = ["examples/", "docs/"]
 [tool.scikit-build.cmake.define]
 BITVF_BUILD_PYTHON = "ON"
 BITVF_BUILD_TESTS = "OFF"
+
+[tool.cibuildwheel]
+# CPython from 3.10 to 3.14, on manylinux for x86_64 and aarch64 and on macOS
+# for x86_64 and arm64: otswap's set, since the module loads otswap's OpenMP
+# runtime. PyPy is not in the default build set, and nanobind does not
+# support it. The free-threaded 3.14t is skipped: the extension is not
+# declared free-threaded, so it would re-enable the GIL on import. CPython
+# 3.15 is skipped until the project is built and tested against it.
+skip = ["*_i686", "*-musllinux_*", "cp314t-*", "cp315-*", "cp315t-*"]
+build-verbosity = 1
+# zlib and cfitsio from pinned, checksummed releases, the same as otswap's
+before-all = "bash {project}/tools/wheels/build_deps.sh {project}/build/wheel-deps"
+environment = { CFITSIO_ROOT = "$PWD/build/wheel-deps", ZLIB_ROOT = "$PWD/build/wheel-deps" }
+
+[tool.cibuildwheel.linux]
+repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel} && python {project}/tools/wheels/check_dependencies.py {dest_dir}"
+
+[tool.cibuildwheel.macos]
+# one arm64 runner builds both: the x86_64 wheels are cross-built
+archs = ["arm64", "x86_64"]
+# otswap's deployment target, so that libomp's minimum is never above bitvf's;
+# arm64 wheels start at 11.0 in any case
+environment = { MACOSX_DEPLOYMENT_TARGET = "10.13", CFITSIO_ROOT = "$PWD/build/wheel-deps", ZLIB_ROOT = "$PWD/build/wheel-deps", OpenMP_ROOT = "$PWD/build/wheel-deps/omp" }
+# the libomp of otswap's wheel of the architecture being built, which the
+# module finds at run time through its rpath into the otswap package;
+# delocate leaves it there, and is told that the module's libomp is not in the
+# wheel
+before-build = "bash {project}/tools/wheels/select_otswap_omp.sh {project}/build/wheel-deps"
+repair-wheel-command = "delocate-wheel --exclude libomp --ignore-missing-dependencies --require-archs {delocate_archs} -w {dest_dir} -v {wheel} && python {project}/tools/wheels/check_dependencies.py {dest_dir}"

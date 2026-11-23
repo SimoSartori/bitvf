@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 by Simone Sartori, simone.sartori@inaf.it
+#
+# Builds the native dependencies of the wheels from pinned releases, each
+# checked against its SHA-256 before use, into one prefix:
+#
+#   zlib     static, position-independent: cfitsio's only required dependency
+#   cfitsio  static, position-independent, without curl, bzip2, pthreads,
+#            SSE, the network drivers, the utilities and the test programs
+#
+# On macOS zlib and cfitsio are universal (arm64 and x86_64), built for
+# MACOSX_DEPLOYMENT_TARGET. OpenMP is not built here: on macOS the wheels
+# use the libomp of otswap's wheel (select_otswap_omp.sh), on Linux the
+# compiler's libgomp, which auditwheel copies into each wheel.
+#
+# The versions and checksums are otswap's, and the same sources: CI checks
+# them against otswap's script (check_pins.sh).
+#
+# Usage: build_deps.sh PREFIX
+#
+# A prefix already built with the same versions is left alone. cfitsio is
+# downloaded from HEASARC or, failing that, from Fedora's lookaside cache,
+# and zlib from zlib.net, its fossils or GitHub; every copy must have the same
+# SHA-256.
+
+set -euo pipefail
+
+PREFIX=$1
+
+ZLIB_VERSION=1.3.2
+ZLIB_SHA256=bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16
+# zlib.net keeps only the newest release at its top level, and older ones in fossils/
+ZLIB_URLS=(https://zlib.net/zlib-${ZLIB_VERSION}.tar.gz
+           https://zlib.net/fossils/zlib-${ZLIB_VERSION}.tar.gz
+           https://github.com/madler/zlib/releases/download/v${ZLIB_VERSION}/zlib-${ZLIB_VERSION}.tar.gz)
+
+CFITSIO_VERSION=4.7.0
+CFITSIO_SHA256=ce573bbea8e75b429f8c3d3e86498741ba3dc9628a1530d2f65268397ad059e8
+# Fedora's lookaside cache stores the same file under its SHA-512
+CFITSIO_SHA512=cc6ac5218fbe5c71ba6ae3fec7dd239af47aff4301611980db7c926cefa64a3d8bce2422162ef49d3fcaf25e94c5a695b3bf2a8aa2cf70001842649150756bea
+CFITSIO_URLS=(https://heasarc.gsfc.nasa.gov/FTP/software/fitsio/c/cfitsio-${CFITSIO_VERSION}.tar.gz
+              https://src.fedoraproject.org/repo/pkgs/cfitsio/cfitsio-${CFITSIO_VERSION}.tar.gz/sha512/${CFITSIO_SHA512}/cfitsio-${CFITSIO_VERSION}.tar.gz)
+
+STAMP="zlib ${ZLIB_VERSION}, cfitsio ${CFITSIO_VERSION}, macOS ${MACOSX_DEPLOYMENT_TARGET:-none}"
+
+if [ -f "$PREFIX/.built" ] && [ "$(cat "$PREFIX/.built")" = "$STAMP" ]; then
+  echo "build_deps: $PREFIX already holds $STAMP"
+  exit 0
+fi
+
+mkdir -p "$PREFIX"
+PREFIX=$(cd "$PREFIX" && pwd)
+WORK="$PREFIX/src"
+rm -rf "$WORK"
+mkdir -p "$WORK"
+
+sha256_of () {
+  if command -v sha256sum > /dev/null; then sha256sum "$1" | cut -d' ' -f1
+  else shasum -a 256 "$1" | cut -d' ' -f1
+  fi
+}
+
+# fetch SHA256 URL...: downloads into $WORK from the first URL that gives a
+# file with that SHA-256, naming each URL that failed, and prints its path
+fetch () {
+  local sha=$1 name url file actual
+  shift
+  name=$(basename "$1")
+  for url in "$@"; do
+    file="$WORK/$(basename "$url")"
+    rm -f "$file"
+    if ! curl --fail --silent --show-error --location --retry 3 --output "$file" "$url"; then
+      echo "build_deps: could not download $url" >&2
+      continue
+    fi
+    actual=$(sha256_of "$file")
+    if [ "$actual" = "$sha" ]; then
+      echo "$file"
+      return 0
+    fi
+    echo "build_deps: $url gave SHA-256 $actual, expected $sha" >&2
+  done
+  rm -f "$file"
+  echo "build_deps: no source gave $name with SHA-256 $sha" >&2
+  return 1
+}
+
+CMAKE_COMMON=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+              -DCMAKE_INSTALL_PREFIX="$PREFIX" -DCMAKE_INSTALL_LIBDIR=lib)
+if [ "$(uname)" = Darwin ]; then
+  CMAKE_COMMON+=(-DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:?}"
+                 "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64")
+fi
+
+jobs=$( (nproc || sysctl -n hw.ncpu) 2> /dev/null )
+
+# --------------------------------------------------------------------- zlib
+
+archive=$(fetch "$ZLIB_SHA256" "${ZLIB_URLS[@]}")
+tar -xzf "$archive" -C "$WORK"
+cmake -S "$WORK/zlib-$ZLIB_VERSION" -B "$WORK/zlib-build" "${CMAKE_COMMON[@]}" \
+  -DZLIB_BUILD_SHARED=OFF -DZLIB_BUILD_STATIC=ON -DZLIB_BUILD_TESTING=OFF
+cmake --build "$WORK/zlib-build" --parallel "$jobs"
+cmake --install "$WORK/zlib-build"
+
+# ------------------------------------------------------------------ cfitsio
+
+# The network drivers are compiled whenever gethostbyname and connect are
+# found; presetting the results of those checks leaves them out.
+archive=$(fetch "$CFITSIO_SHA256" "${CFITSIO_URLS[@]}")
+tar -xzf "$archive" -C "$WORK"
+cmake -S "$WORK/cfitsio-$CFITSIO_VERSION" -B "$WORK/cfitsio-build" "${CMAKE_COMMON[@]}" \
+  -DBUILD_SHARED_LIBS=OFF -DUSE_CURL=OFF -DUSE_BZIP2=OFF -DUSE_PTHREADS=OFF \
+  -DUSE_SSE2=OFF -DUSE_SSSE3=OFF -DTESTS=OFF -DUTILS=OFF -DITERPROGS=OFF \
+  -DCMAKE_HAVE_GETHOSTBYNAME=OFF -DCMAKE_HAVE_CONNECT=OFF \
+  -DZLIB_INCLUDE_DIR="$PREFIX/include" -DZLIB_LIBRARY="$PREFIX/lib/libz.a"
+cmake --build "$WORK/cfitsio-build" --parallel "$jobs"
+cmake --install "$WORK/cfitsio-build"
+
+rm -rf "$WORK"
+echo "$STAMP" > "$PREFIX/.built"
+echo "build_deps: built $STAMP in $PREFIX"

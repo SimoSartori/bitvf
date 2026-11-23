@@ -41,6 +41,11 @@ jobs:
         with:
           python-version: "3.12"
 
+      # The wheels link the same zlib and cfitsio sources as otswap's.
+      - name: Wheel dependency pins are otswap's
+        if: runner.os == 'Linux' && matrix.cc == 'gcc'
+        run: bash tools/wheels/check_pins.sh .
+
       # GCC brings libgomp; clang on Linux needs libomp.
       - name: Install cfitsio and OpenMP
         if: runner.os == 'Linux'
