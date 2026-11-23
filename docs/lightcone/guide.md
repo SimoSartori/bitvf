@@ -85,8 +85,8 @@ cut: set a cut to search a slice of the survey.
 The runs below reconstruct the tracers with otswap and search the voids of
 the reconstruction, with 8 realizations and a fixed seed. They are the core
 of the [lightcone example](examples.md), which also locates the data folder
-`data` and summarizes and writes the result; the example page shows it
-whole.
+`data`; the example page shows it whole. The excerpts end with the writers,
+one file per product.
 
 ::::{tab-set}
 :sync-group: lang
@@ -97,7 +97,7 @@ whole.
 ```{literalinclude} ../../examples/lightcone/lightcone.py
 :language: python
 :start-at: output.mkdir(parents=True, exist_ok=True)
-:end-at: result = bitvf.find_voids_lightcone(
+:end-at: bitvf.io.write_galaxies(
 :lines: 3-
 :dedent: 4
 ```
@@ -109,7 +109,7 @@ whole.
 ```{literalinclude} ../../examples/lightcone/lightcone.cpp
 :language: cpp
 :start-at: std::filesystem::create_directories(output);
-:end-at: const bitvf::Result result = bitvf::findVoidsLightcone(
+:end-at: bitvf::io::writeGalaxies(galaxiesFile, result);
 :lines: 4-
 :dedent: 4
 ```

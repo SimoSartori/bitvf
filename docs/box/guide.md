@@ -40,8 +40,8 @@ seed, drawing the randoms uniformly in the box, the redshift-space
 distortions along the y axis are corrected, and the voids are searched on
 the second, real-space, reconstruction and on the first as well. They are
 the core of the [full reconstruction example](examples.md#full-reconstruction),
-which also locates the data folder `data` and summarizes and writes the
-result; the example page shows it whole.
+which also locates the data folder `data`; the example page shows it whole.
+The excerpts end with the writers, one file per product and pass.
 
 ::::{tab-set}
 :sync-group: lang
@@ -52,7 +52,7 @@ result; the example page shows it whole.
 ```{literalinclude} ../../examples/full_recons_box/full_recons_box.py
 :language: python
 :start-at: "# Comoving Cartesian coordinates in Mpc/h, shape (N, 3)"
-:end-at: run = bitvf.run_box(
+:end-at: product.DIVERGENCE, output, "box.dat", zspace=False
 :dedent: 4
 ```
 :::
@@ -63,7 +63,7 @@ result; the example page shows it whole.
 ```{literalinclude} ../../examples/full_recons_box/full_recons_box.cpp
 :language: cpp
 :start-at: "// Comoving Cartesian coordinates in Mpc/h, x, y, z for each halo"
-:end-at: const bitvf::BitVFResult run = bitvf::runBox(
+:end-at: Product::Divergence, output, "box.dat", false
 :dedent: 4
 ```
 :::
