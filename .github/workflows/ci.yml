@@ -1,0 +1,109 @@
+name: CI
+
+# Builds and tests the C++ library and the Python module on every push and
+# pull request: with GCC and clang on Linux and with Apple clang on macOS,
+# warnings as errors. The C++ tests run with 1 and with 4 threads.
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux GCC
+            os: ubuntu-24.04
+            cc: gcc
+            cxx: g++
+          - name: Linux clang
+            os: ubuntu-24.04
+            cc: clang
+            cxx: clang++
+          - name: macOS Apple clang
+            os: macos-latest
+            cc: clang
+            cxx: clang++
+
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # GCC brings libgomp; clang on Linux needs libomp.
+      - name: Install cfitsio and OpenMP
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes libcfitsio-dev libomp-dev
+
+      # Homebrew's libomp is keg-only: bitvf finds it without OpenMP_ROOT.
+      - name: Install cfitsio and libomp
+        if: runner.os == 'macOS'
+        run: |
+          brew install cfitsio libomp
+          echo "CFITSIO_ROOT=$(brew --prefix cfitsio)" >> "$GITHUB_ENV"
+
+      # otswap and meshsearch are fetched and built by CMake.
+      - name: Configure
+        run: |
+          cmake -S . -B build -DCMAKE_COMPILE_WARNING_AS_ERROR=ON | tee configure.log
+          # without OpenMP every test would still pass, serially
+          grep -q "Found OpenMP_CXX" configure.log
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test with 1 thread
+        env:
+          OMP_NUM_THREADS: "1"
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Test with 4 threads
+        env:
+          OMP_NUM_THREADS: "4"
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Every translation unit is compiled without FP contraction or math errno
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          entries = json.load(open("build/compile_commands.json"))
+          bad = 0
+          for flag in ("-ffp-contract=off", "-fno-math-errno"):
+              missing = [e["file"] for e in entries
+                         if flag not in e.get("command", " ".join(e.get("arguments", [])))]
+              print(len(entries), "translation units;", len(missing), "without", flag)
+              bad += len(missing)
+          sys.exit(1 if bad or not entries else 0)
+          PY
+
+      # The module is built only by pip, in an isolated environment with
+      # otswap's wheel: its OpenMP runtime is the one the module loads.
+      - name: Build and install the module
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install ".[test]"
+
+      # The comparison tests need the C++ reference built above.
+      - name: Build the C++ reference
+        run: cmake --build build --target python_reference
+
+      # Run from outside the source tree, so that the installed module is the
+      # one imported.
+      - name: Python tests
+        working-directory: ${{ runner.temp }}
+        env:
+          BITVF_PYTHON_REFERENCE: ${{ github.workspace }}/build/python_reference
+        run: >-
+          "$RUNNER_TEMP/venv/bin/python" -m pytest "$GITHUB_WORKSPACE/tests"
+          -p no:cacheprovider -rs
