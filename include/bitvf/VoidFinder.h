@@ -367,7 +367,8 @@ namespace bitvf {
     /// NaN when no random lies in the sphere. The expected count
     /// n_r N_t / N_r has a relative noise of about 1 / sqrt(33.5 q f), with
     /// q the randoms per tracer and f the fraction of the sphere inside the
-    /// survey: at least 10 to 20 randoms per tracer is a reasonable start.
+    /// survey: 30 randoms per tracer, the minimum the reconstruction needs
+    /// with otswap's default of 30 realizations, is a reasonable start.
     std::vector<double> delta2Mps;
 
     /// Contact with the boundary: 0 none; 1 only the extended basin

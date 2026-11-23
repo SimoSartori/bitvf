@@ -23,8 +23,9 @@ the [quickstart](quickstart.md) shows.
 
 - [Quickstart](quickstart.md): install, and voids in a few lines.
 - [The method](method.md), for both geometries.
-- Lightcone: the [file formats](lightcone/formats.md) and the
-  [executable](lightcone/executable.md).
+- Lightcone: the [guide](lightcone/guide.md), the [file
+  formats](lightcone/formats.md), the [examples](lightcone/examples.md) and
+  the [executable](lightcone/executable.md).
 - Box: the [guide](box/guide.md), the [file formats](box/formats.md), the
   [examples](box/examples.md) and the [executables](box/executable.md).
 - Reference: [C++](cpp.rst), [Python](python.rst).
@@ -42,7 +43,9 @@ method
 :maxdepth: 2
 :hidden:
 
+lightcone/guide
 lightcone/formats
+lightcone/examples
 lightcone/executable
 ```
 

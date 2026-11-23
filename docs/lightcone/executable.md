@@ -40,10 +40,10 @@ randoms, which set the extent of the grid and the expected counts of
 | `column_tracer` | 3 columns, right ascension, declination and observed redshift: names, or 0-based indices in ASCII | required | pipeline |
 | `id_column` | an integer column, not one of `column_tracer`, with no value twice | none: the row | pipeline |
 | `units` | `degrees` or `radians`, of the right ascension and declination of every catalogue read | required | all |
-| `random_file` | the randoms; they describe the survey: its footprint, its redshift distribution and every systematic. At least `Nrec` times as many as the tracers; 10 times is a reasonable start | required | all |
+| `random_file` | the randoms; they describe the survey: its footprint, its redshift distribution and every systematic. At least `Nrec` times as many as the tracers; 30 times, the minimum with the default `Nrec` of 30, is a reasonable start | required | all |
 | `column_random` | 3 columns, as `column_tracer` | required | all |
 | `delimiter`, `comment` | one character, for the ASCII tracer, random and bias files | `" "`, `"#"` | all |
-| `veto_mask_filename` | the footprint: a full-sky HEALPix map, 0 for an unobserved pixel, anything else observed; a `.fits.gz` file is read as it is | required | all |
+| `veto_mask_filename` | the footprint: a full-sky HEALPix map, a pixel is observed when its value is greater than 0; a `.fits.gz` file is read as it is | required | all |
 | `z_min`, `z_max` | the closed range of observed redshift of the run, either bound alone; `z_max` not below `z_min` | none: no bound | pipeline |
 
 Tracers on unobserved pixels or outside the redshift range keep their row

@@ -84,7 +84,8 @@ def main():
     # threshold of 1e-2 and a fixed seed; displacements that cross an
     # unobserved pixel of the mask are rejected. Each realization uses as
     # many randoms as there are tracers, so at least 8 per tracer are needed:
-    # 10 per tracer is a good start
+    # 30 per tracer, the minimum with otswap's default of 30 realizations, is
+    # a good start
     ot_config = otswap.Config(n_realizations=8, convergence=1e-2, seed=12345, reject_crossings=True,
                               max_unobserved_pixels_crossed=0)
 

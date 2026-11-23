@@ -112,8 +112,9 @@ the outputs, with a flag, but takes no part in the search.
 
 **In the lightcone geometry**, the randoms are required, because they are
 the only description of the survey volume and its systematics. They must
-number at least the tracers times the realizations, and ten times that
-number is a reasonable start. The mps depends on redshift and is measured
+number at least the tracers times the realizations; 30 randoms per tracer,
+the minimum with otswap's default of 30 realizations, is a reasonable
+start. The mps depends on redshift and is measured
 as a profile mps(z). The tracers and randoms on unobserved pixels of the
 mask, or with an observed redshift outside the cut, are left out; the
 tracers keep their rows, with a flag.

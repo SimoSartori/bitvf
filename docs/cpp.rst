@@ -62,6 +62,22 @@ Void finder, box
 
 .. doxygenfunction:: bitvf::findVoidsBoxFromField
 
+Void finder, lightcone
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. doxygenfunction:: bitvf::findVoidsLightcone(const std::vector<double>&, const std::vector<double>&, const std::vector<std::uint8_t>&, const std::vector<double>&, const otswap::Mask&, const otswap::DistanceTable&, const otswap::MpsProfile&, const Config&, const otswap::RedshiftCut&, const std::vector<std::int64_t>&, const DivergenceGrid*)
+
+.. doxygenfunction:: bitvf::findVoidsLightcone(const otswap::Result&, const std::vector<double>&, const otswap::Mask&, const Config&, const DivergenceGrid*)
+
+.. doxygenfunction:: bitvf::findVoidsLightconeFromCartesian
+
+Grid, lightcone
+~~~~~~~~~~~~~~~
+
+.. doxygenfunction:: bitvf::lightconeGrid(const otswap::Result&, const std::vector<double>&, const otswap::Mask&, std::optional<double>)
+
+.. doxygenfunction:: bitvf::lightconeGrid(const std::vector<double>&, const std::vector<double>&, const otswap::Mask&, const otswap::DistanceTable&, const otswap::MpsProfile&, double, const otswap::RedshiftCut&)
+
 Grid and watershed, box
 ~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -86,12 +102,25 @@ Configuration
 .. doxygenstruct:: bitvf::BoxRsd
    :members:
 
+.. doxygenstruct:: bitvf::LightconeConfig
+   :members:
+
+.. doxygenstruct:: bitvf::LightconeRsd
+   :members:
+
+.. doxygenenum:: bitvf::SecondPassRandoms
+
 Pipeline, box
 ~~~~~~~~~~~~~
 
 .. doxygenfunction:: bitvf::runBox(const std::vector<double>&, const std::vector<double>&, const BoxConfig&, const std::vector<std::int64_t>&)
 
 .. doxygenfunction:: bitvf::runBox(const std::vector<double>&, const std::vector<double>&, const otswap::DistanceTable&, const BoxConfig&, const std::vector<std::int64_t>&)
+
+Pipeline, lightcone
+~~~~~~~~~~~~~~~~~~~
+
+.. doxygenfunction:: bitvf::runLightcone
 
 .. doxygenstruct:: bitvf::BitVFResult
    :members:

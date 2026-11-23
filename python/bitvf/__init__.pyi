@@ -480,9 +480,10 @@ class BasinCatalog:
         2 mps(z) at the centre's redshift, n_t / (n_r N_t / N_r) - 1, with
         n_t and n_r the tracers and randoms in the sphere and N_t / N_r the
         ratio of the tracers to the randoms over the whole search
-        (``Counts.randoms``); NaN when no random lies in the sphere. At
-        least 10 to 20 randoms per tracer is a reasonable start. Shape (0,)
-        after a field search."""
+        (``Counts.randoms``); NaN when no random lies in the sphere.
+        30 randoms per tracer, the minimum the reconstruction needs with
+        otswap's default of 30 realizations, is a reasonable start. Shape
+        (0,) after a field search."""
     @property
     def edge_flag(self) -> NDArray[np.uint8]:
         """Contact with the boundary, shape (n_basins,): 0 none; 1 only the

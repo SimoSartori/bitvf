@@ -109,8 +109,9 @@ int main (int argc, char** argv)
     // 8 realizations, a convergence threshold of 1e-2 and a fixed seed, so
     // that the run can be repeated; displacements that cross an unobserved
     // pixel of the mask are rejected. Each realization uses as many randoms
-    // as there are tracers, so at least 8 per tracer are needed: 10 per
-    // tracer is a good start. The report goes to std::cout, in order with
+    // as there are tracers, so at least 8 per tracer are needed: 30 per
+    // tracer, the minimum with otswap's default of 30 realizations, is a
+    // good start. The report goes to std::cout, in order with
     // this program's lines
     otswap::Config otConfig;
     otConfig.nRealizations = 8;

@@ -97,7 +97,8 @@ int main (int argc, char** argv)
     // threshold of 1e-2 and a fixed seed; displacements that cross an
     // unobserved pixel of the mask are rejected. Each realization uses as
     // many randoms as there are tracers, so at least 8 per tracer are
-    // needed: 10 per tracer is a good start
+    // needed: 30 per tracer, the minimum with otswap's default of 30
+    // realizations, is a good start
     bitvf::LightconeConfig config;
     config.ot.nRealizations = 8;
     config.ot.convergence = 1.e-2;
